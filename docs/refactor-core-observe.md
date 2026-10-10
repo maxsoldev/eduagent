@@ -60,7 +60,7 @@ A plain class whose async methods all do nothing. The core calls `await <probe>.
 - **Keep the event order:** e.g. `toolDispatch` stays before `policyDecision`.
 
 **Hosts:**
-- **Who passes the probe:** `cli.py`, `app_server/processor.py` and `tui.py` (via the app server) create a `Tracer(bus)` and pass it as `Session(..., probe=tracer)`. A `Session` without a probe works and emits only protocol events.
+- **Who passes the probe:** `cli.py`, `app_server/processor.py` and `tui.py` (via the app server) create a `Tracer()` and pass it as `Session(..., probe=tracer)`; the Tracer emits on the session's bus. A `Session` without a probe works and emits only protocol events.
 - **Processor `debug/*` methods:** `stepMode/set` and `continue` act on the session's Tracer stepper. `traceSse` sets the Tracer option. Keep the processor's method shapes unchanged.
 - **Interrupts:** `Session.interrupt` currently calls `stepper.release()`. Instead, call the probe (e.g. `await probe.turn_interrupted(ctx)`), or let the Tracer release its stepper when it sees cancellation. Either way, a paused step-mode turn must still be interruptible.
 
