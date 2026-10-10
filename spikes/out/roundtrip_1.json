@@ -1,0 +1,80 @@
+{
+  "id": "gen-1791407761-FkakXGwIP51HyIOFpLkB",
+  "object": "response",
+  "created_at": 1791407761,
+  "model": "openai/gpt-6-luna",
+  "status": "completed",
+  "completed_at": 1791407763,
+  "output": [
+    {
+      "id": "ctc_tmp_8g1q0xww2b7",
+      "type": "custom_tool_call",
+      "status": "completed",
+      "call_id": "call_Tt9K8m6Hv3TpRbXbjE4LRtCv",
+      "name": "apply_patch",
+      "input": "*** Begin Patch\n*** Add File: hello.txt\n+hi\n*** End Patch\n"
+    }
+  ],
+  "error": null,
+  "incomplete_details": null,
+  "tools": [
+    {
+      "type": "custom",
+      "name": "apply_patch",
+      "description": "The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+      "format": {
+        "type": "grammar",
+        "definition": "start: begin_patch hunk+ end_patch\nbegin_patch: \"*** Begin Patch\" LF\nend_patch: \"*** End Patch\" LF?\n\nhunk: add_hunk | delete_hunk | update_hunk\nadd_hunk: \"*** Add File: \" filename LF add_line+\ndelete_hunk: \"*** Delete File: \" filename LF\nupdate_hunk: \"*** Update File: \" filename LF change_move? change?\n\nfilename: /(.+)/\nadd_line: \"+\" /(.*)/ LF -> line\n\nchange_move: \"*** Move to: \" filename LF\nchange: (change_context | change_line)+ eof_line?\nchange_context: (\"@@\" | \"@@ \" /(.+)/) LF\nchange_line: (\"+\" | \"-\" | \" \") /(.*)/ LF\neof_line: \"*** End of File\" LF\n\n%import common.LF\n",
+        "syntax": "lark"
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": false,
+  "max_output_tokens": null,
+  "temperature": 1,
+  "top_p": 1,
+  "presence_penalty": 0,
+  "frequency_penalty": 0,
+  "top_logprobs": 0,
+  "max_tool_calls": null,
+  "metadata": {},
+  "background": false,
+  "previous_response_id": null,
+  "service_tier": "default",
+  "truncation": "disabled",
+  "store": false,
+  "instructions": "You are a coding agent. Use apply_patch to edit files.",
+  "text": {
+    "format": {
+      "type": "text"
+    }
+  },
+  "reasoning": {
+    "effort": "low",
+    "summary": "detailed",
+    "context": "all_turns",
+    "mode": "standard"
+  },
+  "safety_identifier": null,
+  "prompt_cache_key": null,
+  "prompt_cache_options": null,
+  "usage": {
+    "input_tokens": 399,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 29,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 428,
+    "cost": 5.44e-05,
+    "is_byok": false,
+    "cost_details": {
+      "upstream_inference_cost": 5.44e-05,
+      "upstream_inference_input_cost": 3.99e-05,
+      "upstream_inference_output_cost": 1.45e-05
+    }
+  }
+}

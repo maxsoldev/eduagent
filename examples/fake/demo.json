@@ -1,0 +1,66 @@
+{
+  "description": "Offline demo: plan, run a command, patch a file, ask approval for a dangerous command.",
+  "responses": [
+    [
+      {
+        "type": "reasoning",
+        "summary": "The user wants a greeting script. I'll plan, look around, write it, run it."
+      },
+      {
+        "type": "function_call",
+        "name": "update_plan",
+        "arguments": "{\"plan\": [{\"step\": \"Inspect the workspace\", \"status\": \"in_progress\"}, {\"step\": \"Create hello.py\", \"status\": \"pending\"}, {\"step\": \"Run it\", \"status\": \"pending\"}]}"
+      }
+    ],
+    [
+      {
+        "type": "function_call",
+        "name": "exec_command",
+        "arguments": "{\"cmd\": \"ls -la\"}"
+      }
+    ],
+    [
+      {
+        "type": "function_call",
+        "name": "update_plan",
+        "arguments": "{\"plan\": [{\"step\": \"Inspect the workspace\", \"status\": \"completed\"}, {\"step\": \"Create hello.py\", \"status\": \"in_progress\"}, {\"step\": \"Run it\", \"status\": \"pending\"}]}"
+      },
+      {
+        "type": "custom_tool_call",
+        "name": "apply_patch",
+        "input": "*** Begin Patch\n*** Add File: hello.py\n+print(\"hello from educodex\")\n*** End Patch\n"
+      }
+    ],
+    [
+      {
+        "type": "function_call",
+        "name": "exec_command",
+        "arguments": "{\"cmd\": \"python3 hello.py\"}"
+      }
+    ],
+    [
+      {
+        "type": "reasoning",
+        "summary": "Clean up the scratch directory too. That needs rm -rf, which always requires approval."
+      },
+      {
+        "type": "function_call",
+        "name": "exec_command",
+        "arguments": "{\"cmd\": \"rm -rf build\", \"justification\": \"Delete the build directory?\"}"
+      }
+    ],
+    [
+      {
+        "type": "function_call",
+        "name": "update_plan",
+        "arguments": "{\"plan\": [{\"step\": \"Inspect the workspace\", \"status\": \"completed\"}, {\"step\": \"Create hello.py\", \"status\": \"completed\"}, {\"step\": \"Run it\", \"status\": \"completed\"}]}"
+      }
+    ],
+    [
+      {
+        "type": "message",
+        "text": "Created `hello.py` and ran it: it prints `hello from educodex`. I left the build directory alone."
+      }
+    ]
+  ]
+}

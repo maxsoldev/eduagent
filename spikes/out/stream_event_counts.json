@@ -1,0 +1,9 @@
+{
+  "response.created": 1,
+  "response.in_progress": 1,
+  "response.output_item.added": 1,
+  "response.custom_tool_call_input.delta": 17,
+  "response.custom_tool_call_input.done": 1,
+  "response.output_item.done": 1,
+  "response.completed": 1
+}

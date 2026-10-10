@@ -1,0 +1,162 @@
+"""A session runs one thread (conversation): its history, model client, tools and policies.
+
+Mirrors codex-rs/core/src/session/session.rs + thread_manager.rs, much simplified: one turn runs
+at a time, and the session talks to its host (app server, CLI, tests) only through the event bus
+and one callback for questions to the user (approvals).
+"""
+
+import asyncio
+import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from educodex.client import ModelClient
+from educodex.config import Config
+from educodex.events import EventBus
+from educodex.history import History
+from educodex.items import ResponseItem
+from educodex.mcp.manager import McpManager
+from educodex.models import model_info
+from educodex.policy.rules import load_rules
+from educodex.rollout import RolloutRecorder
+from educodex.stepper import Stepper
+from educodex.tools.handlers import builtin_handlers
+from educodex.tools.processes import ProcessManager
+from educodex.tools.registry import ToolRouter
+from educodex.turn import new_turn, run_turn
+
+# Called for server-initiated requests (approvals). Returns the client's JSON-RPC result.
+ClientRequest = Callable[[str, dict[str, Any]], Awaitable[Any]]
+
+
+async def _deny_all(method: str, params: dict[str, Any]) -> dict:
+    return {"decision": "decline", "action": "decline"}
+
+
+class Session:
+    def __init__(
+        self,
+        config: Config,
+        bus: EventBus | None = None,
+        request_client: ClientRequest = _deny_all,
+        transport: httpx.AsyncBaseTransport | None = None,
+        thread_id: str | None = None,
+    ) -> None:
+        self.config = config
+        self.bus = bus or EventBus()
+        self.request_client = request_client
+        self.thread_id = thread_id or str(uuid.uuid4())
+        self.history = History()
+        self.processes = ProcessManager()
+        self.stepper = Stepper()
+        self.mcp = McpManager(config.mcp_servers)
+        self.rules = load_rules(config.home, config.rules)
+        self.approved_commands: set[str] = set()
+        self.approved_patch_paths: set[Path] = set()
+        self.running_items: dict[int, dict] = {}  # exec items whose process is still running
+        self.total_usage: dict[str, int] = {}  # summed over all model requests
+        self.context_snapshot: dict[str, str] | None = None  # last emitted context fragments
+        self.trace_sse = False  # opt-in: one trace event per raw SSE event
+        self.rollout = RolloutRecorder(config.home, self.thread_id)
+        self._transport = transport
+        self._turn_task: asyncio.Task | None = None
+        self._configure_model()
+
+    def _configure_model(self) -> None:
+        self.model_info = model_info(self.config.model)
+        if self.config.base_instructions:
+            self.base_instructions = self.config.base_instructions
+            self.base_instructions_source = "config.base_instructions"
+        else:
+            self.base_instructions = self.model_info.base_instructions
+            self.base_instructions_source = f"vendor/codex/models.json → {self.model_info.slug}.model_messages.instructions_template"
+        self.client = ModelClient(
+            self.config.model, self.model_info, self.config.api_key, self.config.base_url, self.thread_id,
+            self.config.reasoning_effort, self.config.reasoning_summary, self._transport,
+        )
+
+    async def start(self) -> dict:
+        """Connect MCP servers, build the tool list, write the session log header."""
+        await self.mcp.start(self)
+        self.router = ToolRouter(builtin_handlers(self.config.include_plan_tool, self.model_info.apply_patch_tool_type) + self.mcp.handlers(),
+                                 self.mcp.namespace_specs())
+        note = None
+        if self.model_info.codex_tool_mode or self.model_info.codex_use_responses_lite:
+            note = (f"Codex runs {self.model_info.slug} with tool_mode={self.model_info.codex_tool_mode}, "
+                    f"use_responses_lite={self.model_info.codex_use_responses_lite}: one JavaScript `exec` tool, sent as an "
+                    "`additional_tools` input item. educodex uses classic tool calling, as Codex does for gpt-5.5.")
+        await self.bus.emit("trace/toolsRegistered", threadId=self.thread_id, tools=self.router.specs(),
+                            mcpServers=self.mcp.summary(), codexToolModeNote=note)
+        self.rollout.session_meta(self.config, self.base_instructions)
+        thread = self.thread_info()
+        await self.bus.emit("thread/started", thread=thread)
+        return thread
+
+    def thread_info(self) -> dict:
+        return {"id": self.thread_id, "preview": "", "modelProvider": "openrouter", "model": self.config.model,
+                "cwd": str(self.config.cwd), "path": str(self.rollout.path), "status": "idle", "ephemeral": False}
+
+    async def record(self, *items: ResponseItem) -> None:
+        """Append to history (and the session log), and tell observers."""
+        self.history.record(*items)
+        for item in items:
+            self.rollout.response_item(item)
+        await self.bus.emit("trace/historyChanged", threadId=self.thread_id, appended=list(items),
+                            totalItems=len(self.history.items), tokens=self.history.token_count())
+
+    def apply_overrides(self, **overrides: Any) -> None:
+        """Per-turn settings from turn/start (cwd, approvalPolicy, sandbox, model, effort)."""
+        values = {k: v for k, v in overrides.items() if v is not None}
+        if not values:
+            return
+        model_changed = "model" in values and values["model"] != self.config.model
+        self.config = replace(self.config, **values)
+        if model_changed or "reasoning_effort" in values:
+            old = self.client
+            self._configure_model()
+            asyncio.get_running_loop().create_task(old.aclose())
+
+    @property
+    def turn_running(self) -> bool:
+        return bool(self._turn_task and not self._turn_task.done())
+
+    def start_turn(self, text: str) -> dict:
+        """Start a turn in the background and return its Turn object (status inProgress)."""
+        if self.turn_running:
+            raise RuntimeError("a turn is already running")
+        turn = new_turn()
+        self._turn_task = asyncio.create_task(run_turn(self, text, turn))
+        return {**turn, "items": []}
+
+    def start_compaction(self) -> None:
+        """Manual compaction runs as the session's task, so it can never overlap a turn (Codex CompactTask)."""
+        from educodex.compact import run_compact
+        from educodex.turn import TurnContext
+
+        if self.turn_running:
+            raise RuntimeError("a turn is already running")
+        ctx = TurnContext(self, turn_id=f"compact-{uuid.uuid4()}")
+        self._turn_task = asyncio.create_task(run_compact(ctx, reason="manual"))
+
+    async def run(self, text: str) -> dict:
+        """Run one turn to completion (CLI and tests)."""
+        self.start_turn(text)
+        return await self._turn_task
+
+    def interrupt(self) -> bool:
+        if self._turn_task and not self._turn_task.done():
+            self.stepper.release()
+            self._turn_task.cancel()
+            return True
+        return False
+
+    async def close(self) -> None:
+        self.interrupt()
+        await self.processes.terminate_all()
+        await self.mcp.close()
+        await self.client.aclose()
+        self.rollout.close()

@@ -1,0 +1,100 @@
+{
+  "id": "gen-1791407776-fgp3p1vTJoN99sAUVUF0",
+  "object": "response",
+  "created_at": 1791407776,
+  "model": "openai/gpt-6-luna",
+  "status": "completed",
+  "completed_at": 1791407778,
+  "output": [
+    {
+      "id": "rs_09f456d05f6ae8a8016ac6b6a11f8487d1a99360a8f3565710",
+      "type": "reasoning",
+      "status": "completed",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "**Clarifying Mersenne primes**\n\nI need to provide a factual answer about the Mersenne prime exponent 61. So, my response could be: \u201cYes, because it passes the Lucas-Lehmer test,\u201d which is concise and directly addresses the user\u2019s question. I want to make sure it\u2019s exactly one sentence, ensuring clarity and precision in my response. Keeping it brief yet informative is key here! I\u2019ll finalize that to maintain focus on the important details."
+        }
+      ],
+      "encrypted_content": "gAAAAABqxrai__D0TGtoaXxY1FDXpoHGoZcDs1rvD9zG7BSo7pIuTj2N8ECTK1B2butZj2I_jtVx7eQ1x7bvTnnkTUPskx5xjYPDezPst4ey32E81ScLmL9J_oyP0gc9F1KvBRwpCiGnqVOovPj8VmJ-YdP_KTD1KZ__k3MDQGSCpp6DljbbzOND8UXTFxjKXNnXpslDb3TSQLS05ZWhM1BSzOuJ0UwAOe-0TdUsUgU3BHdvg3Bs_dXZurBWOinVhHlXOJf7QSoZXC7PIeSUshBCGghBjs4jdpzPUbIWwSzaXmBmvTDHMImrQaBOKVOnmQleGGwhoulwEiCd4W_wuhqGo5ZdPs_uVX8qjLjJn-8i58J6yZCbs91Ei3wmEx-RNbuy1XJ0dS5LQxOcChY7OzgN-in7CM8F3hpXSwbCycLTwgsAsPST6UCmP8QfT3N9d_55LL6TXPsLpcumYQB3O6eCrXoknhELn5LzIUQ34Pd7Q-gfDXOmFR-GTEo-7XrdLlcfVTx0Axo6OorsH_RA_HMk85LmabK25LqVGzlqnuJJ4eLyOAp-tUY2p5FfTTGS8D6CVf2kGTNw7xERNMMBp1jzK8_tL4dJDMlXBrz2TRCKuugwYkaId1T3kJjGWFQ_8Noj5wdIuZ9xtQC_bxP2lbAEAcPB9NGZI2hQK-LDEhCDMlA2BSvgyNzmZ_Tl-mglAygePM4ao8BtQXDzj8xPt6k5f_7-DsN9wAupu9M3z5YgMhrekixNg1vCGheOa_8Hz46hohDPL9-OOyyEDv1rLwwdC08Y6GGdmWNS-FyOwybgGFXplYhDzaJp2a1WfSh6ikDlsEVYc7EWNX_ILCraAE_Oieq4bC_PRmXrj_cIBxVSzwoFyePgjLNXrIRQzRo7jDzzXVr63g6W0fmqLfzvENnWIrhe3TQ3KAj63rWHqSYGdKZEwgnGLz3FM7JqBPS1bklUG1IoBTqhmxxPmhyPM_0u2BH6mHEZqp_10qvfeHdPbC7gU9BeJqKh3pIPmHD5wfNhOh1bn-9pDc1N3QxnS11jvJyUFh76PYVKTH4LR66rC1S7q5Ln-WPXFANZVQymZFcOJ0mTALZJT3Tf6Ziaj0w9Tw245SNuuujvoGJmAIgonavYkZskZTapF5YdNCYBg4bMgDpv4N5UDs8M39ZUJKBhrjzn-AnAAI123bkzCa-4iP5bfFFusHzHtgEdOJyFPpKqJe0R3W-8ZeanKL_P_cu9M7zxr6Eb-F4nGKc82KUzDKzjD0gSVTw0FFllBdCw7VFdEVq9NQ04D4NFcaBbl98rQrrJQGt0c8BP27WduTAHX8-llOPtHejXMyc1cAOcwYFXJt59LJ1AF9vnB8e5zTGA4IiOTSoTlx1di6vqRwh7Q5kZuXLiVn7SGW0M4OdumWYNgJxYLcrPB4dZvbtH8G6kxhh74eu7LUi8mFsTGJLiBONysnUp9BYqhEmvMB7glRK5178RYljtlUgx58JrxauGMTUbIhJla8o804nynTalXuv4D0CbbQbjY3kUemgswrstoHb7Ofjd0yEV1dC-QYRPK-6UKpTvDnEATUXQ0l2I_DcbV5sTwZ3dnpLtTdLI8Fk0y1_opBoH.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC02LWx1bmEtMjAyNjA5MjJ8b3BlbmFpIn0",
+      "format": "openai-responses-v1"
+    },
+    {
+      "id": "msg_tmp_i8lf2rdogkr",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Yes, because \\(2^{61}-1\\) passes the Lucas\u2013Lehmer primality test.",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "phase": "final_answer"
+    }
+  ],
+  "error": null,
+  "incomplete_details": null,
+  "tools": [
+    {
+      "type": "custom",
+      "name": "apply_patch",
+      "description": "The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+      "format": {
+        "type": "grammar",
+        "definition": "start: begin_patch hunk+ end_patch\nbegin_patch: \"*** Begin Patch\" LF\nend_patch: \"*** End Patch\" LF?\n\nhunk: add_hunk | delete_hunk | update_hunk\nadd_hunk: \"*** Add File: \" filename LF add_line+\ndelete_hunk: \"*** Delete File: \" filename LF\nupdate_hunk: \"*** Update File: \" filename LF change_move? change?\n\nfilename: /(.+)/\nadd_line: \"+\" /(.*)/ LF -> line\n\nchange_move: \"*** Move to: \" filename LF\nchange: (change_context | change_line)+ eof_line?\nchange_context: (\"@@\" | \"@@ \" /(.+)/) LF\nchange_line: (\"+\" | \"-\" | \" \") /(.*)/ LF\neof_line: \"*** End of File\" LF\n\n%import common.LF\n",
+        "syntax": "lark"
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": false,
+  "max_output_tokens": null,
+  "temperature": 1,
+  "top_p": 1,
+  "presence_penalty": 0,
+  "frequency_penalty": 0,
+  "top_logprobs": 0,
+  "max_tool_calls": null,
+  "metadata": {},
+  "background": false,
+  "previous_response_id": null,
+  "service_tier": "default",
+  "truncation": "disabled",
+  "store": false,
+  "instructions": "You are a coding agent. Use apply_patch to edit files.",
+  "text": {
+    "format": {
+      "type": "text"
+    }
+  },
+  "reasoning": {
+    "effort": "medium",
+    "summary": "detailed",
+    "context": "all_turns",
+    "mode": "standard"
+  },
+  "safety_identifier": null,
+  "prompt_cache_key": null,
+  "prompt_cache_options": null,
+  "usage": {
+    "input_tokens": 406,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 73,
+    "output_tokens_details": {
+      "reasoning_tokens": 45
+    },
+    "total_tokens": 479,
+    "cost": 7.71e-05,
+    "is_byok": false,
+    "cost_details": {
+      "upstream_inference_cost": 7.71e-05,
+      "upstream_inference_input_cost": 4.06e-05,
+      "upstream_inference_output_cost": 3.65e-05
+    }
+  }
+}

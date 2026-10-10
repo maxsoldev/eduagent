@@ -1,0 +1,203 @@
+# 17 — Clients and observability
+
+## Concept
+
+### One protocol, many clients
+
+Chapter 16 put a protocol between the harness and the UI. The benefit shows up here: every client is just a JSON-RPC reader and writer. It does not need to know about prompts, SSE or sandboxes. A client has four jobs:
+
+1. **Connect and handshake:** `initialize`, then `initialized`.
+2. **Send requests:** `thread/start`, `turn/start`, `turn/interrupt`.
+3. **Build its view from notifications:** `item/started` creates an entry, deltas extend it, and `item/completed` gives it its final form.
+4. **Answer server requests:** show an approval prompt and reply with the same `id`.
+
+So a web page, a terminal app and a test script all work the same way. Codex's VS Code extension, desktop app, JetBrains and Xcode integrations are all clients of the same App Server.
+
+### Derive state from events
+
+A good client keeps **no state of its own** about the agent. Its state is a function of the messages it has received:
+
+```
+state = reduce(initialState, [notification1, notification2, ...])
+```
+
+This has useful consequences:
+- **Reconnecting is easy.** Ask the server for the thread (`thread/read`) and replay.
+- **Two clients agree.** The same events give the same picture.
+- **Testing is easy.** Feed in a recorded event list and check the result.
+
+### Observability: seeing what the agent did
+
+When an agent does something odd, "the model was wrong" is rarely the full answer. You need to see what it was *given*: which prompt, which tools, which outputs, and which policy decisions. Production harnesses record this for debugging, telemetry and evals. educodex goes one step further and puts it in the UI, live, as `trace/*` events (chapter 16).
+
+Useful things to record, roughly in order of value:
+
+| Signal | Answers |
+|---|---|
+| The exact request body per model call | "What did the model actually see?" |
+| Usage per call (input, cached input, output) | Cost, and whether the prompt cache is hitting |
+| Loop decisions and iteration count | "Why did it stop / keep going?" |
+| Policy and sandbox decisions | "Why was this command allowed / blocked / asked about?" |
+| Tool latency and output size | Slow tools; outputs that eat the context window |
+| Compactions (tokens before/after) | How often long sessions lose detail |
+
+Recorded sessions (chapter 15) can then be replayed, compared across harness versions, or turned into eval cases.
+
+### Testing without a model
+
+Real models are slow, cost money, and give different answers each time. For tests and offline demos, a harness can swap the model for a **fake** that replays scripted responses in the real wire format. The rest of the harness (loop, tools, policy, protocol, UI) runs for real.
+
+## In educodex
+
+### Web UI ([`web/src/`](../../web/src/))
+
+| File | Job |
+|---|---|
+| [`rpc.ts`](../../web/src/rpc.ts) | JSON-RPC lite over WebSocket. Sorts incoming messages into notification, server request or response |
+| [`store.ts`](../../web/src/store.ts) | A React reducer. All UI state comes from notifications |
+| [`App.tsx`](../../web/src/App.tsx) | Handshake, controls (model, approval, sandbox, step mode, **compact**, new thread). The message box stays disabled until `thread/start` has returned a thread |
+| [`components/Chat.tsx`](../../web/src/components/Chat.tsx) | Items as a chat, plus approval cards. The buttons come from the request's `availableDecisions`, so `acceptWithExecpolicyAmendment` appears only when the server offers it (it answers with the proposed rule). A `serverRequest/resolved` notification removes the card |
+| [`components/Inspector.tsx`](../../web/src/components/Inspector.tsx) | The inspector tabs |
+| [`explain.ts`](../../web/src/explain.ts) | One explanation per event, with a guide chapter and a Codex link |
+
+`rpc.ts` tells the three kinds of incoming message apart by their fields:
+
+```ts
+if (message.method && message.id !== undefined) {
+  this.h.onServerRequest(message.id, message.method, message.params);   // approval
+} else if (message.method) {
+  this.h.onNotification(message.method, message.params);
+} else if (typeof message.id === "number") {
+  // response to one of our requests: resolve or reject the pending promise
+}
+```
+
+`store.ts` is the "state from events" idea in about 100 lines. Streaming items live in `live` until they complete:
+
+```ts
+case "item/started":
+  return { ...s, live: { ...s.live, [rest.item.id]: { ...rest.item } } };
+case "item/agentMessage/delta":
+case "item/commandExecution/outputDelta": {
+  const cur = s.live[rest.itemId];
+  ...
+  return { ...s, live: { ...s.live, [rest.itemId]: { ...cur, [field]: (cur[field] ?? "") + rest.delta } } };
+}
+case "item/completed": {
+  const live = { ...s.live };
+  delete live[rest.item.id];
+  return { ...s, live, chat: [...s.chat, { kind: "item", item: rest.item }] };
+}
+```
+
+Every notification is also appended to `events`, which the inspector reads. Every message in either direction is appended to `wire`.
+
+**Inspector tabs:**
+
+| Tab | Built from | Shows |
+|---|---|---|
+| Timeline | every event | One row per step, with its explanation and JSON. Category chips filter rows; **follow** keeps the newest row in view |
+| Context | `debug/context/get` | The exact `input` of the next request, coloured by source, with a context-window bar. **zoom to used** (on by default) scales the bar to what is used; turn it off to see the whole window and the auto-compact marker |
+| Requests | `trace/modelRequest` | Each request body. It checks that earlier items are "unchanged ✓ (prompt cache can hit)" |
+| Tools | `trace/toolsRegistered`, `trace/mcpToolsListed` / `trace/mcpToolExposed` | Tool specs as sent; for MCP, raw vs exposed side by side |
+| Guardrails | `trace/policyDecision`, `trace/sandboxCommand`, approvals | Why each command was allowed, sandboxed or asked about |
+| Protocol | `wire` | Every JSON-RPC message, filterable |
+
+**`explain.ts`** turns the UI into a teaching tool. Each event name maps to a title, a category colour, a short text, the guide chapter and a Codex path:
+
+```ts
+"trace/compacted": { title: "History compacted", category: "memory", chapter: "14", codex: "core/src/compact.rs",
+  text: "History was replaced by recent user messages + fresh context + the summary." },
+```
+
+The "guide ch.14" link opens `/guide/14`. The app server serves the matching `docs/guide/14-*.md` file ([`app_server/main.py`](../../src/educodex/app_server/main.py)).
+
+### TUI over stdio ([`tui.py`](../../src/educodex/tui.py))
+
+The Textual TUI starts `educodex app-server --listen stdio://` as a child process and speaks JSONL over its pipes. It is the same protocol as the web UI, only over a different transport:
+
+```python
+while line := await self.proc.stdout.readline():
+    message = json.loads(line)
+    if "method" in message and "id" in message:  # server -> client request (approval)
+        screen = ApprovalScreen(message["method"], message["params"], message["id"])
+        self.push_screen(screen, ...)
+    elif message.get("method") == "serverRequest/resolved":  # e.g. the turn was interrupted
+        ...  # close the matching approval screen
+    elif "method" in message:
+        self.on_notification(message["method"], message.get("params", {}))
+    elif (future := self.pending.pop(message.get("id"), None)) is not None:
+        ...
+```
+
+On the left is the chat; on the right is a one-line summary of selected `trace/*` events (`TRACE_SUMMARY`). Closing stdin is the shutdown signal.
+
+### CLI printer ([`cli.py`](../../src/educodex/cli.py))
+
+`educodex exec "task"` skips the protocol completely. It subscribes `print_event` directly to the core's `EventBus` and prints a `rich` timeline: prompt assembly, each model request, loop decisions, policy decisions, tool output. With `-v` it also prints each full request body as JSON, the streaming deltas and every other `trace/*` event. This shows the core is UI-agnostic: the app server is just one more subscriber.
+
+`EventBus.emit` ([`events.py`](../../src/educodex/events.py)) catches errors from listeners and prints them to stderr. A broken printer or a closed socket can never stop a turn.
+
+### The fake model ([`testing/fake_model.py`](../../src/educodex/testing/fake_model.py))
+
+`FakeModel` is an `httpx` transport. It replaces the network, not the client code, so `client.py` still builds the real request and parses real SSE. A script is a list of responses, and each response is a list of output items:
+
+```json
+[
+  [{"type": "function_call", "name": "exec_command", "arguments": "{\"cmd\": \"ls -la\"}"}],
+  [{"type": "message", "text": "Done."}]
+]
+```
+
+`sse_events` expands each item into `response.output_item.added`, text deltas, `response.output_item.done` and `response.completed` with a usage block. Every request body is saved in `fake.requests`, so tests can check exactly what was sent (for example, `tests/test_turn.py::test_request_shape_matches_codex`).
+
+It is used in three places:
+- **Python tests** ([`tests/conftest.py`](../../tests/conftest.py) `make_session`), including a TUI test that drives a real stdio child ([`tests/test_tui.py`](../../tests/test_tui.py)).
+- **Offline demos:** `--fake-model examples/fake/demo.json` works on `exec`, `app-server` and `tui` (it is a common option). The demo plans, runs `ls`, writes `hello.py` with `apply_patch`, runs it, and asks approval for `rm -rf build`.
+- **Browser e2e tests:** [`web/e2e/ui.spec.ts`](../../web/e2e/ui.spec.ts) with Playwright. [`playwright.config.ts`](../../web/playwright.config.ts) starts the app server with the demo script, then the test clicks through a full turn, declines the approval and checks every inspector tab. A second test steps through a turn in step mode.
+
+## In Codex
+
+- **Clients on the same protocol:** [`app-server-client/src/lib.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-client/src/lib.rs#L1) is the "shared in-process app-server client facade for CLI surfaces like TUI and exec". The [TUI](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui) depends on it ([`tui/Cargo.toml`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui/Cargo.toml#L32)). It sends app-server messages over in-process channels instead of a pipe ([`app-server/src/in_process.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src/in_process.rs)).
+- **A tiny reference client:** [`app-server-test-client/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-test-client/src), used by [`codex debug app-server send-message-v2`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/cli/src/main.rs#L288) to print the JSON of a full turn.
+- **Typed client bindings:** [`codex app-server generate-ts`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/cli/src/main.rs#L636) generates TypeScript types from the Rust protocol.
+- **Fake model in tests:** Codex runs a mock HTTP server (`wiremock`) and builds SSE bodies with helpers like [`sse`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/tests/common/responses.rs#L753), [`ev_function_call`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/tests/common/responses.rs#L969) and [`mount_sse_sequence`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/tests/common/responses.rs#L1469). The integration tests are in [`core/tests/suite/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/tests/suite).
+- **Observability:**
+  - [`otel/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/otel) exports OpenTelemetry logs, traces and metrics.
+  - [`rollout-trace/`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/rollout-trace/src/lib.rs#L1) defines a "trace bundle format, writer, and reducer for Codex rollouts".
+  - JSON-RPC requests can carry a [W3C trace context](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/rpc.rs#L52), so a client's trace continues into the server.
+
+## Where educodex is simpler
+
+- **Trace events are for people, not dashboards.** Codex sends telemetry to OTel collectors. educodex sends `trace/*` to the UI and keeps them in memory per thread.
+- **Untyped clients.** The web UI uses `any` for payloads. Codex clients use generated types.
+- **Simple reconnects.** `thread/read` with `includeTrace` returns the whole event log. Codex has thread resume, history paging and lossless event queues.
+- **One fake-model script per thread.** Each `thread/start` creates a fresh `FakeModel`, so "new thread" restarts the script. A manual compaction also uses up one scripted response.
+- **The TUI is minimal:** no diff view, no slash commands, no history browsing.
+
+## Try it
+
+1. **Web UI, offline:**
+   ```bash
+   cd web && pnpm install && pnpm build && cd ..
+   uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/edx
+   ```
+   (`mkdir -p /tmp/edx` first.) Open http://127.0.0.1:8765 and send any message (the box unlocks once the thread has started). Click rows in the **Timeline** and follow the "guide ch.NN" and "Codex:" links. In **Requests**, confirm that each request only appends items.
+2. **With a real model**, drop `--fake-model` (needs `OPENROUTER_API_KEY`) and compare the **Protocol** tab with the sequence in chapter 16.
+3. **TUI:**
+   ```bash
+   uv run educodex tui --fake-model examples/fake/demo.json --cwd /tmp/edx
+   ```
+   The same demo runs in the terminal. The approval appears as a modal.
+4. **CLI printer:** `uv run educodex exec -v "list the files here"` with a real model, or offline: `uv run educodex exec --cwd /tmp/edx --fake-model examples/fake/demo.json "go"`.
+5. **Tests:**
+   ```bash
+   uv run --group dev pytest tests/test_app_server.py tests/test_tui.py
+   cd web && pnpm exec playwright install chromium && pnpm build && pnpm test:e2e
+   ```
+6. **Write your own client.** In ~30 lines of Python, start `educodex app-server --listen stdio://`, opt out of every `trace/*` method, and print only `item/completed` items. That is a complete (if plain) agent UI.
+
+## Further reading
+- [Unlocking the Codex harness: how we built the App Server](https://openai.com/index/unlocking-the-codex-harness/): how local apps, Codex Web and the TUI integrate.
+- [Harness engineering: leveraging Codex in an agent-first world](https://openai.com/index/harness-engineering/): making logs, metrics and the UI "legible" to agents, with an observability stack per worktree.
+- [Designing agentic loops](https://simonw.substack.com/p/designing-agentic-loops): what to watch for when you let an agent run.
