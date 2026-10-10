@@ -37,7 +37,7 @@ async def make_session(workspace: Path, tmp_path: Path):
             return {"action": answer} if method == "mcpServer/elicitation/request" else {"decision": answer}
 
         config = Config(cwd=workspace, home=tmp_path / "home", api_key="test", **overrides)
-        session = Session(config, bus, ask, transport=fake, probe=Tracer(bus))
+        session = Session(config, bus, ask, transport=fake, probe=Tracer())
         session.asked = asked
         await session.start()
         created.append(session)

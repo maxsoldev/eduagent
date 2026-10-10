@@ -60,7 +60,7 @@ class McpToolHandler:
         decision = "allow" if not approval or (policy == "never" and sandbox == "danger-full-access") else (
             "forbidden" if policy == "never" else "prompt")
         await ctx.probe.policy_decision(
-            ctx, call.name, decision, sandboxed=False, matched_rules=[],
+            ctx, tool=call.name, decision=decision, sandboxed=False, matched_rules=[],
             reason=f"MCP annotations {annotations or {}} -> {'needs' if approval else 'no'} approval")
         if decision == "forbidden":
             return await self._finish(ctx, item, "failed", error="rejected: tool needs approval but approval_policy is never")

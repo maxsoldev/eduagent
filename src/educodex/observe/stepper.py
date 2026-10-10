@@ -5,12 +5,8 @@ Clients turn it on with debug/stepMode/set and resume with debug/continue.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from typing import Any
 
 BREAKPOINTS = ("beforeModelRequest", "beforeToolCall", "afterToolCall")
-
-Emit = Callable[..., Awaitable[None]]  # emit(method, **params)
 
 
 class Stepper:
@@ -26,17 +22,16 @@ class Stepper:
         if not enabled:
             self.release()
 
-    async def pause(self, name: str, info: dict[str, Any], emit: Emit) -> None:
+    def should_pause(self, name: str) -> bool:
+        """True if the loop stops here. Also forgets earlier releases, so only a new debug/continue resumes."""
         if not (self.enabled and name in self.breakpoints):
-            return
+            return False
         self._resume.clear()
-        await emit("trace/paused", breakpoint=name, info=info)
-        try:
-            await self._resume.wait()
-        except asyncio.CancelledError:  # turn/interrupt while paused: leave the stepper released
-            self.release()
-            raise
-        await emit("trace/resumed", breakpoint=name)
+        return True
+
+    async def wait(self) -> None:
+        """Until release(). An interrupt cancels the waiting turn, which also ends the wait."""
+        await self._resume.wait()
 
     def release(self) -> None:
         self._resume.set()

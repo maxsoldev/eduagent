@@ -1,5 +1,6 @@
 """The agentic loop end to end, against the scripted fake model."""
 
+import asyncio
 import json
 import sys
 import uuid
@@ -154,3 +155,25 @@ async def test_unknown_tool_and_bad_arguments(make_session):
     await session.run("x")
     outputs = [i["output"] for i in fake.requests[1]["input"] if i["type"] == "function_call_output"]
     assert outputs[0] == "unsupported call: nope" and outputs[1].startswith("failed to parse function arguments")
+
+
+async def test_interrupt_while_paused_in_step_mode(make_session):
+    session, fake, events = await make_session([[say("done")]])
+    stepper = session.probe.stepper
+    stepper.configure(True, ["beforeModelRequest"])
+
+    async def paused_count(n):
+        while len(find(events, "trace/paused")) < n:
+            await asyncio.sleep(0.01)
+
+    session.start_turn("first")
+    await asyncio.wait_for(paused_count(1), 5)
+    assert session.interrupt()
+    assert (await session._turn_task)["status"] == "interrupted"
+    assert fake.requests == []  # stopped before the model request
+
+    session.start_turn("second")  # step mode is still on: the next turn pauses again
+    await asyncio.wait_for(paused_count(2), 5)
+    stepper.release()
+    assert (await asyncio.wait_for(session._turn_task, 5))["status"] == "completed"
+    assert len(fake.requests) == 1

@@ -39,24 +39,29 @@ With `openai/gpt-6-luna` on OpenRouter:
 ## Architecture
 
 ```
-┌────────────┐ ┌────────────┐ ┌─────────┐
-│ React web  │ │ Textual TUI│ │ CLI     │   clients
-└─────┬──────┘ └─────┬──────┘ └────┬────┘
-      │ WebSocket    │ stdio (JSONL)│ in-process
-┌─────┴──────────────┴──────┐      │
-│ app_server                │      │   JSON-RPC lite; maps core events → notifications
-├───────────────────────────┴──────┤
-│ observe: tracer · pricing · stepper   (educodex only: trace/* events via the core's probe)
-├──────────────────────────────────┤
-│ core: session · turn · context · tools · policy · sandbox · compact · rollout · hooks
-├──────────────┬──────────────────┤
-│ client       │ mcp              │   Responses API over httpx/SSE · MCP servers over stdio
-└──────────────┴──────────────────┘
+┌────────────┐ ┌─────────────┐ ┌─────────┐
+│ React web  │ │ Textual TUI │ │ CLI     │   clients
+└─────┬──────┘ └──────┬──────┘ └─────┬───┘
+      │ WebSocket     │ stdio (JSONL)│ in-process
+┌─────┴───────────────┴──────┐       │
+│ app_server                 │       │       JSON-RPC lite; maps core events → notifications
+└─────────────┬──────────────┘       │
+              │                      │       hosts build Session(..., probe=Tracer())
+┌─────────────┴──────────────────────┴───┐
+│ core                                   │          ┌───────────────────┐
+│   session · turn · context · tools     │  probe   │ observe           │
+│   policy · sandbox · compact · rollout ├─────────►│   tracer          │
+│   hooks                                │          │   pricing         │
+│ ┌──────────────┐ ┌───────────────────┐ │          │   stepper         │
+│ │ client       │ │ mcp               │ │          └───────────────────┘
+│ └──────────────┘ └───────────────────┘ │          trace/* events on the
+└────────────────────────────────────────┘          session's EventBus
+  client: Responses API over httpx/SSE · mcp: MCP servers over stdio
 ```
 
 `core` never imports `observe`, `app_server` or the CLI/TUI (`tests/test_layers.py` checks this). A session publishes protocol events on an `EventBus`, and asks its host one question at a time (approvals) through a callback. This mirrors the split between Codex's `core` and `app-server`.
 
-Everything educodex adds for teaching lives in `observe/`. The core calls a `Probe` (`core/probe.py`) with one line at each interesting point; the base class does nothing. Hosts pass `Session(..., probe=Tracer(bus))`, and the `Tracer` turns those calls into `trace/*` events, runs step mode and tracks costs. Codex instruments the same places with OpenTelemetry (`codex-rs/otel/`).
+Everything educodex adds for teaching lives in `observe/`. The core calls a `Probe` (`core/probe.py`) with one line at each interesting point; the base class does nothing. Hosts pass `Session(..., probe=Tracer())`, and the `Tracer` turns those calls into `trace/*` events on the session's bus, runs step mode and tracks costs. Codex instruments the same places with OpenTelemetry (`codex-rs/otel/`).
 
 ## Module layout
 

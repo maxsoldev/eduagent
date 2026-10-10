@@ -150,7 +150,6 @@ Items are plain dicts in wire format ([`items.py`](../../src/educodex/core/items
 ```python
 elif event.type == "response.output_item.done":
     item = clean_output_item(data["item"])
-    output_items.append(item)
     await session.record(item)
 ```
 

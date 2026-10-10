@@ -2,12 +2,13 @@
 
 Codex has no such events; they show the steps a production harness hides (prompt assembly, raw
 requests, policy decisions, sandbox argv, costs). The Tracer also owns step mode and pricing.
+Use one Tracer per Session: it keeps per-request state, and a session runs one request at a time.
 """
 
+import time
 from typing import TYPE_CHECKING, Any
 
-from educodex.core.events import EventBus
-from educodex.core.items import approx_tokens
+from educodex.core.items import ResponseItem, approx_tokens, clean_output_item
 from educodex.core.probe import Probe
 from educodex.observe.pricing import Pricing, add_totals, cost_breakdown, pricing_from_models
 from educodex.observe.stepper import Stepper
@@ -18,19 +19,22 @@ if TYPE_CHECKING:
 
 
 class Tracer(Probe):
-    def __init__(self, bus: EventBus, trace_sse: bool = False) -> None:
-        self.bus = bus
+    def __init__(self, trace_sse: bool = False) -> None:
         self.trace_sse = trace_sse  # opt-in: one trace event per raw SSE event
         self.stepper = Stepper()
         self.pricing: Pricing | None = None  # fetched from the provider (OpenRouter /models)
         self.total_cost: dict = {}  # running cost totals (pricing.add_totals)
         self._pricing_for: str | None = None  # model we last fetched prices for
+        # the current model request
+        self._started = 0.0
+        self._event_counts: dict[str, int] = {}
+        self._output_items: list[ResponseItem] = []
 
     async def _thread(self, session: "Session", method: str, **params: Any) -> None:
-        await self.bus.emit(method, threadId=session.thread_id, **params)
+        await session.bus.emit(method, threadId=session.thread_id, **params)
 
     async def _turn(self, ctx: "TurnContext", method: str, **params: Any) -> None:
-        await self.bus.emit(method, threadId=ctx.thread_id, turnId=ctx.turn_id, iteration=ctx.iteration, **params)
+        await ctx.session.bus.emit(method, threadId=ctx.thread_id, turnId=ctx.turn_id, iteration=ctx.iteration, **params)
 
     # --- session --------------------------------------------------------------------------
     async def thread_started(self, session: "Session") -> None:
@@ -41,9 +45,9 @@ class Tracer(Probe):
                     "`additional_tools` input item. educodex uses classic tool calling, as Codex does for gpt-5.5.")
         await self._thread(session, "trace/toolsRegistered", tools=session.router.specs(),
                            mcpServers=session.mcp.summary(), codexToolModeNote=note)
-        await self.ensure_pricing(session)
+        await self._ensure_pricing(session)
 
-    async def ensure_pricing(self, session: "Session") -> Pricing | None:
+    async def _ensure_pricing(self, session: "Session") -> Pricing | None:
         """Prices for the current model, fetched once (again after a model switch)."""
         model = session.config.model
         if self._pricing_for != model:
@@ -71,33 +75,45 @@ class Tracer(Probe):
 
     # --- turn loop ------------------------------------------------------------------------
     async def context_built(self, ctx, fragments, changed, first_turn) -> None:
-        base = ctx.session.base_instructions
+        session = ctx.session
+        source = ("config.base_instructions" if session.config.base_instructions else
+                  f"vendor/codex/models.json → {session.model_info.slug}.model_messages.instructions_template")
+        base = session.base_instructions
         await self._turn(ctx, "trace/promptAssembled",
-                         baseInstructions={"source": ctx.session.base_instructions_source, "chars": len(base),
-                                           "tokens": (len(base) + 3) // 4},
+                         baseInstructions={"source": source, "chars": len(base), "tokens": (len(base) + 3) // 4},
                          fragments=[{"kind": f.kind, "role": f.role, "source": f.source, "text": f.text,
                                      "tokens": (len(f.text) + 3) // 4, "changed": f in changed} for f in fragments],
                          firstTurn=first_turn)
 
     async def checkpoint(self, ctx, name, **info) -> None:
         """Step mode: pause here until the client sends debug/continue."""
-        await self.stepper.pause(name, info, lambda method, **params: self._turn(ctx, method, **params))
+        if not self.stepper.should_pause(name):
+            return
+        if body := info.pop("body", None):  # beforeModelRequest: show sizes, not the whole request
+            info = {"inputItems": len(body["input"]), "tools": len(body["tools"]), **info}
+        await self._turn(ctx, "trace/paused", breakpoint=name, info=info)
+        await self.stepper.wait()
+        await self._turn(ctx, "trace/resumed", breakpoint=name)
 
     async def model_request(self, ctx, body) -> None:
+        self._started, self._event_counts, self._output_items = time.monotonic(), {}, []
         await self._turn(ctx, "trace/modelRequest", url=f"{ctx.config.base_url}/responses", body=body,
                          inputTokensEstimate=sum(approx_tokens(i) for i in body["input"]))
 
-    async def sse_event(self, ctx, data) -> None:
+    async def sse_event(self, ctx, event) -> None:
+        self._event_counts[event.type] = self._event_counts.get(event.type, 0) + 1
+        if event.type == "response.output_item.done":
+            self._output_items.append(clean_output_item(event.data["item"]))
         if self.trace_sse:
-            await self._turn(ctx, "trace/sseEvent", event=data)
+            await self._turn(ctx, "trace/sseEvent", event=event.data)
 
-    async def model_response(self, ctx, body, output_items, usage, event_counts, seconds) -> None:
+    async def model_response(self, ctx, body, usage) -> None:
         cost = None
         if usage:  # what this request cost and how much the prompt cache saved
-            cost = cost_breakdown(usage, await self.ensure_pricing(ctx.session))
+            cost = cost_breakdown(usage, await self._ensure_pricing(ctx.session))
             self.total_cost = add_totals(self.total_cost, cost)
-        await self._turn(ctx, "trace/modelResponse", usage=usage, eventCounts=event_counts, outputItems=output_items,
-                         seconds=round(seconds, 3), cost=cost)
+        await self._turn(ctx, "trace/modelResponse", usage=usage, eventCounts=self._event_counts,
+                         outputItems=self._output_items, seconds=round(time.monotonic() - self._started, 3), cost=cost)
         if cost:
             await self._turn(ctx, "trace/cost", last=cost, total=self.total_cost,
                              inputItems=len(body["input"]), toolsTokens=approx_tokens({"tools": body["tools"]}))

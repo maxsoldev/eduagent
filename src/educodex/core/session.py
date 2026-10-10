@@ -68,12 +68,7 @@ class Session:
 
     def _configure_model(self) -> None:
         self.model_info = model_info(self.config.model)
-        if self.config.base_instructions:
-            self.base_instructions = self.config.base_instructions
-            self.base_instructions_source = "config.base_instructions"
-        else:
-            self.base_instructions = self.model_info.base_instructions
-            self.base_instructions_source = f"vendor/codex/models.json → {self.model_info.slug}.model_messages.instructions_template"
+        self.base_instructions = self.config.base_instructions or self.model_info.base_instructions
         self.client = ModelClient(
             self.config.model, self.model_info, self.config.api_key, self.config.base_url, self.thread_id,
             self.config.reasoning_effort, self.config.reasoning_summary, self._transport,

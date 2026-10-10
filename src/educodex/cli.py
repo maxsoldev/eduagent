@@ -116,7 +116,7 @@ async def run_exec(args) -> int:
         from educodex.testing.fake_model import FakeModel
 
         transport = FakeModel.from_file(args.fake_model)
-    session = Session(build_config(args), bus, ask_user, transport=transport, probe=Tracer(bus))
+    session = Session(build_config(args), bus, ask_user, transport=transport, probe=Tracer())
     try:
         await session.start()
         turn = await session.run(args.prompt)

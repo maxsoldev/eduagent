@@ -58,8 +58,8 @@ class ExecCommandHandler:
         approval_key = f"{workdir}\0{escalate}\0{resolve_shell(args.get('shell'))}\0{cmd}"
         decision = decide_exec(cmd, config.approval_policy, config.sandbox_mode, ctx.rules, escalate,
                                {cmd} if approval_key in ctx.approved_commands else set())
-        await ctx.probe.policy_decision(ctx, "exec_command", decision.decision, decision.sandboxed, decision.reason,
-                                        decision.matched_rules, command=cmd)
+        await ctx.probe.policy_decision(ctx, tool="exec_command", decision=decision.decision, sandboxed=decision.sandboxed,
+                                        reason=decision.reason, matched_rules=decision.matched_rules, command=cmd)
 
         item = {"type": "commandExecution", "id": call.call_id, "command": cmd, "cwd": str(workdir),
                 "processId": None, "status": "inProgress", "commandActions": [], "aggregatedOutput": "",
@@ -173,8 +173,8 @@ class ApplyPatchHandler:
         paths = [w.path for _, writes in planned for w in writes]
         roots = [Path(r).resolve() for r in seatbelt.writable_roots(ctx.config.cwd)]
         decision = decide_patch(paths, ctx.config.approval_policy, ctx.config.sandbox_mode, roots)
-        await ctx.probe.policy_decision(ctx, "apply_patch", decision.decision, False, decision.reason, [],
-                                        paths=[str(p) for p in paths])
+        await ctx.probe.policy_decision(ctx, tool="apply_patch", decision=decision.decision, sandboxed=False,
+                                        reason=decision.reason, matched_rules=[], paths=[str(p) for p in paths])
         if decision.decision == "forbidden":
             return await self._done(ctx, item, "declined", f"patch rejected: {decision.reason}", started, 1)
         if decision.decision == "prompt" and not ctx.patch_paths_approved_for_session(paths):

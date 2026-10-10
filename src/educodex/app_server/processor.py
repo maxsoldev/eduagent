@@ -133,7 +133,7 @@ class MessageProcessor:
         async def ask_client(method: str, request: dict) -> Any:
             return await state.owner.request(method, request)
 
-        tracer = Tracer(bus, trace_sse=bool(params.get("traceSse")))
+        tracer = Tracer(trace_sse=bool(params.get("traceSse")))
         session = Session(config, bus, ask_client, transport=self.transport_factory() if self.transport_factory else None,
                           probe=tracer)
         state = ThreadState(session, tracer, conn)

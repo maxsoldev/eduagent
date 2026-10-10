@@ -111,7 +111,7 @@ This string becomes the tool's output (`function_call_output`), so the model rea
 
 **Where they are called** in [`turn.py`](../../src/educodex/core/turn.py):
 - `UserPromptSubmit` at the start of [`run_turn`](../../src/educodex/core/turn.py#L124). A block raises `HookBlocked`; the turn ends with a `warning` notification.
-- `PreToolUse` and `PostToolUse` around each tool call in [`run_tool_calls`](../../src/educodex/core/turn.py#L252). If `PreToolUse` blocks, the tool does not run and `PostToolUse` is skipped. As in Codex, `write_stdin` gets no tool hooks: it only feeds a command that `PreToolUse` already saw.
+- `PreToolUse` and `PostToolUse` around each tool call in [`run_tool_calls`](../../src/educodex/core/turn.py#L247). If `PreToolUse` blocks, the tool does not run and `PostToolUse` is skipped. As in Codex, `write_stdin` gets no tool hooks: it only feeds a command that `PreToolUse` already saw.
 - `Stop` when the model gives an answer without tool calls ([L157](../../src/educodex/core/turn.py#L157)):
 
 ```python

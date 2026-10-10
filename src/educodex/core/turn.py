@@ -201,18 +201,14 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
         parallel_tool_calls=session.model_info.supports_parallel_tool_calls,
     )
     body = session.client.build_request(prompt)
-    await ctx.probe.checkpoint(ctx, "beforeModelRequest", inputItems=len(body["input"]), tools=len(body["tools"]))
+    await ctx.probe.checkpoint(ctx, "beforeModelRequest", body=body)
     await ctx.probe.model_request(ctx, body)
 
     tool_calls: list[ResponseItem] = []
     usage: dict | None = None
     end_turn_false = False
-    started = time.monotonic()
-    event_counts: dict[str, int] = {}
-    output_items: list[ResponseItem] = []
     async for event in session.client.stream(body):
-        event_counts[event.type] = event_counts.get(event.type, 0) + 1
-        await ctx.probe.sse_event(ctx, event.data)
+        await ctx.probe.sse_event(ctx, event)
         data = event.data
         if event.type == "response.output_item.added":
             await _item_added(ctx, data["item"])
@@ -223,7 +219,6 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
                            summaryIndex=data.get("summary_index", 0), delta=data.get("delta", ""))
         elif event.type == "response.output_item.done":
             item = clean_output_item(data["item"])
-            output_items.append(item)
             await session.record(item)
             if is_tool_call(item):
                 tool_calls.append(item)
@@ -235,7 +230,7 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
                 end_turn_false = True
 
     session.history.set_usage(usage)
-    await ctx.probe.model_response(ctx, body, output_items, usage, event_counts, time.monotonic() - started)
+    await ctx.probe.model_response(ctx, body, usage)
     if usage:
         last = token_breakdown(usage)
         total = session.total_usage = {k: session.total_usage.get(k, 0) + v for k, v in last.items()}
