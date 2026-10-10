@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Json } from "../rpc";
 import type { Approval, ChatEntry } from "../store";
 
@@ -58,12 +58,11 @@ function Item({ item, live }: { item: Json; live?: boolean }) {
       return <FileChange item={item} />;
     case "mcpToolCall":
       return (
-        <div className="card tool" data-testid="mcp-call">
-          <div className="card-head"><span className="badge mcp">MCP</span><code>{item.server}.{item.tool}</code><Status s={item.status} /></div>
+        <ToolCard testId="mcp-call" head={<><span className="badge mcp">MCP</span><code className="grow">{item.server}.{item.tool}</code><Status s={item.status} /></>}>
           <pre className="small">{JSON.stringify(item.arguments)}</pre>
           {item.result && <pre className="out">{item.result.content?.map((c: Json) => c.text).join("\n") ?? JSON.stringify(item.result)}</pre>}
           {item.error && <pre className="out err">{item.error.message}</pre>}
-        </div>
+        </ToolCard>
       );
     case "contextCompaction":
       return <div className="turn-sep compaction">⟲ context compacted{live ? "…" : ""}</div>;
@@ -76,24 +75,38 @@ function Status({ s }: { s: string }) {
   return <span className={`status ${s}`}>{s}</span>;
 }
 
-function Command({ item }: { item: Json }) {
+// A tool card whose body (arguments, output, diff) can be folded away; the header stays as a summary.
+function ToolCard({ testId, className = "tool", head, children }: {
+  testId: string; className?: string; head: ReactNode; children?: ReactNode;
+}) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="card tool" data-testid="command">
-      <div className="card-head" onClick={() => setOpen(!open)}>
-        <span className="badge exec">$</span><code className="grow">{item.command}</code>
-        {item.exitCode !== null && item.exitCode !== undefined && <span className="muted">exit {item.exitCode}</span>}
-        <Status s={item.status} />
-      </div>
-      {open && item.aggregatedOutput && <pre className="out">{item.aggregatedOutput}</pre>}
+    <div className={`card ${className}${open ? "" : " collapsed"}`} data-testid={testId}>
+      <button type="button" className="card-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="chevron">{open ? "▾" : "▸"}</span>
+        {head}
+      </button>
+      {open && children}
     </div>
   );
 }
 
-function FileChange({ item }: { item: Json }) {
+function Command({ item }: { item: Json }) {
   return (
-    <div className="card tool" data-testid="file-change">
-      <div className="card-head"><span className="badge patch">patch</span><span className="grow">{item.changes.length} file(s)</span><Status s={item.status} /></div>
+    <ToolCard testId="command" head={<>
+      <span className="badge exec">$</span><code className="grow">{item.command}</code>
+      {item.exitCode !== null && item.exitCode !== undefined && <span className="muted">exit {item.exitCode}</span>}
+      <Status s={item.status} />
+    </>}>
+      {item.aggregatedOutput && <pre className="out">{item.aggregatedOutput}</pre>}
+    </ToolCard>
+  );
+}
+
+function FileChange({ item }: { item: Json }) {
+  const names = item.changes.map((c: Json) => c.path).join(", ");
+  return (
+    <ToolCard testId="file-change" head={<><span className="badge patch">patch</span><span className="grow" title={names}>{item.changes.length} file(s): {names}</span><Status s={item.status} /></>}>
       {item.changes.map((c: Json) => (
         <div key={c.path}>
           <div className="file"><b>{c.kind.type}</b> {c.path}{c.kind.move_path ? ` → ${c.kind.move_path}` : ""}</div>
@@ -102,17 +115,18 @@ function FileChange({ item }: { item: Json }) {
           ))}</pre>
         </div>
       ))}
-    </div>
+    </ToolCard>
   );
 }
 
 function Plan({ plan, explanation }: { plan: { step: string; status: string }[]; explanation?: string }) {
   const icon = (s: string) => (s === "completed" ? "✔" : s === "inProgress" ? "◐" : "○");
+  const done = plan.filter((p) => p.status === "completed").length;
   return (
-    <div className="card plan" data-testid="plan">
-      <div className="card-head"><span className="badge plan">plan</span>{explanation && <span className="muted">{explanation}</span>}</div>
+    <ToolCard testId="plan" className="plan" head={<><span className="badge plan">plan</span>
+      <span className="grow muted">{done}/{plan.length} done{explanation ? ` · ${explanation}` : ""}</span></>}>
       {plan.map((p, i) => <div key={i} className={`step ${p.status}`}>{icon(p.status)} {p.step}</div>)}
-    </div>
+    </ToolCard>
   );
 }
 

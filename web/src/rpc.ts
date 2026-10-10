@@ -15,7 +15,6 @@ type Handlers = {
 export function defaultUrl(): string {
   const env = import.meta.env.VITE_RPC_URL as string | undefined;
   if (env) return env;
-  if (location.port === "5173") return "ws://127.0.0.1:8765/rpc"; // vite dev server
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/rpc`;
 }
 

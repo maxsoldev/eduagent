@@ -23,6 +23,14 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
   await expect(page.getByTestId("command").filter({ hasText: "rm -rf build" })).toContainText("declined");
   await expect(page.getByTestId("plan").last()).toContainText("Run it");
 
+  // Tool cards fold away to their header and open again.
+  const run = page.getByTestId("command").filter({ hasText: "python3 hello.py" });
+  await run.locator(".card-head").click();
+  await expect(run.locator(".card-head")).toHaveAttribute("aria-expanded", "false");
+  await expect(run).not.toContainText("hello from educodex");
+  await run.locator(".card-head").click();
+  await expect(run).toContainText("hello from educodex");
+
   // Timeline shows the hidden steps.
   const timeline = page.getByTestId("timeline");
   for (const title of ["Prompt assembled", "Model request", "Loop decision", "Policy decision", "Sandboxed command", "Approval requested"]) {
@@ -37,6 +45,8 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
   await expect(items.first()).toContainText("base instructions");
   await expect(items.nth(1)).toContainText("permissions");
   await expect(page.getByTestId("context-view")).toContainText("tool output");
+  await items.nth(1).locator(".t-head").click();  // expanded parts show their content type
+  await expect(page.getByTestId("ctx-part").first()).toContainText("part 1 · type: input_text");
 
   // Requests: each request extends the previous one (prompt-cache friendly).
   await page.getByTestId("tab-Requests").click();

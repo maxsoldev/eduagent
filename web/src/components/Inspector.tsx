@@ -160,7 +160,7 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
       <div className="ctx-list">
         {input.map((item, i) => {
           const c = classify(item, i);
-          const parts = item.type === "message" ? item.content.map((p: Json) => p.text) : null;
+          const parts: Json[] | null = item.type === "message" ? item.content : null;
           return (
             <div key={i} className="ctx-item" data-testid="ctx-item">
               <div className="t-head" onClick={() => setOpen(open === i ? null : i)}>
@@ -169,7 +169,12 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
                 <span className="t-title">{c.label}</span>
                 <span className="t-sum">{item.type}{item.role ? `/${item.role}` : ""}{parts && parts.length > 1 ? ` · ${parts.length} parts` : ""} · {sizes[i]} tok</span>
               </div>
-              {open === i && (parts ? parts.map((t: string, j: number) => <pre key={j} className="part">{t}</pre>) : <JsonView value={item} open={2} />)}
+              {open === i && (parts ? parts.map((part: Json, j: number) => (
+                <div key={j} className="part" data-testid="ctx-part">
+                  <div className="part-head">part {j + 1} · type: <code>{part.type}</code> · ~{approxTokens(part)} tok</div>
+                  {typeof part.text === "string" ? <pre>{part.text}</pre> : <JsonView value={part} open={1} />}
+                </div>
+              )) : <JsonView value={item} open={2} />)}
             </div>
           );
         })}

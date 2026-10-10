@@ -67,9 +67,7 @@ export function codexLink(path?: string) {
   return path ? CODEX + path : undefined;
 }
 
-// The app server serves docs/guide/<chapter>-*.md at /guide/<chapter>.
+// The app server serves docs/guide/<chapter>-*.md at /guide/<chapter> (proxied by Vite in dev).
 export function guideLink(chapter?: string) {
-  if (!chapter) return undefined;
-  const base = location.port === "5173" ? "http://127.0.0.1:8765" : "";
-  return `${base}/guide/${chapter}`;
+  return chapter ? `/guide/${chapter}` : undefined;
 }
