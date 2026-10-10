@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 from educodex import compact, hooks
 from educodex.client import Prompt
 from educodex.context import world_state
+from educodex.pricing import add_totals, cost_breakdown
 from educodex.items import ResponseItem, approx_tokens, clean_output_item, is_tool_call, message_text, tool_output, user_message
 from educodex.tools.registry import ToolCall, TurnAborted
 
@@ -108,6 +109,7 @@ def token_breakdown(usage: dict) -> dict:
         "totalTokens": usage.get("total_tokens", 0),
         "inputTokens": usage.get("input_tokens", 0),
         "cachedInputTokens": (usage.get("input_tokens_details") or {}).get("cached_tokens", 0),
+        "cacheWriteInputTokens": (usage.get("input_tokens_details") or {}).get("cache_write_tokens", 0) or 0,
         "outputTokens": usage.get("output_tokens", 0),
         "reasoningOutputTokens": (usage.get("output_tokens_details") or {}).get("reasoning_tokens", 0),
     }
@@ -246,8 +248,16 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
                 end_turn_false = True
 
     session.history.set_usage(usage)
+    cost = None
+    if usage:  # educodex extension: what this request cost and how much the prompt cache saved
+        pricing = await session.ensure_pricing()
+        cost = cost_breakdown(usage, pricing)
+        session.total_cost = add_totals(session.total_cost, cost)
     await ctx.trace("trace/modelResponse", usage=usage, eventCounts=event_counts, outputItems=output_items,
-                    seconds=round(time.monotonic() - started, 3))
+                    seconds=round(time.monotonic() - started, 3), cost=cost)
+    if cost:
+        await ctx.trace("trace/cost", last=cost, total=session.total_cost,
+                        inputItems=len(body["input"]), toolsTokens=approx_tokens({"tools": body["tools"]}))
     if usage:
         last = token_breakdown(usage)
         total = session.total_usage = {k: session.total_usage.get(k, 0) + v for k, v in last.items()}

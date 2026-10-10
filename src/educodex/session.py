@@ -22,6 +22,7 @@ from educodex.items import ResponseItem
 from educodex.mcp.manager import McpManager
 from educodex.models import model_info
 from educodex.policy.rules import load_rules
+from educodex.pricing import Pricing
 from educodex.rollout import RolloutRecorder
 from educodex.stepper import Stepper
 from educodex.tools.handlers import builtin_handlers
@@ -59,6 +60,9 @@ class Session:
         self.approved_patch_paths: set[Path] = set()
         self.running_items: dict[int, dict] = {}  # exec items whose process is still running
         self.total_usage: dict[str, int] = {}  # summed over all model requests
+        self.pricing: Pricing | None = None  # fetched from the provider (OpenRouter /models)
+        self.total_cost: dict = {}  # running cost totals (pricing.add_totals)
+        self._pricing_for: str | None = None  # model we last fetched prices for
         self.context_snapshot: dict[str, str] | None = None  # last emitted context fragments
         self.trace_sse = False  # opt-in: one trace event per raw SSE event
         self.rollout = RolloutRecorder(config.home, self.thread_id)
@@ -91,10 +95,26 @@ class Session:
                     "`additional_tools` input item. educodex uses classic tool calling, as Codex does for gpt-5.5.")
         await self.bus.emit("trace/toolsRegistered", threadId=self.thread_id, tools=self.router.specs(),
                             mcpServers=self.mcp.summary(), codexToolModeNote=note)
+        await self.ensure_pricing()
         self.rollout.session_meta(self.config, self.base_instructions)
         thread = self.thread_info()
         await self.bus.emit("thread/started", thread=thread)
         return thread
+
+    async def ensure_pricing(self) -> Pricing | None:
+        """Prices for the current model, fetched once (again after a model switch)."""
+        if self._pricing_for != self.config.model:
+            self._pricing_for = self.config.model
+            try:
+                self.pricing = await self.client.fetch_pricing()
+            except Exception as err:  # pricing is nice to have; never fail the session over it
+                self.pricing = None
+                await self.bus.emit("trace/pricing", threadId=self.thread_id, model=self.config.model,
+                                    pricing=None, error=str(err))
+                return None
+            await self.bus.emit("trace/pricing", threadId=self.thread_id, model=self.config.model,
+                                pricing=self.pricing.to_json() if self.pricing else None, source="GET /models")
+        return self.pricing
 
     def thread_info(self) -> dict:
         return {"id": self.thread_id, "preview": "", "modelProvider": "openrouter", "model": self.config.model,

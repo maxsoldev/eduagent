@@ -3,6 +3,8 @@ import type { Json, RpcClient } from "../rpc";
 import type { State, TraceEvent } from "../store";
 import { CATEGORY_COLORS, codexLink, guideLink, info, type Category } from "../explain";
 import { JsonView } from "./JsonView";
+import { CostPanel } from "./CostPanel";
+import { cacheStatus, nextRequestCost, pct, uncachedCost, usd } from "../cost";
 
 const TABS = ["Timeline", "Context", "Requests", "Tools", "Guardrails", "Protocol"] as const;
 type Tab = (typeof TABS)[number];
@@ -10,6 +12,8 @@ const NOISY = new Set(["item/agentMessage/delta", "item/commandExecution/outputD
 
 export function Inspector({ state, rpc }: { state: State; rpc: RpcClient | null }) {
   const [tab, setTab] = useState<Tab>("Timeline");
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (body.current) body.current.scrollTop = 0; }, [tab]); // tabs share one scroller
   return (
     <div className="inspector">
       <div className="tabs">
@@ -17,7 +21,7 @@ export function Inspector({ state, rpc }: { state: State; rpc: RpcClient | null 
           <button key={t} className={t === tab ? "tab active" : "tab"} onClick={() => setTab(t)} data-testid={`tab-${t}`}>{t}</button>
         ))}
       </div>
-      <div className="tab-body">
+      <div className="tab-body" ref={body}>
         {tab === "Timeline" && <Timeline events={state.events} />}
         {tab === "Context" && <ContextView state={state} rpc={rpc} />}
         {tab === "Requests" && <Requests events={state.events} />}
@@ -54,6 +58,8 @@ function summarize(e: TraceEvent): string {
     case "trace/toolsRegistered": return p.tools.map((t: Json) => t.name).join(", ");
     case "trace/compacted": return `${p.itemsBefore} → ${p.itemsAfter} items`;
     case "trace/paused": return p.breakpoint;
+    case "trace/cost": return `${usd(p.last.billedUsd ?? p.last.usd?.total)} · ${pct(p.last.cacheHitRate)} of ${p.last.tokens.input} input tokens cached · session ${usd(p.total.billedUsd ?? p.total.usd?.total)}`;
+    case "trace/pricing": return p.pricing ? `input $${p.pricing.perMillionTokens.prompt}/M · cached $${p.pricing.perMillionTokens.cache_read}/M · output $${p.pricing.perMillionTokens.completion}/M` : "no pricing";
     default: return "";
   }
 }
@@ -145,18 +151,30 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
   const total = sizes.reduce((a, b) => a + b, 0) + toolsTokens;
   // Zoomed: the bar spans what is used (so small items are visible); otherwise the whole window.
   const scale = zoom ? Math.max(total * 1.1, 1) : ctx.contextWindow;
-  const pct = (n: number) => `${Math.max(0.3, (100 * n) / scale)}%`;
+  const barPct = (n: number) => `${Math.max(0.3, (100 * n) / scale)}%`;
+  const last = state.costs[state.costs.length - 1] ?? null;
+  const cache = cacheStatus(sizes, toolsTokens, last);
+  const real = (t: number) => t * cache.scale; // estimate -> provider token count
+  const nextCosts = input.map((_, i) => nextRequestCost(real(sizes[i]), cache.status[i], state.pricing));
+  const nextTotal = state.pricing ? nextCosts.reduce((a: number, b) => a + (b ?? 0), 0)
+    + (nextRequestCost(real(toolsTokens), last ? "cached" : "new", state.pricing) ?? 0) : null;
+  const nextUncached = uncachedCost(real(total), state.pricing);
   return (
     <div data-testid="context-view">
       <p className="explain">This is <b>exactly</b> what the next request sends: the whole history, every time.
         Colours show where each item came from. <Links method="trace/promptAssembled" /></p>
       <div className="window-bar" title="context window">
-        <div className="seg" style={{ width: pct(toolsTokens), background: "#c084fc55" }} title={`tools ${toolsTokens} tok`} />
-        {input.map((it, i) => <div key={i} className="seg" style={{ width: pct(sizes[i]), background: classify(it, i).color }} title={`${classify(it, i).label} ${sizes[i]} tok`} />)}
+        <div className="seg" style={{ width: barPct(toolsTokens), background: "#c084fc55" }} title={`tools ${toolsTokens} tok`} />
+        {input.map((it, i) => <div key={i} className="seg" style={{ width: barPct(sizes[i]), background: classify(it, i).color }} title={`${classify(it, i).label} ${sizes[i]} tok`} />)}
         {!zoom && <div className="limit" style={{ left: `${(100 * ctx.autoCompactLimit) / ctx.contextWindow}%` }} title="auto-compact limit" />}
       </div>
       <div className="muted small">
         <label><input type="checkbox" checked={zoom} onChange={(e) => setZoom(e.target.checked)} /> zoom to used</label> · ~{total.toLocaleString()} of {ctx.contextWindow.toLocaleString()} tokens (estimate) · auto-compact at {ctx.autoCompactLimit.toLocaleString()} · {ctx.request.tools.length} tools (~{toolsTokens} tok)</div>
+      {last ? <CostPanel costs={state.costs} pricing={state.pricing} next={{ withCache: nextTotal, withoutCache: nextUncached }} />
+        : <div className="cost-empty muted small">{state.events.some((e) => e.method === "trace/modelRequest")
+            ? <>The app server sent no cost data. It is probably older than this UI: restart <code>educodex app-server</code>.</>
+            : <>Costs and the prompt cache appear here after the first request.</>}</div>}
+      {last && <div className="muted small cost-note">Per-item costs below are estimates for the next request: the provider bills per request, so the total is spread over items by size. <i>cached</i> = inside the prefix the last request read from the cache.</div>}
       <div className="ctx-list">
         {input.map((item, i) => {
           const c = classify(item, i);
@@ -168,6 +186,8 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
                 <span className="dot" style={{ background: c.color }} />
                 <span className="t-title">{c.label}</span>
                 <span className="t-sum">{item.type}{item.role ? `/${item.role}` : ""}{parts && parts.length > 1 ? ` · ${parts.length} parts` : ""} · {sizes[i]} tok</span>
+                <span className={`cache-tag ${cache.status[i].replace(" ", "-")}`} title="prompt cache status in the last request">{cache.status[i]}</span>
+                {nextCosts[i] !== null && <span className="item-cost" title="estimated input cost of this item in the next request">{usd(nextCosts[i])}</span>}
               </div>
               {open === i && (parts ? parts.map((part: Json, j: number) => (
                 <div key={j} className="part" data-testid="ctx-part">
@@ -207,6 +227,7 @@ function Requests({ events }: { events: TraceEvent[] }) {
       <p className="explain">POST <code>{req.params.url}</code>. {prev && (
         <>Compared to request #{index}: <b>{input.length - prevInput.length}</b> items appended, earlier items {prefixOk ? <b className="ok">unchanged ✓ (prompt cache can hit)</b> : <b className="bad">changed ✗</b>}.</>
       )} <Links method="trace/modelRequest" /></p>
+      {response?.params.cost && <CostTable cost={response.params.cost} />}
       <h4>Request body</h4>
       <JsonView value={req.params.body} open={1} />
       {response && (
@@ -215,6 +236,33 @@ function Requests({ events }: { events: TraceEvent[] }) {
           <JsonView value={response.params} open={2} />
         </>
       )}
+    </div>
+  );
+}
+
+// One request's bill: where the input tokens came from (cache or not) and what each part cost.
+function CostTable({ cost }: { cost: Json }) {
+  const t = cost.tokens, u = cost.usd;
+  const rows: [string, number, number | undefined, string][] = [
+    ["uncached input", t.uncached, u?.uncachedInput, "full input price"],
+    ["read from cache", t.cached, u?.cachedInput, "cheap: same prefix as an earlier request"],
+    ["written to cache", t.cacheWrite, u?.cacheWrite, "new tokens stored for the next request"],
+    ["output", t.output, u?.output, t.reasoning ? `includes ${t.reasoning} reasoning tokens` : "model's reply and tool calls"],
+  ];
+  return (
+    <div data-testid="cost-table">
+      <h4>Cost</h4>
+      <table className="cost-table">
+        <tbody>
+          {rows.map(([label, tokens, dollars, note]) => (
+            <tr key={label}><td>{label}</td><td className="num">{tokens.toLocaleString()} tok</td><td className="num">{usd(dollars)}</td><td className="muted">{note}</td></tr>
+          ))}
+          <tr className="total"><td>total</td><td className="num">{(t.input + t.output).toLocaleString()} tok</td><td className="num">{usd(u?.total)}</td>
+            <td className="muted">billed by OpenRouter: {usd(cost.billedUsd)}</td></tr>
+          {u && <tr><td>without caching</td><td /><td className="num">{usd(u.withoutCache)}</td>
+            <td className="ok">caching saved {usd(u.savedByCache)} ({pct(cost.cacheHitRate)} of input cached)</td></tr>}
+        </tbody>
+      </table>
     </div>
   );
 }

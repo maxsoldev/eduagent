@@ -53,6 +53,12 @@ def sse_events(items: list[dict[str, Any]], usage: dict[str, int] | None = None)
     return events
 
 
+# openai/gpt-6-luna's OpenRouter prices (USD per token, 2026-10), so offline demos show real-looking costs.
+FAKE_PRICING = {"prompt": "0.0000001", "completion": "0.0000005", "input_cache_read": "0.00000001",
+                "input_cache_write": "0.000000125"}
+FAKE_MODELS = ["openai/gpt-6-luna", "openai/gpt-5.5", "openai/gpt-6-sol"]
+
+
 class FakeModel(httpx.AsyncBaseTransport):
     """httpx transport serving scripted responses in order. `requests` keeps every JSON body sent."""
 
@@ -60,15 +66,43 @@ class FakeModel(httpx.AsyncBaseTransport):
         self.script = list(script)
         self.usage = usage or []
         self.requests: list[dict[str, Any]] = []
+        self._previous_prompt: list[Any] | None = None
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": m, "pricing": FAKE_PRICING} for m in FAKE_MODELS]})
         body = json.loads(request.content or b"{}")
         self.requests.append(body)
         index = len(self.requests) - 1
         items = self.script[index] if index < len(self.script) else [{"type": "message", "text": "(fake model: script exhausted)"}]
-        usage = self.usage[index] if index < len(self.usage) else None
+        usage = self.usage[index] if index < len(self.usage) else self._simulated_usage(body, items)
         payload = "".join(f"data: {json.dumps(e)}\n\n" for e in sse_events(items, usage))
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=payload.encode())
+
+    def _simulated_usage(self, body: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Usage like OpenAI's prompt cache: the longest prefix shared with the previous request is
+        cached (if >= 1024 tokens, in 128-token steps); the rest is written to the cache."""
+        def tokens(value: Any) -> int:
+            return (len(json.dumps(value, ensure_ascii=False).encode()) + 3) // 4
+
+        prompt = [{"tools": body.get("tools")}, *body.get("input", [])]
+        total = sum(tokens(i) for i in prompt)
+        cached = 0
+        if self._previous_prompt:
+            for mine, theirs in zip(prompt, self._previous_prompt):
+                if mine != theirs:
+                    break
+                cached += tokens(mine)
+        cached = cached // 128 * 128 if cached >= 1024 else 0
+        self._previous_prompt = prompt
+        output = sum(tokens(_expand(i)) for i in items)
+        reasoning = sum(tokens(i.get("summary", "")) * 3 for i in items if i.get("type") == "reasoning")
+        p = {k: float(v) for k, v in FAKE_PRICING.items()}
+        cost = ((total - cached) * p["input_cache_write"] + cached * p["input_cache_read"]
+                + (output + reasoning) * p["completion"])
+        return {"input_tokens": total, "input_tokens_details": {"cached_tokens": cached, "cache_write_tokens": total - cached},
+                "output_tokens": output + reasoning, "output_tokens_details": {"reasoning_tokens": reasoning},
+                "total_tokens": total + output + reasoning, "cost": round(cost, 9)}
 
     @classmethod
     def from_file(cls, path: str) -> "FakeModel":

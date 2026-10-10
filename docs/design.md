@@ -143,6 +143,7 @@ JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over st
 
 **educodex extensions:**
 - `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `sseEvent` (opt-in), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
+- `trace/pricing` and `trace/cost`: prices from OpenRouter's `/models`, and each request's cost split into uncached input, cache reads, cache writes and output, with the savings from caching (`pricing.py`). Codex reports tokens, not money.
 - `debug/*` requests: `debug/stepMode/set`, `debug/continue`, `debug/context/get`.
 - Notifications carry `_seq` and `_ts` so the timeline can be ordered and timed.
 

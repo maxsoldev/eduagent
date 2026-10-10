@@ -22,11 +22,15 @@ export type State = {
   approvals: Approval[];
   paused: Json | null;
   tokenUsage: Json | null;
+  pricing: Json | null; // trace/pricing: per-million-token prices for the model
+  costs: Json[]; // trace/cost of every request in this thread, in order
+  costTotal: Json | null; // running totals (tokens, usd, billedUsd, cacheHitRate)
 };
 
 export const initialState: State = {
   status: "connecting", threadId: null, thread: null, turnRunning: false, currentTurnId: null,
   chat: [], live: {}, events: [], wire: [], approvals: [], paused: null, tokenUsage: null,
+  pricing: null, costs: [], costTotal: null,
 };
 
 export type Action =
@@ -45,7 +49,9 @@ export function reducer(state: State, action: Action): State {
     case "status":
       return { ...state, status: action.status };
     case "thread":
-      return { ...initialState, status: state.status, wire: state.wire, threadId: action.thread.id, thread: action.thread, events: state.events };
+      // Keep pricing: trace/pricing arrives just before the thread/start response.
+      return { ...initialState, status: state.status, wire: state.wire, threadId: action.thread.id, thread: action.thread,
+        events: state.events, pricing: state.pricing };
     case "reset":
       return { ...initialState, status: state.status };
     case "wire":
@@ -97,6 +103,10 @@ function applyNotification(state: State, method: string, params: Json): State {
       return { ...s, chat: [...s.chat, { kind: "error", message: rest.error?.message ?? "error" }] };
     case "thread/tokenUsage/updated":
       return { ...s, tokenUsage: rest.tokenUsage };
+    case "trace/pricing":
+      return { ...s, pricing: rest.pricing };
+    case "trace/cost":
+      return { ...s, costs: [...s.costs, { ...rest, seq: event.seq }], costTotal: rest.total };
     case "trace/paused":
       return { ...s, paused: rest };
     case "trace/resumed":

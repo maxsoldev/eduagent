@@ -49,8 +49,19 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
   await expect(page.getByTestId("ctx-part").first()).toContainText("part 1 · type: input_text");
 
   // Requests: each request extends the previous one (prompt-cache friendly).
+  await expect(page.getByTestId("context-cost")).toContainText("Read from cache");
+  await expect(page.getByTestId("context-cost")).toContainText("where the money goes");
+  await page.getByTestId("cost-toggle").click();  // the cost panel folds to a one-line summary
+  await expect(page.getByTestId("context-cost")).not.toContainText("where the money goes");
+  await expect(page.getByTestId("context-cost")).toContainText("session $");
+  await page.getByTestId("cost-toggle").click();
+  await expect(page.locator(".cache-tag.cached").first()).toBeVisible();
+
   await page.getByTestId("tab-Requests").click();
   await expect(page.getByTestId("requests-view")).toContainText("unchanged ✓");
+  await expect(page.getByTestId("cost-table")).toContainText("read from cache");
+  await expect(page.getByTestId("cost-table")).toContainText("caching saved");
+  await expect(page.getByTestId("cost-badge")).toContainText("cached");
 
   await page.getByTestId("tab-Tools").click();
   await expect(page.getByTestId("tools-view")).toContainText("apply_patch");

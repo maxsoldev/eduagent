@@ -49,6 +49,14 @@ def print_event(event: Event, verbose: bool) -> None:
     elif m == "trace/modelResponse":
         types = [i.get("type") for i in p["outputItems"]]
         console.print(f"  [yellow]response[/] {types} usage={p['usage'] and p['usage'].get('total_tokens')} tok in {p['seconds']}s")
+    elif m == "trace/cost":
+        last, total = p["last"], p["total"]
+        t = last["tokens"]
+        ours = last.get("usd", {}).get("total")
+        console.print(f"  [green]cost[/] ${last.get('billedUsd') or ours or 0:.6f} (computed ${ours or 0:.6f})  "
+                      f"input {t['input']} = {t['cached']} cached + {t['cacheWrite']} cache write + {t['uncached']} uncached, "
+                      f"output {t['output']}  · session ${total.get('billedUsd') or total.get('usd', {}).get('total', 0):.6f}, "
+                      f"{total['cacheHitRate']:.0%} cached")
     elif m == "trace/loopIteration":
         console.print(f"  [bold]loop[/] needs_follow_up={p['needsFollowUp']} → [bold]{p['decision']}[/]  "
                       f"context {p['tokens']}/{p['contextWindow']} (compact at {p['autoCompactLimit']})")

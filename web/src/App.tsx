@@ -3,6 +3,7 @@ import { defaultUrl, RpcClient, type Json } from "./rpc";
 import { initialState, reducer, type Approval } from "./store";
 import { Chat } from "./components/Chat";
 import { Inspector } from "./components/Inspector";
+import { pct, usd } from "./cost";
 
 // thread/start takes a kebab-case sandbox mode; turn/start takes a camelCase SandboxPolicy (as in Codex v2).
 const SANDBOX_POLICY_TAGS: Record<string, string> = { "read-only": "readOnly", "workspace-write": "workspaceWrite", "danger-full-access": "dangerFullAccess" };
@@ -97,6 +98,12 @@ export function App() {
           <label className="toggle" title="pause before each model call and tool call"><input type="checkbox" checked={stepMode} onChange={(e) => toggleStep(e.target.checked)} data-testid="step-mode" /> step mode</label>
           <button onClick={() => call("thread/compact/start")} disabled={!state.threadId || state.turnRunning} title="summarise history now">compact</button>
           <button onClick={() => startThread(settings)} disabled={state.turnRunning} data-testid="new-thread">new thread</button>
+          {state.costTotal && (
+            <span className="cost-badge" data-testid="cost-badge"
+              title={`${state.costTotal.requests} requests · ${state.costTotal.tokens.input.toLocaleString()} input tokens (${state.costTotal.tokens.cached.toLocaleString()} cached) · ${state.costTotal.tokens.output.toLocaleString()} output tokens${state.costTotal.usd ? ` · saved ${usd(state.costTotal.usd.savedByCache)} by caching` : ""}`}>
+              {usd(state.costTotal.billedUsd ?? state.costTotal.usd?.total)} · {pct(state.costTotal.cacheHitRate)} cached
+            </span>
+          )}
           <span className={`conn ${state.status}`} data-testid="conn">{state.status}</span>
         </div>
       </header>

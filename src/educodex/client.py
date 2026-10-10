@@ -112,6 +112,12 @@ class ModelClient:
                     raise
                 await asyncio.sleep(1 + attempt * 2)
 
+    async def fetch_pricing(self):
+        """Prices for this model from the provider's model list (OpenRouter GET /models)."""
+        from educodex.pricing import fetch_pricing
+
+        return await fetch_pricing(self._http, self.model)
+
     async def aclose(self) -> None:
         await self._http.aclose()
 

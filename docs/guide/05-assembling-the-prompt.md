@@ -156,6 +156,19 @@ In the web UI (`uv run educodex app-server`, then http://127.0.0.1:8765):
 
 Offline: add `--fake-model examples/fake/demo.json` to `exec` or `app-server`. The prompt assembly lines and the Context and Requests tabs work the same, because the prompt is built locally.
 
+### Watching the cache pay off
+
+The header shows the session's cost and cache hit rate (e.g. `$0.0019 · 84% cached`). The **Context** tab tags every item `cached`, `uncached` or `new` for the last request and estimates what it costs to send again. The **Requests** tab shows each request's bill. Prices come from OpenRouter's `/models` and usage from the response (`pricing.py`); educodex's numbers match OpenRouter's billed `usage.cost` exactly.
+
+A real `gpt-6-luna` turn:
+
+| Request | Input tokens | From cache | Billed |
+|---|---|---|---|
+| #1 | 5,578 | 0 (5,575 written) | $0.000728 |
+| #2 | 5,687 | 5,575 | $0.000080 |
+
+Cached input costs a tenth of normal input. Request #2 repeats #1 as a prefix, so it is about 9x cheaper. One edit to an early message would make every later request a cache miss.
+
 ## Further reading
 - [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/): the prompt layout, cache-miss causes and "append, don't modify".
 - [Prompt caching](https://platform.openai.com/docs/guides/prompt-caching): how OpenAI's cache works and how to read `cached_tokens`.
