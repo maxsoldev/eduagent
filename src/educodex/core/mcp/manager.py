@@ -15,14 +15,14 @@ import json
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any
 
-from educodex.mcp.naming import namespace_for, qualified, sanitize
-from educodex.mcp.schema import sanitize_schema
-from educodex.tools.output import truncate_middle
-from educodex.tools.registry import ToolCall, TurnAborted
+from educodex.core.mcp.naming import namespace_for, qualified, sanitize
+from educodex.core.mcp.schema import sanitize_schema
+from educodex.core.tools.output import truncate_middle
+from educodex.core.tools.registry import ToolCall, TurnAborted
 
 if TYPE_CHECKING:
-    from educodex.session import Session
-    from educodex.turn import TurnContext
+    from educodex.core.session import Session
+    from educodex.core.turn import TurnContext
 
 
 def needs_approval(annotations: dict[str, Any] | None) -> bool:
@@ -59,9 +59,9 @@ class McpToolHandler:
         policy, sandbox = ctx.config.approval_policy, ctx.config.sandbox_mode
         decision = "allow" if not approval or (policy == "never" and sandbox == "danger-full-access") else (
             "forbidden" if policy == "never" else "prompt")
-        await ctx.trace("trace/policyDecision", tool=call.name, decision=decision, sandboxed=False, matchedRules=[],
-                        reason=f"MCP annotations {annotations or {}} -> {'needs' if approval else 'no'} approval",
-                        approvalPolicy=policy, sandboxMode=sandbox)
+        await ctx.probe.policy_decision(
+            ctx, call.name, decision, sandboxed=False, matched_rules=[],
+            reason=f"MCP annotations {annotations or {}} -> {'needs' if approval else 'no'} approval")
         if decision == "forbidden":
             return await self._finish(ctx, item, "failed", error="rejected: tool needs approval but approval_policy is never")
         if decision == "prompt":
@@ -125,7 +125,7 @@ class McpManager:
                 listed = await client.list_tools()
             except Exception as err:
                 self._errors[name] = str(err)
-                await session.bus.emit("trace/mcpServerFailed", threadId=session.thread_id, server=name, error=str(err))
+                await session.probe.mcp_server_failed(session, name, str(err))
                 continue
             self._sessions[name] = client
             tools = sorted((t.model_dump(exclude_none=True, by_alias=True) for t in listed.tools), key=lambda t: t["name"])
@@ -133,10 +133,8 @@ class McpManager:
             namespace = namespace_for(name)
             handlers = _dedupe([McpToolHandler(self, name, namespace, t) for t in tools])
             self._handlers += handlers
-            await session.bus.emit("trace/mcpToolsListed", threadId=session.thread_id, server=name,
-                                   serverInfo=_server_info(init), tools=tools)
-            await session.bus.emit("trace/mcpToolExposed", threadId=session.thread_id, server=name,
-                                   spec=self._namespace_spec(name, namespace, handlers))
+            await session.probe.mcp_server_listed(session, name, _server_info(init), tools,
+                                                  self._namespace_spec(name, namespace, handlers))
 
     def _namespace_spec(self, server: str, namespace: str, handlers: list[McpToolHandler]) -> dict[str, Any]:
         return {"type": "namespace", "name": namespace, "description": f"Tools in the {namespace} namespace.",

@@ -7,10 +7,10 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from educodex.items import ResponseItem
+from educodex.core.items import ResponseItem
 
 if TYPE_CHECKING:
-    from educodex.turn import TurnContext
+    from educodex.core.turn import TurnContext
 
 
 class ToolError(Exception):

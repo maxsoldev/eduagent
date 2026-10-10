@@ -9,17 +9,17 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from educodex.policy.approval import decide_exec, decide_patch
-from educodex.policy.rules import BANNED_PREFIX_SUGGESTIONS, PrefixRule
-from educodex.policy.segments import plain_segments
-from educodex.sandbox import seatbelt
-from educodex.tools import specs
-from educodex.tools.apply_patch import PatchError, apply_planned, plan_changes
-from educodex.tools.output import format_exec_output, format_legacy_output
-from educodex.tools.registry import ToolCall, ToolError, TurnAborted
+from educodex.core.policy.approval import decide_exec, decide_patch
+from educodex.core.policy.rules import BANNED_PREFIX_SUGGESTIONS, PrefixRule
+from educodex.core.policy.segments import plain_segments
+from educodex.core.sandbox import seatbelt
+from educodex.core.tools import specs
+from educodex.core.tools.apply_patch import PatchError, apply_planned, plan_changes
+from educodex.core.tools.output import format_exec_output, format_legacy_output
+from educodex.core.tools.registry import ToolCall, ToolError, TurnAborted
 
 if TYPE_CHECKING:
-    from educodex.turn import TurnContext
+    from educodex.core.turn import TurnContext
 
 SANDBOX_DENIAL_HINTS = ("operation not permitted", "permission denied", "read-only file system", "seccomp",
                         "sandbox", "landlock", "failed to write file")
@@ -58,9 +58,8 @@ class ExecCommandHandler:
         approval_key = f"{workdir}\0{escalate}\0{resolve_shell(args.get('shell'))}\0{cmd}"
         decision = decide_exec(cmd, config.approval_policy, config.sandbox_mode, ctx.rules, escalate,
                                {cmd} if approval_key in ctx.approved_commands else set())
-        await ctx.trace("trace/policyDecision", tool="exec_command", command=cmd, decision=decision.decision,
-                        sandboxed=decision.sandboxed, reason=decision.reason, matchedRules=decision.matched_rules,
-                        approvalPolicy=config.approval_policy, sandboxMode=config.sandbox_mode)
+        await ctx.probe.policy_decision(ctx, "exec_command", decision.decision, decision.sandboxed, decision.reason,
+                                        decision.matched_rules, command=cmd)
 
         item = {"type": "commandExecution", "id": call.call_id, "command": cmd, "cwd": str(workdir),
                 "processId": None, "status": "inProgress", "commandActions": [], "aggregatedOutput": "",
@@ -97,12 +96,10 @@ class ExecCommandHandler:
         env = None
         if sandboxed and seatbelt.available():
             sb = seatbelt.build(argv, config.sandbox_mode, config.cwd, config.network_access)
-            await ctx.trace("trace/sandboxCommand", argv=[*sb.argv[:1], "-p", "<policy>", *sb.argv[3:]],
-                            policy=sb.policy, params=sb.params)
+            await ctx.probe.sandbox_command(ctx, sb.argv, sb.policy, sb.params)
             argv, env = sb.argv, seatbelt.sandbox_env(config.network_access)
         elif sandboxed:
-            await ctx.trace("trace/sandboxCommand", argv=argv, policy=None, params={},
-                            warning="no OS sandbox on this platform; running unsandboxed")
+            await ctx.probe.sandbox_command(ctx, argv, None, {}, warning="no OS sandbox on this platform; running unsandboxed")
 
         async def stream(delta: str) -> None:
             await ctx.emit("item/commandExecution/outputDelta", itemId=call.call_id, delta=delta)
@@ -113,8 +110,7 @@ class ExecCommandHandler:
             return await self._finish(ctx, item, "failed", f"execution error: {err}")
         item.update(processId=result.session_id, exitCode=result.exit_code, aggregatedOutput=result.output)
         if sandboxed and _is_likely_sandbox_denied(result.output, result.exit_code):
-            await ctx.trace("trace/sandboxDenied", command=cmd, exitCode=result.exit_code,
-                            note="The model sees the denial and may retry with sandbox_permissions=require_escalated.")
+            await ctx.probe.sandbox_denied(ctx, cmd, result.exit_code)
         text = format_exec_output(result.output, result.wall_time, result.exit_code, _max_tokens(args, ctx), result.session_id)
         if result.session_id is not None:
             # Still running: the item completes later, when write_stdin sees the process exit.
@@ -177,9 +173,8 @@ class ApplyPatchHandler:
         paths = [w.path for _, writes in planned for w in writes]
         roots = [Path(r).resolve() for r in seatbelt.writable_roots(ctx.config.cwd)]
         decision = decide_patch(paths, ctx.config.approval_policy, ctx.config.sandbox_mode, roots)
-        await ctx.trace("trace/policyDecision", tool="apply_patch", paths=[str(p) for p in paths],
-                        decision=decision.decision, sandboxed=False, reason=decision.reason, matchedRules=[],
-                        approvalPolicy=ctx.config.approval_policy, sandboxMode=ctx.config.sandbox_mode)
+        await ctx.probe.policy_decision(ctx, "apply_patch", decision.decision, False, decision.reason, [],
+                                        paths=[str(p) for p in paths])
         if decision.decision == "forbidden":
             return await self._done(ctx, item, "declined", f"patch rejected: {decision.reason}", started, 1)
         if decision.decision == "prompt" and not ctx.patch_paths_approved_for_session(paths):

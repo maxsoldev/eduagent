@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from educodex.items import message_text
-from educodex.rollout import history_from_rollout, read_rollout
+from educodex.core.items import message_text
+from educodex.core.rollout import history_from_rollout, read_rollout
 from tests.conftest import find, methods
 
 

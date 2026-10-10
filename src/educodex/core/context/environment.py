@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from educodex.context.fragments import Fragment
+from educodex.core.context.fragments import Fragment
 
 
 def _timezone() -> str:
@@ -50,5 +50,5 @@ def render_environment_context(
         kind="environment_context",
         role="user",
         text=f"<environment_context>{body}</environment_context>",
-        source="educodex/context/environment.py (cwd, $SHELL, date, timezone, sandbox)",
+        source="educodex/core/context/environment.py (cwd, $SHELL, date, timezone, sandbox)",
     )

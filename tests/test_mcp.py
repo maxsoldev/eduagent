@@ -2,8 +2,8 @@ import json
 import sys
 from pathlib import Path
 
-from educodex.mcp.manager import needs_approval
-from educodex.mcp.schema import sanitize_schema
+from educodex.core.mcp.manager import needs_approval
+from educodex.core.mcp.schema import sanitize_schema
 from tests.conftest import find
 
 SERVER = str(Path(__file__).parent.parent / "examples" / "mcp" / "notes_server.py")

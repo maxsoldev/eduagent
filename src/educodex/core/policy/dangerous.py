@@ -4,7 +4,7 @@ Mirrors codex-rs/shell-command/src/command_safety/is_dangerous_command.rs (POSIX
 a forced `rm` (`-f`, `-rf`, `--force`), also when wrapped in `sudo`, `env` or `bash -lc "..."`.
 """
 
-from educodex.policy.segments import split_segments
+from educodex.core.policy.segments import split_segments
 
 MAX_WRAPPER_DEPTH = 8
 

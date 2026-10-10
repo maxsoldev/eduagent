@@ -1,4 +1,4 @@
-from educodex.tools.output import approx_token_count, format_exec_output, format_legacy_output, truncate_middle
+from educodex.core.tools.output import approx_token_count, format_exec_output, format_legacy_output, truncate_middle
 
 
 def test_truncate_middle_keeps_head_and_tail():

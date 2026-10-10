@@ -6,7 +6,7 @@ from starlette.testclient import TestClient
 
 from educodex.app_server.main import build_app
 from educodex.app_server.processor import MessageProcessor
-from educodex.config import Config
+from educodex.core.config import Config
 from educodex.testing.fake_model import FakeModel
 
 

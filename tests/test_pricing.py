@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from educodex.pricing import add_totals, cost_breakdown, parse_pricing
+from educodex.observe.pricing import add_totals, cost_breakdown, parse_pricing
 from tests.conftest import find
 
 LUNA = {"prompt": "0.0000001", "completion": "0.0000005", "input_cache_read": "0.00000001",

@@ -12,8 +12,6 @@ Cached tokens are ~10x cheaper, which is why harnesses keep every request an exa
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
 
 @dataclass(frozen=True)
 class Rates:
@@ -61,11 +59,9 @@ def parse_pricing(model: str, raw: dict[str, Any]) -> Pricing:
     return Pricing(model, base)
 
 
-async def fetch_pricing(http: httpx.AsyncClient, model: str) -> Pricing | None:
-    """GET /models and pick this model's prices. Returns None if the provider has no pricing."""
-    response = await http.get("/models")
-    response.raise_for_status()
-    entry = next((m for m in response.json().get("data", []) if m.get("id") == model), None)
+def pricing_from_models(model: str, models: list[dict[str, Any]]) -> Pricing | None:
+    """Pick this model's prices from a GET /models list. Returns None if the provider has no pricing."""
+    entry = next((m for m in models if m.get("id") == model), None)
     return parse_pricing(model, entry["pricing"]) if entry and entry.get("pricing") else None
 
 

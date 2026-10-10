@@ -8,7 +8,7 @@ Mirrors codex-rs/core/src/agents_md.rs and core/src/context/user_instructions.rs
 
 from pathlib import Path
 
-from educodex.context.fragments import Fragment
+from educodex.core.context.fragments import Fragment
 
 CANDIDATES = ("AGENTS.override.md", "AGENTS.md")
 PROJECT_DOC_SEPARATOR = "\n\n--- project-doc ---\n\n"

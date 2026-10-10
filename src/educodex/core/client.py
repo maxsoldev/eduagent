@@ -16,8 +16,8 @@ from typing import Any
 
 import httpx
 
-from educodex.items import ResponseItem, developer_message
-from educodex.models import ModelInfo
+from educodex.core.items import ResponseItem, developer_message
+from educodex.core.models import ModelInfo
 
 
 @dataclass
@@ -112,11 +112,11 @@ class ModelClient:
                     raise
                 await asyncio.sleep(1 + attempt * 2)
 
-    async def fetch_pricing(self):
-        """Prices for this model from the provider's model list (OpenRouter GET /models)."""
-        from educodex.pricing import fetch_pricing
-
-        return await fetch_pricing(self._http, self.model)
+    async def list_models(self) -> list[dict[str, Any]]:
+        """The provider's model list (GET /models; Codex's models-manager fetches one too)."""
+        response = await self._http.get("/models")
+        response.raise_for_status()
+        return response.json().get("data", [])
 
     async def aclose(self) -> None:
         await self._http.aclose()

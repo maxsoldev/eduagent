@@ -15,8 +15,8 @@ import json
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from educodex.tools.registry import ToolCall
-    from educodex.turn import TurnContext
+    from educodex.core.tools.registry import ToolCall
+    from educodex.core.turn import TurnContext
 
 BLOCK_EXIT_CODE = 2
 HOOK_TIMEOUT_SECONDS = 600  # Codex default
@@ -44,7 +44,7 @@ async def _run(ctx: "TurnContext", event: str, payload: dict[str, Any]) -> list[
             out_b, err_b, code = b"", f"hook timed out after {HOOK_TIMEOUT_SECONDS}s".encode(), -1
         out, err = out_b.decode(errors="replace"), err_b.decode(errors="replace")
         results.append((code, out, err))
-        await ctx.trace("trace/hook", event=event, command=command, exitCode=code, stdout=out[-2000:], stderr=err[-2000:])
+        await ctx.probe.hook_ran(ctx, event, command, code, out, err)
     return results
 
 

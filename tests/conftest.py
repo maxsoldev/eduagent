@@ -3,9 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from educodex.config import Config
-from educodex.events import EventBus
-from educodex.session import Session
+from educodex.core.config import Config
+from educodex.core.events import EventBus
+from educodex.core.session import Session
+from educodex.observe.tracer import Tracer
 from educodex.testing.fake_model import FakeModel
 
 
@@ -36,7 +37,7 @@ async def make_session(workspace: Path, tmp_path: Path):
             return {"action": answer} if method == "mcpServer/elicitation/request" else {"decision": answer}
 
         config = Config(cwd=workspace, home=tmp_path / "home", api_key="test", **overrides)
-        session = Session(config, bus, ask, transport=fake)
+        session = Session(config, bus, ask, transport=fake, probe=Tracer(bus))
         session.asked = asked
         await session.start()
         created.append(session)

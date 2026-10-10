@@ -1,13 +1,16 @@
 """Step mode (educodex only): pause the loop at named points so you can inspect each step.
 
-Breakpoints: beforeModelRequest, beforeToolCall, afterToolCall.
+Breakpoints: beforeModelRequest, beforeToolCall, afterToolCall (the core's probe checkpoints).
 Clients turn it on with debug/stepMode/set and resume with debug/continue.
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 BREAKPOINTS = ("beforeModelRequest", "beforeToolCall", "afterToolCall")
+
+Emit = Callable[..., Awaitable[None]]  # emit(method, **params)
 
 
 class Stepper:
@@ -23,13 +26,17 @@ class Stepper:
         if not enabled:
             self.release()
 
-    async def pause(self, ctx: Any, name: str, info: dict[str, Any]) -> None:
+    async def pause(self, name: str, info: dict[str, Any], emit: Emit) -> None:
         if not (self.enabled and name in self.breakpoints):
             return
         self._resume.clear()
-        await ctx.trace("trace/paused", breakpoint=name, info=info)
-        await self._resume.wait()
-        await ctx.trace("trace/resumed", breakpoint=name)
+        await emit("trace/paused", breakpoint=name, info=info)
+        try:
+            await self._resume.wait()
+        except asyncio.CancelledError:  # turn/interrupt while paused: leave the stepper released
+            self.release()
+            raise
+        await emit("trace/resumed", breakpoint=name)
 
     def release(self) -> None:
         self._resume.set()
