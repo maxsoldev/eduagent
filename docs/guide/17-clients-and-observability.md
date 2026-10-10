@@ -136,7 +136,34 @@ On the left is the chat; on the right is a one-line summary of selected `trace/*
 
 `educodex exec "task"` skips the protocol completely. It subscribes `print_event` directly to the core's `EventBus` and prints a `rich` timeline: prompt assembly, each model request, loop decisions, policy decisions, tool output. With `-v` it also prints each full request body as JSON, the streaming deltas and every other `trace/*` event. This shows the core is UI-agnostic: the app server is just one more subscriber.
 
-`EventBus.emit` ([`events.py`](../../src/educodex/events.py)) catches errors from listeners and prints them to stderr. A broken printer or a closed socket can never stop a turn.
+`EventBus.emit` ([`events.py`](../../src/educodex/core/events.py)) catches errors from listeners and prints them to stderr. A broken printer or a closed socket can never stop a turn.
+
+### The observability seam ([`core/probe.py`](../../src/educodex/core/probe.py))
+
+The package has two parts:
+- [`src/educodex/core/`](../../src/educodex/core/) is the harness. It stays as close to Codex as possible: loop, tools, policy, sandbox, MCP, hooks, compaction, protocol events.
+- [`src/educodex/observe/`](../../src/educodex/observe/) holds what educodex adds for teaching: the `trace/*` events ([`tracer.py`](../../src/educodex/observe/tracer.py)), costs ([`pricing.py`](../../src/educodex/observe/pricing.py)) and step mode ([`stepper.py`](../../src/educodex/observe/stepper.py)).
+
+They meet at one seam, a `Probe`. At each point worth watching, the core makes a one-line call such as `await ctx.probe.sandbox_denied(...)`. The base `Probe` does nothing, so a `Session` without a probe emits only protocol events. The hosts (`cli.py`, the app server) pass `Session(..., probe=Tracer(bus))`. The core never imports `observe/`, and it never builds a trace payload itself (`tests/test_layers.py` checks the imports).
+
+Why bother? So the core reads like Codex, not like Codex plus debug output. Codex has the same kind of seam: at the same points it calls its OpenTelemetry layer, e.g. [`otel.sandbox_outcome(...)`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/tools/orchestrator.rs#L430) in `tools/orchestrator.rs` when the sandbox denies a command.
+
+The core side, in [`tools/handlers.py`](../../src/educodex/core/tools/handlers.py#L112):
+
+```python
+if sandboxed and _is_likely_sandbox_denied(result.output, result.exit_code):
+    await ctx.probe.sandbox_denied(ctx, cmd, result.exit_code)
+```
+
+The matching [`Tracer`](../../src/educodex/observe/tracer.py#L130) method builds the event:
+
+```python
+async def sandbox_denied(self, ctx, command, exit_code) -> None:
+    await self._turn(ctx, "trace/sandboxDenied", command=command, exitCode=exit_code,
+                     note="The model sees the denial and may retry with sandbox_permissions=require_escalated.")
+```
+
+The `Tracer` also owns step mode (`probe.checkpoint(ctx, "beforeToolCall", ...)` pauses there) and pricing: it calls `ModelClient.list_models()` and parses prices with `pricing_from_models()`.
 
 ### The fake model ([`testing/fake_model.py`](../../src/educodex/testing/fake_model.py))
 

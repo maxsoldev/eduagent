@@ -117,8 +117,8 @@ The model's call carries both names: `{"type": "function_call", "namespace": "mc
 
 ## In educodex
 
-- [`tools/specs.py`](../../src/educodex/tools/specs.py) holds the specs, copied field by field from Codex. `apply_patch_spec()` loads the vendored grammar `vendor/codex/apply_patch.lark`.
-- [`tools/registry.py`](../../src/educodex/tools/registry.py) turns a call item into a `ToolCall`. Function arguments get parsed, freeform input stays text, and namespaced names are joined:
+- [`tools/specs.py`](../../src/educodex/core/tools/specs.py) holds the specs, copied field by field from Codex. `apply_patch_spec()` loads the vendored grammar `vendor/codex/apply_patch.lark`.
+- [`tools/registry.py`](../../src/educodex/core/tools/registry.py) turns a call item into a `ToolCall`. Function arguments get parsed, freeform input stays text, and namespaced names are joined:
 
 ```python
 if item["type"] == "custom_tool_call":
@@ -131,15 +131,15 @@ name = f"{item['namespace']}__{item['name']}" if item.get("namespace") else item
 ```
 
 - `ToolRouter.dispatch` returns errors as text, with Codex's wording: `unsupported call: <name>` for an unknown function tool, `unsupported custom tool call: <name>` for an unknown freeform tool, `failed to parse function arguments: ...` for bad JSON. A handler raises `ToolError` for failures the model should see.
-- [`items.py`](../../src/educodex/items.py) `tool_output` picks the output type from the call type:
+- [`items.py`](../../src/educodex/core/items.py) `tool_output` picks the output type from the call type:
 
 ```python
 output_type = "custom_tool_call_output" if call["type"] == "custom_tool_call" else "function_call_output"
 return {"type": output_type, "call_id": call["call_id"], "output": output}
 ```
 
-- [`history.py`](../../src/educodex/history.py) `normalize` adds `"aborted"` outputs for dangling calls and drops orphan outputs.
-- [`mcp/manager.py`](../../src/educodex/mcp/manager.py) `_namespace_spec` builds the namespace spec.
+- [`history.py`](../../src/educodex/core/history.py) `normalize` adds `"aborted"` outputs for dangling calls and drops orphan outputs.
+- [`mcp/manager.py`](../../src/educodex/core/mcp/manager.py) `_namespace_spec` builds the namespace spec.
 
 ## In Codex
 

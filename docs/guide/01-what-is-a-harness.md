@@ -68,10 +68,18 @@ educodex follows Codex's structure. Each part is shown in the web UI as it happe
 web UI / TUI  ──JSON-RPC──►  app_server  ──events──  core (loop, prompt, tools, policy, sandbox)
                                                        │
                                                        ├─► client  ──HTTP/SSE──► OpenRouter (Responses API)
-                                                       └─► mcp     ──stdio────► MCP servers
+                                                       ├─► mcp     ──stdio────► MCP servers
+                                                       └─► probe   ──────────► observe (emits trace/* events, costs, step mode)
 ```
 
-The full module list is in [the design doc](../design.md#module-layout).
+The code has two parts:
+
+| Folder | What it holds |
+|---|---|
+| [`src/educodex/core/`](../../src/educodex/core/) | The harness itself, kept close to Codex: loop, prompt, tools, policy, sandbox, MCP, hooks, compaction |
+| [`src/educodex/observe/`](../../src/educodex/observe/) | What educodex adds for teaching: `trace/*` events, costs, step mode. It plugs into the core through one seam, the `Probe` (chapter 17) |
+
+The hosts (`app_server/`, `cli.py`, `tui.py`) sit on top of both. The full module list is in [the design doc](../design.md#module-layout).
 
 ## In Codex
 

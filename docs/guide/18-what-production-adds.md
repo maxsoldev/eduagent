@@ -19,10 +19,10 @@ What educodex does instead, in one table:
 
 | Production feature | educodex |
 |---|---|
-| Model transport | One HTTP POST + SSE per request ([`client.py`](../../src/educodex/client.py)); full history every time |
+| Model transport | One HTTP POST + SSE per request ([`client.py`](../../src/educodex/core/client.py)); full history every time |
 | Retries | Up to 3 attempts for connection errors, 429 and 5xx, and only before the first event arrives |
-| Compaction | Local, plain-text summary only ([`compact.py`](../../src/educodex/compact.py), chapter 14) |
-| Sandbox | macOS Seatbelt only ([`sandbox/seatbelt.py`](../../src/educodex/sandbox/seatbelt.py)) |
+| Compaction | Local, plain-text summary only ([`compact.py`](../../src/educodex/core/compact.py), chapter 14) |
+| Sandbox | macOS Seatbelt only ([`sandbox/seatbelt.py`](../../src/educodex/core/sandbox/seatbelt.py)) |
 | Approvals | A human answers every prompt (chapter 09) |
 | Telemetry | `trace/*` events shown in the UI (chapter 17) |
 | Providers | OpenAI models through OpenRouter's Responses API |

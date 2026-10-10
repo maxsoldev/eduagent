@@ -105,7 +105,7 @@ request 3:  [instructions, user, reasoning, function_call, function_call_output,
 
 ## In educodex
 
-[`client.py`](../../src/educodex/client.py) builds the body. This is the whole function:
+[`client.py`](../../src/educodex/core/client.py) builds the body. This is the whole function:
 
 ```python
 def build_request(self, prompt: Prompt) -> dict[str, Any]:
@@ -131,7 +131,7 @@ def build_request(self, prompt: Prompt) -> dict[str, Any]:
 
 Things to notice:
 - There is no `instructions` field. The base prompt is `input[0]`, a `developer` message.
-- `input` is the whole history, from `session.history.for_prompt()` ([`history.py`](../../src/educodex/history.py)).
+- `input` is the whole history, from `session.history.for_prompt()` ([`history.py`](../../src/educodex/core/history.py)).
 - `include: ["reasoning.encrypted_content"]` asks for reasoning we can send back, since nothing is stored server-side.
 - `prompt_cache_key` is the thread id, so all requests of one thread hit the same cache.
 
@@ -143,9 +143,9 @@ Things to notice:
 
 If `response.completed` carries `end_turn: false`, the server is asking the harness to keep going. The loop then calls the model again even without tool calls (chapter 04).
 
-Items are plain dicts in wire format ([`items.py`](../../src/educodex/items.py)), so history shows exactly what the model receives. `clean_output_item` drops API-only fields like `status` before an item is stored.
+Items are plain dicts in wire format ([`items.py`](../../src/educodex/core/items.py)), so history shows exactly what the model receives. `clean_output_item` drops API-only fields like `status` before an item is stored.
 
-[`turn.py`](../../src/educodex/turn.py) `run_sampling_request` consumes the stream. Deltas become UI events. `output_item.done` items get recorded:
+[`turn.py`](../../src/educodex/core/turn.py) `run_sampling_request` consumes the stream. Deltas become UI events. `output_item.done` items get recorded:
 
 ```python
 elif event.type == "response.output_item.done":

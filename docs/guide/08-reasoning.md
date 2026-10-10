@@ -81,11 +81,11 @@ Reasoning items also take space in the context window. Codex estimates their siz
 
 Every model in the catalog has `"default_reasoning_summary": "none"`. Codex uses the model default unless you set `model_reasoning_summary` in config. With `none`, Codex leaves `summary` out of the request, so no summaries come back. Summaries are extra output the user may never read.
 
-educodex is a teaching tool, and watching the model's thinking is the point. So [`config.py`](../../src/educodex/config.py) defaults `reasoning_summary` to `"auto"`. This changes what you see, not how the agent works: the encrypted reasoning is returned and sent back either way.
+educodex is a teaching tool, and watching the model's thinking is the point. So [`config.py`](../../src/educodex/core/config.py) defaults `reasoning_summary` to `"auto"`. This changes what you see, not how the agent works: the encrypted reasoning is returned and sent back either way.
 
 ## In educodex
 
-The request, in [`client.py`](../../src/educodex/client.py):
+The request, in [`client.py`](../../src/educodex/core/client.py):
 
 ```python
 self.reasoning_effort = reasoning_effort or model_info.default_reasoning_level or "medium"
@@ -101,7 +101,7 @@ body = {
 }
 ```
 
-The response, in [`turn.py`](../../src/educodex/turn.py):
+The response, in [`turn.py`](../../src/educodex/core/turn.py):
 - `response.output_item.added` with a reasoning item → `item/started` (`type: "reasoning"`) to the UI.
 - `response.reasoning_summary_text.delta` → `item/reasoning/summaryTextDelta`, so the summary appears word by word.
 - `response.output_item.done` → the item is cleaned (`clean_output_item` drops `status`) and **recorded in history unchanged**, `encrypted_content` included. Then `item/completed` sends just the summary texts to the UI.
@@ -110,7 +110,7 @@ The response, in [`turn.py`](../../src/educodex/turn.py):
 
 There is no special code for sending reasoning back. It sits in `session.history.items` like any other item, and the next `history.for_prompt()` includes it. `tests/test_turn.py` checks this: `assert third[4]["encrypted_content"]  # reasoning is sent back as-is`.
 
-The effort can be set per thread or per turn (`--effort low|medium|high` on the CLI, `effort` in `thread/start` / `turn/start`). [`items.py`](../../src/educodex/items.py) lists the reasoning item shape next to the others.
+The effort can be set per thread or per turn (`--effort low|medium|high` on the CLI, `effort` in `thread/start` / `turn/start`). [`items.py`](../../src/educodex/core/items.py) lists the reasoning item shape next to the others.
 
 ## In Codex
 

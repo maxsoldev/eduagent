@@ -76,7 +76,7 @@ To prevent this, the `Stop` payload has a flag:
 
 ## In educodex
 
-Everything lives in [`hooks.py`](../../src/educodex/hooks.py), under 100 lines. Hooks are configured as a dict from event name to a list of shell commands:
+Everything lives in [`hooks.py`](../../src/educodex/core/hooks.py), under 100 lines. Hooks are configured as a dict from event name to a list of shell commands:
 
 ```python
 Config(hooks={
@@ -87,9 +87,9 @@ Config(hooks={
 
 There is no config file and no CLI flag for hooks yet. You pass them in `Config` (see [Try it](#try-it)).
 
-**Running a hook** ([`_run`](../../src/educodex/hooks.py#L30)): start the command with `asyncio.create_subprocess_shell`, write the JSON to stdin, wait up to 600 seconds (Codex's default). A hook that takes longer is killed and counts as failed, so it cannot block anything. Every run emits a `trace/hook` event with the exit code, stdout and stderr.
+**Running a hook** ([`_run`](../../src/educodex/core/hooks.py#L30)): start the command with `asyncio.create_subprocess_shell`, write the JSON to stdin, wait up to 600 seconds (Codex's default). A hook that takes longer is killed and counts as failed, so it cannot block anything. Every run emits a `trace/hook` event with the exit code, stdout and stderr.
 
-**Blocking** ([`_blocking_reason`](../../src/educodex/hooks.py#L51)):
+**Blocking** ([`_blocking_reason`](../../src/educodex/core/hooks.py#L51)):
 
 ```python
 for code, _, err in results:
@@ -97,7 +97,7 @@ for code, _, err in results:
         return err.strip()
 ```
 
-**What the model sees when `PreToolUse` blocks** ([`run_pre_tool_use`](../../src/educodex/hooks.py#L74)). The text is copied from Codex word for word:
+**What the model sees when `PreToolUse` blocks** ([`run_pre_tool_use`](../../src/educodex/core/hooks.py#L74)). The text is copied from Codex word for word:
 
 ```python
 if name in ("Bash", "apply_patch"):
@@ -107,12 +107,12 @@ return f"Tool call blocked by PreToolUse hook: {reason}. Tool: {name}"
 
 This string becomes the tool's output (`function_call_output`), so the model reads it like any other result and can change its plan.
 
-**What `PostToolUse` can do** ([`run_post_tool_use`](../../src/educodex/hooks.py#L85)). The hook gets the output as `tool_response`. If it exits 2 with a reason, that reason *replaces* the output the model sees. Use it to hide secrets that a command printed, or to add a warning.
+**What `PostToolUse` can do** ([`run_post_tool_use`](../../src/educodex/core/hooks.py#L85)). The hook gets the output as `tool_response`. If it exits 2 with a reason, that reason *replaces* the output the model sees. Use it to hide secrets that a command printed, or to add a warning.
 
-**Where they are called** in [`turn.py`](../../src/educodex/turn.py):
-- `UserPromptSubmit` at the start of [`run_turn`](../../src/educodex/turn.py#L126). A block raises `HookBlocked`; the turn ends with a `warning` notification.
-- `PreToolUse` and `PostToolUse` around each tool call in [`run_tool_calls`](../../src/educodex/turn.py#L264). If `PreToolUse` blocks, the tool does not run and `PostToolUse` is skipped. As in Codex, `write_stdin` gets no tool hooks: it only feeds a command that `PreToolUse` already saw.
-- `Stop` when the model gives an answer without tool calls ([L161](../../src/educodex/turn.py#L161)):
+**Where they are called** in [`turn.py`](../../src/educodex/core/turn.py):
+- `UserPromptSubmit` at the start of [`run_turn`](../../src/educodex/core/turn.py#L124). A block raises `HookBlocked`; the turn ends with a `warning` notification.
+- `PreToolUse` and `PostToolUse` around each tool call in [`run_tool_calls`](../../src/educodex/core/turn.py#L252). If `PreToolUse` blocks, the tool does not run and `PostToolUse` is skipped. As in Codex, `write_stdin` gets no tool hooks: it only feeds a command that `PreToolUse` already saw.
+- `Stop` when the model gives an answer without tool calls ([L157](../../src/educodex/core/turn.py#L157)):
 
 ```python
 if continuation := await hooks.run_stop(ctx, stop_hook_active):
@@ -202,8 +202,8 @@ if not event["stop_hook_active"]:                # first time we stop in this tu
 
 ```python
 import asyncio, json
-from educodex.config import Config
-from educodex.session import Session
+from educodex.core.config import Config
+from educodex.core.session import Session
 from educodex.testing.fake_model import FakeModel
 
 fake = FakeModel([

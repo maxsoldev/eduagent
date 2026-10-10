@@ -72,7 +72,7 @@ Compaction is why the `compacted` line stores the whole replacement history. Wit
 
 ## In educodex
 
-[`rollout.py`](../../src/educodex/rollout.py) has a `RolloutRecorder` with one method per line type, and a reader:
+[`rollout.py`](../../src/educodex/core/rollout.py) has a `RolloutRecorder` with one method per line type, and a reader:
 
 ```python
 def _write(self, kind: str, payload: dict[str, Any]) -> None:
@@ -98,9 +98,9 @@ def history_from_rollout(lines):
 ```
 
 Who writes what:
-- [`session.py`](../../src/educodex/session.py): `session_meta` in `start()`. Every `Session.record()` call appends to history **and** writes a `response_item`. History and log can't drift apart, because they are written in one place.
-- [`turn.py`](../../src/educodex/turn.py): `turn_context` and the `event_msg` lines (`task_started`, `user_message`, `agent_message`, `token_count`, `turn_aborted`, `task_complete`).
-- [`compact.py`](../../src/educodex/compact.py): the `compacted` line, after the history is swapped.
+- [`session.py`](../../src/educodex/core/session.py): `session_meta` in `start()`. Every `Session.record()` call appends to history **and** writes a `response_item`. History and log can't drift apart, because they are written in one place.
+- [`turn.py`](../../src/educodex/core/turn.py): `turn_context` and the `event_msg` lines (`task_started`, `user_message`, `agent_message`, `token_count`, `turn_aborted`, `task_complete`).
+- [`compact.py`](../../src/educodex/core/compact.py): the `compacted` line, after the history is swapped.
 
 `tests/test_turn.py::test_rollout_replays_history` checks the main promise: `history_from_rollout(lines) == session.history.items`.
 
@@ -169,7 +169,7 @@ Rebuild the model's history from the file:
 uv run python -c "
 import sys
 from pathlib import Path
-from educodex.rollout import read_rollout, history_from_rollout
+from educodex.core.rollout import read_rollout, history_from_rollout
 for item in history_from_rollout(read_rollout(Path(sys.argv[1]))):
     print(item['type'], item.get('role', item.get('name', '')))" "$f"
 ```

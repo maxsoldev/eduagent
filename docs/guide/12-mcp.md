@@ -81,13 +81,13 @@ The tool list is part of the prompt prefix. Prompt caching (chapter 05) only wor
 
 ## In educodex
 
-The MCP code is three small files in [`mcp/`](../../src/educodex/mcp/):
+The MCP code is three small files in [`mcp/`](../../src/educodex/core/mcp/):
 
 | File | Job |
 |---|---|
-| [`mcp/manager.py`](../../src/educodex/mcp/manager.py) | Start servers, `tools/list`, approvals, `tools/call`, result text |
-| [`mcp/naming.py`](../../src/educodex/mcp/naming.py) | Sanitise names, add the `mcp__` prefix |
-| [`mcp/schema.py`](../../src/educodex/mcp/schema.py) | Clean up input schemas |
+| [`mcp/manager.py`](../../src/educodex/core/mcp/manager.py) | Start servers, `tools/list`, approvals, `tools/call`, result text |
+| [`mcp/naming.py`](../../src/educodex/core/mcp/naming.py) | Sanitise names, add the `mcp__` prefix |
+| [`mcp/schema.py`](../../src/educodex/core/mcp/schema.py) | Clean up input schemas |
 
 ### Discovery and naming
 
@@ -119,7 +119,7 @@ This is the real `trace/mcpToolExposed` event for the notes server (two tools sh
 }
 ```
 
-Compare it with the raw entry above: `outputSchema` and `annotations` are gone (the model doesn't need them), and the tools are grouped under one namespace. When the model calls a tool, the `function_call` item carries both parts, `{"namespace": "mcp__notes", "name": "add_note", ...}`. [`ToolCall.from_item`](../../src/educodex/tools/registry.py) joins them into the routing key `mcp__notes__add_note`.
+Compare it with the raw entry above: `outputSchema` and `annotations` are gone (the model doesn't need them), and the tools are grouped under one namespace. When the model calls a tool, the `function_call` item carries both parts, `{"namespace": "mcp__notes", "name": "add_note", ...}`. [`ToolCall.from_item`](../../src/educodex/core/tools/registry.py) joins them into the routing key `mcp__notes__add_note`.
 
 `sanitize_schema` follows Codex's rules: `true`/`false` schemas become `{"type": "string"}`, `const: x` becomes `enum: [x]`, a missing `type` is guessed from other keys (`properties` → object, `items` → array, `enum` → string, `minimum`/`maximum` → number), and objects always get `properties`. A schema with no hint at all stays untyped, so `{}` means "any value", as in Codex.
 

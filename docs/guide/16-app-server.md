@@ -119,7 +119,7 @@ The `finally` also runs when the turn is interrupted: cancelling the turn cancel
 
 The transports handle **every message in its own task**. Otherwise a turn waiting for approval would block the reader that has to receive that approval.
 
-**Core events become notifications.** The core never imports `app_server` (see [the design doc](../design.md#architecture)). It emits events on an `EventBus` ([`events.py`](../../src/educodex/events.py)). `MessageProcessor._broadcast` sends each event only to the connections subscribed to that thread (the one that started it, plus any that called `thread/read` or `turn/start` on it), adding `_seq`/`_ts` fields so UIs can order their timeline. A failing listener is logged and skipped; it never breaks the turn. `Connection.notify` drops methods listed in `optOutNotificationMethods`.
+**Core events become notifications.** The core never imports `app_server` (see [the design doc](../design.md#architecture)). It emits events on an `EventBus` ([`events.py`](../../src/educodex/core/events.py)). `MessageProcessor._broadcast` sends each event only to the connections subscribed to that thread (the one that started it, plus any that called `thread/read` or `turn/start` on it), adding `_seq`/`_ts` fields so UIs can order their timeline. A failing listener is logged and skipped; it never breaks the turn. `Connection.notify` drops methods listed in `optOutNotificationMethods`.
 
 **Methods.** `initialize`, `thread/start`, `thread/list`, `thread/read`, `turn/start`, `turn/interrupt`, `thread/compact/start` and `model/list` use Codex's names and main fields. Some rules copied from Codex:
 - Any method other than `initialize` sent before it gets `-32600 "not initialized"`; a second `initialize` gets "Already initialized".
@@ -129,7 +129,7 @@ The transports handle **every message in its own task**. Otherwise a turn waitin
 
 **educodex extensions** (not in Codex):
 - `trace/*` notifications show the hidden steps: `trace/promptAssembled`, `trace/modelRequest`, `trace/loopIteration`, `trace/policyDecision`, `trace/compacted` and more. A Codex-style client can opt out of them with `optOutNotificationMethods`, so it stays compatible.
-- **Step mode** ([`stepper.py`](../../src/educodex/stepper.py)): `debug/stepMode/set {threadId, enabled, breakpoints}` pauses the loop at `beforeModelRequest`, `beforeToolCall` and `afterToolCall`. The server emits `trace/paused` and waits for `debug/continue`.
+- **Step mode** ([`stepper.py`](../../src/educodex/observe/stepper.py)): `debug/stepMode/set {threadId, enabled, breakpoints}` pauses the loop at `beforeModelRequest`, `beforeToolCall` and `afterToolCall`. The server emits `trace/paused` and waits for `debug/continue`.
 - `debug/context/get` returns the exact request body the next model call would send, with token counts. The Context tab uses it.
 - `thread/read` with `includeTrace: true` returns the full event log, so a UI that reconnects can rebuild its timeline.
 

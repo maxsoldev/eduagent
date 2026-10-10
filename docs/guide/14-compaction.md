@@ -91,7 +91,7 @@ It is opaque, like encrypted reasoning (chapter 08). The [Unrolling the Codex ag
 
 ## In educodex
 
-All of it is in [`compact.py`](../../src/educodex/compact.py) (under 100 lines), with the token count in [`history.py`](../../src/educodex/history.py) and the limit in [`models.py`](../../src/educodex/models.py).
+All of it is in [`compact.py`](../../src/educodex/core/compact.py) (under 100 lines), with the token count in [`history.py`](../../src/educodex/core/history.py) and the limit in [`models.py`](../../src/educodex/core/models.py).
 
 **Counting tokens.** `History` remembers how long the list was when the last `usage` arrived. Anything after that is estimated:
 
@@ -102,7 +102,7 @@ def token_count(self) -> int:
     return sum(approx_tokens(i) for i in self.items)
 ```
 
-**The limit** ([`models.py`](../../src/educodex/models.py)):
+**The limit** ([`models.py`](../../src/educodex/core/models.py)):
 
 ```python
 def effective_auto_compact_limit(self) -> int:
@@ -112,7 +112,7 @@ def effective_auto_compact_limit(self) -> int:
     return min(self.auto_compact_token_limit, ninety_percent)
 ```
 
-**The two triggers** in [`turn.py`](../../src/educodex/turn.py):
+**The two triggers** in [`turn.py`](../../src/educodex/core/turn.py):
 
 ```python
 # pre-turn, before the user's message is recorded
