@@ -33,6 +33,11 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
 
   // Timeline shows the hidden steps.
   const timeline = page.getByTestId("timeline");
+  await expect(timeline.locator(".t-row").last()).toBeInViewport();  // follows the newest event
+  await timeline.evaluate((el) => el.scrollTo(0, 0));  // scrolling up stops following
+  await page.getByTestId("timeline-to-latest").click();
+  await expect(timeline.locator(".t-row").last()).toBeInViewport();
+  await expect(page.getByTestId("timeline-to-latest")).toHaveCount(0);
   for (const title of ["Prompt assembled", "Model request", "Loop decision", "Policy decision", "Sandboxed command", "Approval requested"]) {
     await expect(timeline.getByText(title, { exact: true }).first()).toBeVisible();
   }
@@ -42,11 +47,24 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
   // Context: the exact next request, labelled by source.
   await page.getByTestId("tab-Context").click();
   const items = page.getByTestId("ctx-item");
+  await expect(items.last()).toBeInViewport();  // the list starts at the newest item
+  await expect(page.getByTestId("ctx-to-latest")).toHaveCount(0);
   await expect(items.first()).toContainText("base instructions");
   await expect(items.nth(1)).toContainText("permissions");
   await expect(page.getByTestId("context-view")).toContainText("tool output");
   await items.nth(1).locator(".t-head").click();  // expanded parts show their content type
   await expect(page.getByTestId("ctx-part").first()).toContainText("part 1 · type: input_text");
+  // Breakdown by category, and a tooltip on each bar segment.
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("tool definitions");
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("tool outputs");
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("next cost");
+  await page.getByTestId("breakdown-toggle").click();  // folds to a one-line summary
+  await expect(page.getByTestId("cat-row")).toHaveCount(0);
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("to resend");
+  await page.getByTestId("breakdown-toggle").click();
+  await page.getByTestId("ctx-seg").nth(1).hover();
+  await expect(page.getByTestId("ctx-tip")).toContainText("base instructions");
+  await expect(page.getByTestId("ctx-tip")).toContainText("of context");
 
   // Requests: each request extends the previous one (prompt-cache friendly).
   await expect(page.getByTestId("context-cost")).toContainText("Read from cache");

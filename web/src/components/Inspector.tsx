@@ -4,6 +4,8 @@ import type { State, TraceEvent } from "../store";
 import { CATEGORY_COLORS, codexLink, guideLink, info, type Category } from "../explain";
 import { JsonView } from "./JsonView";
 import { CostPanel } from "./CostPanel";
+import { useStickToBottom } from "../useStickToBottom";
+import { CategoryBreakdown, ContextBar, CTX_CATS, type CtxCat, type Highlight, type Segment } from "./ContextBar";
 import { cacheStatus, nextRequestCost, pct, uncachedCost, usd } from "../cost";
 
 const TABS = ["Timeline", "Context", "Requests", "Tools", "Guardrails", "Protocol"] as const;
@@ -23,7 +25,7 @@ export function Inspector({ state, rpc }: { state: State; rpc: RpcClient | null 
           <button key={t} className={t === tab ? "tab active" : "tab"} onClick={() => setTab(t)} data-testid={`tab-${t}`}>{t}</button>
         ))}
       </div>
-      <div className="tab-body" ref={body}>
+      <div className={tab === "Context" || tab === "Timeline" ? "tab-body pinned" : "tab-body"} ref={body}>
         {tab === "Timeline" && <Timeline events={state.events} threadId={state.threadId} />}
         {tab === "Context" && <ContextView state={state} rpc={rpc} />}
         {tab === "Requests" && <Requests key={state.threadId} events={threadEvents} />}
@@ -70,29 +72,25 @@ function Timeline({ events, threadId }: { events: TraceEvent[]; threadId: string
   const [showNoisy, setShowNoisy] = useState(false);
   const [hidden, setHidden] = useState<Set<Category>>(new Set());
   const [open, setOpen] = useState<number | null>(null);
-  const [follow, setFollow] = useState(true);
-  const bottom = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const scroller = bottom.current?.closest(".tab-body");
-    if (follow && scroller) scroller.scrollTop = scroller.scrollHeight;
-  }, [events.length, follow]);
+  const follow = useStickToBottom(events[events.length - 1]?.seq ?? 0);
   const shown = events.filter((e) => (showNoisy || !NOISY.has(e.method)) && !hidden.has(info(e.method).category));
   const t0 = events[0]?.ts ?? 0;
   return (
-    <div>
-      <div className="chips">
+    <div className="pinned-view">
+      <div className="chips pinned-top">
         {(Object.keys(CATEGORY_COLORS) as Category[]).map((c) => (
           <button key={c} className={hidden.has(c) ? "chip off" : "chip"} style={{ borderColor: CATEGORY_COLORS[c] }}
             onClick={() => { const n = new Set(hidden); n.has(c) ? n.delete(c) : n.add(c); setHidden(n); }}>{c}</button>
         ))}
         <label className="muted small"><input type="checkbox" checked={showNoisy} onChange={(e) => setShowNoisy(e.target.checked)} /> streaming deltas</label>
-        <label className="muted small"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow</label>
       </div>
-      <div className="timeline" data-testid="timeline">
+      <div className="scroll-list-wrap">
+      <div className="timeline scroll-list" data-testid="timeline" ref={follow.ref} onScroll={follow.onScroll}>
         {shown.map((e) => {
           const i = info(e.method);
           return (
-            <div key={e.seq} className={e.params.threadId && e.params.threadId !== threadId ? "t-row other-thread" : "t-row"} data-method={e.method}
+            <div key={e.seq} className={`t-row${e.params.threadId && e.params.threadId !== threadId ? " other-thread" : ""}${follow.isFresh(e.seq) ? " fresh" : ""}`}
+              data-method={e.method}
               title={e.params.threadId && e.params.threadId !== threadId ? `thread ${e.params.threadId.slice(0, 8)} (not the current one)` : undefined}>
               <div className="t-head" onClick={() => setOpen(open === e.seq ? null : e.seq)}>
                 <span className="t-time">{((e.ts - t0) / 1000).toFixed(2)}s</span>
@@ -110,29 +108,39 @@ function Timeline({ events, threadId }: { events: TraceEvent[]; threadId: string
             </div>
           );
         })}
-        <div ref={bottom} />
+      </div>
+      {!follow.atBottom && <button className="to-latest" onClick={follow.toBottom} data-testid="timeline-to-latest">↓ latest</button>}
       </div>
     </div>
   );
 }
 
 // Label each input item by where it came from: this is the core idea of prompt assembly.
-function classify(item: Json, index: number): { label: string; color: string } {
+function classify(item: Json, index: number): { label: string; cat: CtxCat } {
   const text = item.content?.[0]?.text ?? "";
   if (item.type === "message") {
-    if (index === 0 && item.role === "developer") return { label: "base instructions", color: "#7dd3fc" };
-    if (item.role === "developer") return { label: text.startsWith("<permissions") ? "permissions" : "developer", color: "#38bdf8" };
+    if (index === 0 && item.role === "developer") return { label: "base instructions", cat: "base" };
+    if (item.role === "developer") return { label: text.startsWith("<permissions") ? "permissions" : "developer", cat: "injected" };
     if (item.role === "user") {
-      if (text.startsWith("# AGENTS.md") || text.startsWith("<environment_context>")) return { label: "context (AGENTS.md / env)", color: "#a5b4fc" };
-      if (text.startsWith("Another language model started")) return { label: "compaction summary", color: "#94a3b8" };
-      return { label: "user", color: "#e5e7eb" };
+      if (text.startsWith("# AGENTS.md") || text.startsWith("<environment_context>")) return { label: "context (AGENTS.md / env)", cat: "injected" };
+      if (text.startsWith("Another language model started")) return { label: "compaction summary", cat: "summary" };
+      return { label: "user", cat: "user" };
     }
-    return { label: "assistant", color: "#86efac" };
+    return { label: "assistant", cat: "assistant" };
   }
-  if (item.type === "reasoning") return { label: "reasoning (encrypted)", color: "#fde68a" };
-  if (item.type.endsWith("_output")) return { label: "tool output", color: "#d8b4fe" };
-  if (item.type.endsWith("call")) return { label: "tool call", color: "#c084fc" };
-  return { label: item.type, color: "#64748b" };
+  if (item.type === "reasoning") return { label: "reasoning (encrypted)", cat: "reasoning" };
+  if (item.type.endsWith("_output")) return { label: "tool output", cat: "output" };
+  if (item.type.endsWith("call")) return { label: "tool call", cat: "call" };
+  return { label: item.type, cat: "other" };
+}
+
+// A short text snippet of an item, for the bar tooltip.
+function preview(item: Json): string {
+  const raw = item.content?.map((p: Json) => p.text ?? "").join(" ")
+    ?? (item.type.endsWith("call") ? `${item.name ?? ""}(${item.arguments ?? item.input ?? ""})` : null)
+    ?? (typeof item.output === "string" ? item.output : item.summary?.map((p: Json) => p.text).join(" ")) ?? "";
+  const flat = String(raw).replace(/\s+/g, " ").trim();
+  return flat.length > 160 ? flat.slice(0, 160) + "…" : flat;
 }
 
 const approxTokens = (v: Json) => Math.ceil(JSON.stringify(v).length / 4);
@@ -141,12 +149,15 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
   const [ctx, setCtx] = useState<Json | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   const [zoom, setZoom] = useState(true);
+  const [hl, setHl] = useState<Highlight>(null);
   const historyEvents = state.events.filter((e) => e.method === "trace/historyChanged").length;
   useEffect(() => {
     if (!rpc || !state.threadId) return;
     const t = setTimeout(() => rpc.request("debug/context/get", { threadId: state.threadId }).then(setCtx).catch(() => {}), 150);
     return () => clearTimeout(t);
   }, [rpc, state.threadId, historyEvents]);
+  // The item list scrolls on its own and follows new items while it is scrolled to the bottom.
+  const follow = useStickToBottom(ctx?.request.input.length ?? 0, state.threadId);
   if (!ctx) return <p className="muted">Start a thread to see its context.</p>;
   const input: Json[] = ctx.request.input;
   const sizes = input.map(approxTokens);
@@ -154,7 +165,6 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
   const total = sizes.reduce((a, b) => a + b, 0) + toolsTokens;
   // Zoomed: the bar spans what is used (so small items are visible); otherwise the whole window.
   const scale = zoom ? Math.max(total * 1.1, 1) : ctx.contextWindow;
-  const barPct = (n: number) => `${Math.max(0.3, (100 * n) / scale)}%`;
   const last = state.costs[state.costs.length - 1] ?? null;
   const cache = cacheStatus(sizes, toolsTokens, last);
   const real = (t: number) => t * cache.scale; // estimate -> provider token count
@@ -162,31 +172,48 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
   const nextTotal = state.pricing ? nextCosts.reduce((a: number, b) => a + (b ?? 0), 0)
     + (nextRequestCost(real(toolsTokens), last ? "cached" : "new", state.pricing) ?? 0) : null;
   const nextUncached = uncachedCost(real(total), state.pricing);
+  const kinds = input.map(classify);
+  const segments: Segment[] = [
+    { index: -1, label: "tool definitions", cat: "tools", tokens: toolsTokens, status: last ? "cached" : undefined,
+      cost: nextRequestCost(real(toolsTokens), last ? "cached" : "new", state.pricing),
+      preview: ctx.request.tools.map((t: Json) => t.name ?? t.type).join(", ") },
+    ...input.map((it, i) => ({ index: i, ...kinds[i], tokens: sizes[i], status: cache.status[i], cost: nextCosts[i], preview: preview(it) })),
+  ];
+  // Clicking a bar segment opens that item in the list below.
+  const select = (i: number) => {
+    if (i < 0) return;
+    setOpen(i);
+    requestAnimationFrame(() => document.querySelector(`[data-ctx-index="${i}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
   return (
-    <div data-testid="context-view">
+    <div className="pinned-view" data-testid="context-view">
+      <div className="pinned-top">
       <p className="explain">This is <b>exactly</b> what the next request sends: the whole history, every time.
         Colours show where each item came from. <Links method="trace/promptAssembled" /></p>
-      <div className="window-bar" title="context window">
-        <div className="seg" style={{ width: barPct(toolsTokens), background: "#c084fc55" }} title={`tools ${toolsTokens} tok`} />
-        {input.map((it, i) => <div key={i} className="seg" style={{ width: barPct(sizes[i]), background: classify(it, i).color }} title={`${classify(it, i).label} ${sizes[i]} tok`} />)}
-        {!zoom && <div className="limit" style={{ left: `${(100 * ctx.autoCompactLimit) / ctx.contextWindow}%` }} title="auto-compact limit" />}
-      </div>
+      <ContextBar segments={segments} total={total} scale={scale} contextWindow={ctx.contextWindow}
+        autoCompactLimit={ctx.autoCompactLimit} zoom={zoom} hl={hl} setHl={setHl} onSelect={select} />
       <div className="muted small">
         <label><input type="checkbox" checked={zoom} onChange={(e) => setZoom(e.target.checked)} /> zoom to used</label> · ~{total.toLocaleString()} of {ctx.contextWindow.toLocaleString()} tokens (estimate) · auto-compact at {ctx.autoCompactLimit.toLocaleString()} · {ctx.request.tools.length} tools (~{toolsTokens} tok)</div>
+      <CategoryBreakdown segments={segments} total={total} contextWindow={ctx.contextWindow} hl={hl} setHl={setHl} />
       {last ? <CostPanel costs={state.costs} pricing={state.pricing} next={{ withCache: nextTotal, withoutCache: nextUncached }} />
         : <div className="cost-empty muted small">{state.events.some((e) => e.method === "trace/modelRequest" && e.params.threadId === state.threadId)
             ? <>The app server sent no cost data. It is probably older than this UI: restart <code>educodex app-server</code>.</>
             : <>Costs and the prompt cache appear here after the first request.</>}</div>}
       {last && <div className="muted small cost-note">Per-item costs below are estimates for the next request: the provider bills per request, so the total is spread over items by size. <i>cached</i> = inside the prefix the last request read from the cache.</div>}
-      <div className="ctx-list">
+      </div>
+      <div className="scroll-list-wrap">
+      <div className="ctx-list scroll-list" ref={follow.ref} onScroll={follow.onScroll} data-testid="ctx-list">
         {input.map((item, i) => {
-          const c = classify(item, i);
+          const c = kinds[i];
           const parts: Json[] | null = item.type === "message" ? item.content : null;
+          const lit = hl && ("item" in hl ? hl.item === i : hl.cat === c.cat);
           return (
-            <div key={i} className="ctx-item" data-testid="ctx-item">
+            <div key={i} className={`ctx-item${lit ? " lit" : ""}${follow.isFresh(i + 1) ? " fresh" : ""}`}
+              data-testid="ctx-item" data-ctx-index={i}
+              onPointerEnter={() => setHl({ item: i })} onPointerLeave={() => setHl(null)}>
               <div className="t-head" onClick={() => setOpen(open === i ? null : i)}>
                 <span className="t-time">{i}</span>
-                <span className="dot" style={{ background: c.color }} />
+                <span className="dot" style={{ background: CTX_CATS[c.cat].color }} />
                 <span className="t-title">{c.label}</span>
                 <span className="t-sum">{item.type}{item.role ? `/${item.role}` : ""}{parts && parts.length > 1 ? ` · ${parts.length} parts` : ""} · {sizes[i]} tok</span>
                 <span className={`cache-tag ${cache.status[i].replace(" ", "-")}`} title="prompt cache status in the last request">{cache.status[i]}</span>
@@ -201,6 +228,8 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
             </div>
           );
         })}
+      </div>
+      {!follow.atBottom && <button className="to-latest" onClick={follow.toBottom} data-testid="ctx-to-latest">↓ latest</button>}
       </div>
     </div>
   );
