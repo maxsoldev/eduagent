@@ -79,7 +79,7 @@ A **hard-linked** file (one with more than one name on disk) also needs a prompt
 
 ## In educodex
 
-The decision logic is pure functions in [`policy/approval.py`](../../src/educodex/policy/approval.py). The core of it is the fallback for commands that no rule matched:
+The decision logic is pure functions in [`policy/approval.py`](../../src/educodex/core/policy/approval.py). The core of it is the fallback for commands that no rule matched:
 
 ```python
 def _heuristic(dangerous, approval_policy, restricted, escalate):
@@ -110,7 +110,7 @@ def is_writable(path, writable_roots):
     return not (path.is_file() and path.stat().st_nlink > 1)
 ```
 
-The handlers in [`tools/handlers.py`](../../src/educodex/tools/handlers.py) act on the decision. For `exec_command`:
+The handlers in [`tools/handlers.py`](../../src/educodex/core/tools/handlers.py) act on the decision. For `exec_command`:
 1. Call `decide_exec` and emit `trace/policyDecision`.
 2. `forbidden`: return the reason to the model (`exec command rejected: …`).
 3. `prompt`: send `item/commandExecution/requestApproval`. `availableDecisions` lists the buttons; `acceptWithExecpolicyAmendment` is only in it when the model proposed a valid `prefix_rule` (`valid_prefix_rule`).
@@ -121,7 +121,7 @@ The handlers in [`tools/handlers.py`](../../src/educodex/tools/handlers.py) act 
 
 Note the comment in step 4: **approval does not remove the sandbox.** A user who approves `rm -rf build` lets it run, but still inside the sandbox. Only an approved `require_escalated` request runs outside it.
 
-The pause itself is one `await`. [`turn.py`](../../src/educodex/turn.py) `TurnContext.request_approval` calls `session.request_client(...)`. In the app server, that is `Connection.request` in [`app_server/connection.py`](../../src/educodex/app_server/connection.py), which sends the request and waits on a future:
+The pause itself is one `await`. [`turn.py`](../../src/educodex/core/turn.py) `TurnContext.request_approval` calls `session.request_client(...)`. In the app server, that is `Connection.request` in [`app_server/connection.py`](../../src/educodex/app_server/connection.py), which sends the request and waits on a future:
 
 ```python
 async def request(self, method, params):

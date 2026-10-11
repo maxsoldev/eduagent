@@ -1,9 +1,9 @@
 import pytest
 
-from educodex.policy.approval import decide_exec, decide_patch
-from educodex.policy.dangerous import is_dangerous_command
-from educodex.policy.rules import PrefixRule, parse_rules
-from educodex.policy.segments import split_segments
+from educodex.core.policy.approval import decide_exec, decide_patch
+from educodex.core.policy.dangerous import is_dangerous_command
+from educodex.core.policy.rules import PrefixRule, parse_rules
+from educodex.core.policy.segments import split_segments
 
 
 def test_segments():

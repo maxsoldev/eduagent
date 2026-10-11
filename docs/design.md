@@ -39,43 +39,55 @@ With `openai/gpt-6-luna` on OpenRouter:
 ## Architecture
 
 ```
-┌────────────┐ ┌────────────┐ ┌─────────┐
-│ React web  │ │ Textual TUI│ │ CLI     │   clients
-└─────┬──────┘ └─────┬──────┘ └────┬────┘
-      │ WebSocket    │ stdio (JSONL)│ in-process
-┌─────┴──────────────┴──────┐      │
-│ app_server                │      │   JSON-RPC lite; maps core events → notifications
-├───────────────────────────┴──────┤
-│ core: session · turn · context · tools · policy · sandbox · compact · rollout · hooks
-├──────────────┬──────────────────┤
-│ client       │ mcp              │   Responses API over httpx/SSE · MCP servers over stdio
-└──────────────┴──────────────────┘
+┌────────────┐ ┌─────────────┐ ┌─────────┐
+│ React web  │ │ Textual TUI │ │ CLI     │   clients
+└─────┬──────┘ └──────┬──────┘ └─────┬───┘
+      │ WebSocket     │ stdio (JSONL)│ in-process
+┌─────┴───────────────┴──────┐       │
+│ app_server                 │       │       JSON-RPC lite; maps core events → notifications
+└─────────────┬──────────────┘       │
+              │                      │       hosts build Session(..., probe=Tracer())
+┌─────────────┴──────────────────────┴───┐
+│ core                                   │          ┌───────────────────┐
+│   session · turn · context · tools     │  probe   │ observe           │
+│   policy · sandbox · compact · rollout ├─────────►│   tracer          │
+│   hooks                                │          │   pricing         │
+│ ┌──────────────┐ ┌───────────────────┐ │          │   stepper         │
+│ │ client       │ │ mcp               │ │          └───────────────────┘
+│ └──────────────┘ └───────────────────┘ │          trace/* events on the
+└────────────────────────────────────────┘          session's EventBus
+  client: Responses API over httpx/SSE · mcp: MCP servers over stdio
 ```
 
-`core` never imports `app_server`. A session publishes events on an `EventBus`, and asks its host one question at a time (approvals) through a callback. This mirrors the split between Codex's `core` and `app-server`.
+`core` never imports `observe`, `app_server` or the CLI/TUI (`tests/test_layers.py` checks this). A session publishes protocol events on an `EventBus`, and asks its host one question at a time (approvals) through a callback. This mirrors the split between Codex's `core` and `app-server`.
+
+Everything educodex adds for teaching lives in `observe/`. The core calls a `Probe` (`core/probe.py`) with one line at each interesting point; the base class does nothing. Hosts pass `Session(..., probe=Tracer())`, and the `Tracer` turns those calls into `trace/*` events on the session's bus, runs step mode and tracks costs. Codex instruments the same places with OpenTelemetry (`codex-rs/otel/`).
 
 ## Module layout
 
 | educodex module | Responsibility | Mirrors in `codex-rs/` |
 |---|---|---|
-| `client.py` | Build the request body, POST `/responses`, parse SSE | `core/src/client.rs`, `codex-api/src/common.rs`, `codex-api/src/sse/` |
-| `models.py` | Model catalog (vendored `models.json`) | `models-manager/`, `protocol/src/openai_models.rs` |
-| `items.py` | Response items as plain dicts in wire shape | `protocol/src/models.rs` |
-| `history.py` | History, `normalize`, token counting | `core/src/context_manager/` |
-| `context/` | Fragments: permissions, collaboration mode, AGENTS.md, environment; world-state diffs | `core/src/context/`, `core/src/session/world_state.rs`, `prompts/` |
-| `turn.py` | The agentic loop, tool execution with a read/write lock | `core/src/session/turn.rs`, `core/src/stream_events_utils.rs`, `core/src/tools/parallel.rs` |
-| `session.py`, `stepper.py` | One thread: history, client, tools; step mode | `core/src/session/session.rs`, `thread_manager.rs` |
-| `tools/specs.py` | Tool JSON exactly as Codex sends it | `core/src/tools/handlers/*_spec.rs` |
-| `tools/handlers.py`, `registry.py` | Policy → approval → (sandboxed) run → output | `core/src/tools/{handlers,registry.rs,router.rs,orchestrator.rs}` |
-| `tools/processes.py` | `exec_command` sessions and `write_stdin` | `core/src/unified_exec/` |
-| `tools/apply_patch.py` | Parse and apply Codex patches | `apply-patch/` |
-| `tools/output.py` | Output format and middle truncation | `core/src/tools/context.rs`, `utils/string/src/truncate.rs` |
-| `policy/` | Segments, dangerous commands, prefix rules, decisions | `core/src/exec_policy.rs`, `core/src/safety.rs`, `shell-command/`, `execpolicy/` |
-| `sandbox/seatbelt.py` | `sandbox-exec` with Codex's `.sbpl` files | `sandboxing/src/seatbelt.rs` |
-| `mcp/` | MCP client, naming, schema clean-up, approvals | `codex-mcp/`, `core/src/tools/handlers/mcp.rs`, `core/src/mcp_tool_call.rs`, `tools/src/json_schema.rs` |
-| `compact.py` | Local compaction | `core/src/compact.rs` |
-| `rollout.py` | JSONL session log | `rollout/src/recorder.rs` |
-| `hooks.py` | PreToolUse / PostToolUse / UserPromptSubmit / Stop | `hooks/`, `core/src/hook_runtime.rs` |
+| `core/client.py` | Build the request body, POST `/responses`, parse SSE | `core/src/client.rs`, `codex-api/src/common.rs`, `codex-api/src/sse/` |
+| `core/models.py` | Model catalog (vendored `models.json`) | `models-manager/`, `protocol/src/openai_models.rs` |
+| `core/items.py` | Response items as plain dicts in wire shape | `protocol/src/models.rs` |
+| `core/history.py` | History, `normalize`, token counting | `core/src/context_manager/` |
+| `core/context/` | Fragments: permissions, collaboration mode, AGENTS.md, environment; world-state diffs | `core/src/context/`, `core/src/session/world_state.rs`, `prompts/` |
+| `core/turn.py` | The agentic loop, tool execution with a read/write lock | `core/src/session/turn.rs`, `core/src/stream_events_utils.rs`, `core/src/tools/parallel.rs` |
+| `core/session.py` | One thread: history, client, tools | `core/src/session/session.rs`, `thread_manager.rs` |
+| `core/probe.py` | No-op observability hooks the core calls | `otel/` (`SessionTelemetry`) |
+| `core/tools/specs.py` | Tool JSON exactly as Codex sends it | `core/src/tools/handlers/*_spec.rs` |
+| `core/tools/handlers.py`, `registry.py` | Policy → approval → (sandboxed) run → output | `core/src/tools/{handlers,registry.rs,router.rs,orchestrator.rs}` |
+| `core/tools/processes.py` | `exec_command` sessions and `write_stdin` | `core/src/unified_exec/` |
+| `core/tools/apply_patch.py` | Parse and apply Codex patches | `apply-patch/` |
+| `core/tools/output.py` | Output format and middle truncation | `core/src/tools/context.rs`, `utils/string/src/truncate.rs` |
+| `core/policy/` | Segments, dangerous commands, prefix rules, decisions | `core/src/exec_policy.rs`, `core/src/safety.rs`, `shell-command/`, `execpolicy/` |
+| `core/sandbox/seatbelt.py` | `sandbox-exec` with Codex's `.sbpl` files | `sandboxing/src/seatbelt.rs` |
+| `core/mcp/` | MCP client, naming, schema clean-up, approvals | `codex-mcp/`, `core/src/tools/handlers/mcp.rs`, `core/src/mcp_tool_call.rs`, `tools/src/json_schema.rs` |
+| `core/compact.py` | Local compaction | `core/src/compact.rs` |
+| `core/rollout.py` | JSONL session log | `rollout/src/recorder.rs` |
+| `core/hooks.py` | PreToolUse / PostToolUse / UserPromptSubmit / Stop | `hooks/`, `core/src/hook_runtime.rs` |
+| `observe/tracer.py` | `trace/*` events (a `Probe` subclass) | – (educodex only) |
+| `observe/pricing.py`, `observe/stepper.py` | Request costs; step mode | – (educodex only) |
 | `app_server/` | JSON-RPC lite over WebSocket and stdio | `app-server/`, `app-server-protocol/`, `app-server-transport/` |
 | `testing/fake_model.py` | Scripted Responses SSE for tests and offline demos | – |
 | `cli.py`, `tui.py` | Terminal clients | `cli/`, `tui/` |
@@ -143,7 +155,7 @@ JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over st
 
 **educodex extensions:**
 - `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `sseEvent` (opt-in), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
-- `trace/pricing` and `trace/cost`: prices from OpenRouter's `/models`, and each request's cost split into uncached input, cache reads, cache writes and output, with the savings from caching (`pricing.py`). Codex reports tokens, not money.
+- `trace/pricing` and `trace/cost`: prices from OpenRouter's `/models`, and each request's cost split into uncached input, cache reads, cache writes and output, with the savings from caching (`observe/pricing.py`). Codex reports tokens, not money.
 - `debug/*` requests: `debug/stepMode/set`, `debug/continue`, `debug/context/get`.
 - Notifications carry `_seq` and `_ts` so the timeline can be ordered and timed.
 

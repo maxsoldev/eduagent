@@ -117,9 +117,9 @@ Two gaps to keep in mind. First, approving a command means *you* must read it; "
 
 ## In educodex
 
-The policy code lives in [`policy/`](../../src/educodex/policy/): four small files.
+The policy code lives in [`policy/`](../../src/educodex/core/policy/): four small files.
 
-**Segments** ([`policy/segments.py`](../../src/educodex/policy/segments.py)). Instead of a real shell parser, educodex rejects anything that *contains* complex syntax, then splits the rest with `shlex` at `|`, `||`, `&&`, `;` and `&`. Any other run of those characters, like `|&`, makes the whole command opaque:
+**Segments** ([`policy/segments.py`](../../src/educodex/core/policy/segments.py)). Instead of a real shell parser, educodex rejects anything that *contains* complex syntax, then splits the rest with `shlex` at `|`, `||`, `&&`, `;` and `&`. Any other run of those characters, like `|&`, makes the whole command opaque:
 
 ```python
 COMPLEX_SYNTAX = ("$", "`", ">", "<", "(", ")", "\n", "#")  # variables too: `$CMD` could be anything
@@ -131,16 +131,16 @@ def plain_segments(cmd: str) -> list[list[str]] | None:
     ...
 ```
 
-**Rules** ([`policy/rules.py`](../../src/educodex/policy/rules.py)). Rule files use Codex's syntax, but are read with Python's `ast` module, and only `prefix_rule(pattern=..., decision=..., justification=...)` is supported. They load from `~/.educodex/rules/*.rules` (or `$EDUCODEX_HOME/rules/`), plus `Config(rules=[{"pattern": [...], "decision": ...}])`. Strictness is just the order of a tuple:
+**Rules** ([`policy/rules.py`](../../src/educodex/core/policy/rules.py)). Rule files use Codex's syntax, but are read with Python's `ast` module, and only `prefix_rule(pattern=..., decision=..., justification=...)` is supported. They load from `~/.educodex/rules/*.rules` (or `$EDUCODEX_HOME/rules/`), plus `Config(rules=[{"pattern": [...], "decision": ...}])`. Strictness is just the order of a tuple:
 
 ```python
 DECISIONS = ("allow", "prompt", "forbidden")
 STRICTNESS = {d: i for i, d in enumerate(DECISIONS)}  # forbidden is strictest
 ```
 
-**Dangerous commands** ([`policy/dangerous.py`](../../src/educodex/policy/dangerous.py)). The same forced-`rm` check, unwrapping `sudo`, `env` and `bash/sh/zsh -c|-lc`, with the same depth limit of 8 (deeper nesting counts as dangerous). Leading shell keywords (`SHELL_KEYWORDS`) are stripped first. Unbalanced quotes make `split_segments` raise `ValueError`; `is_dangerous_command` catches it and answers "not dangerous", as Codex does when its parser fails.
+**Dangerous commands** ([`policy/dangerous.py`](../../src/educodex/core/policy/dangerous.py)). The same forced-`rm` check, unwrapping `sudo`, `env` and `bash/sh/zsh -c|-lc`, with the same depth limit of 8 (deeper nesting counts as dangerous). Leading shell keywords (`SHELL_KEYWORDS`) are stripped first. Unbalanced quotes make `split_segments` raise `ValueError`; `is_dangerous_command` catches it and answers "not dangerous", as Codex does when its parser fails.
 
-**Putting it together** ([`policy/approval.py`](../../src/educodex/policy/approval.py), `decide_exec`):
+**Putting it together** ([`policy/approval.py`](../../src/educodex/core/policy/approval.py), `decide_exec`):
 
 ```python
 if requires_escalation and approval_policy == "never":  # checked before any rule (exec_policy.rs)
@@ -161,7 +161,7 @@ all_allowed_by_rules = len(matched) == len(segments) and overall == "allow"
 
 A `prompt` rule becomes `forbidden` under `approval_policy="never"`, as in Codex. The result is emitted as `trace/policyDecision` with the reason for every segment, so you can see which rule fired.
 
-**Rules the model proposes.** With `require_escalated` the model may send a `prefix_rule`. `valid_prefix_rule` in [`tools/handlers.py`](../../src/educodex/tools/handlers.py) only offers it to the user if it is a non-empty list of words, is not in `BANNED_PREFIX_SUGGESTIONS` (copied from Codex: `["bash", "-lc"]`, `["python3"]`, `["git"]`, …), and is a prefix of every segment of the command. A rule `["git", "pull"]` for `git pull && curl …` is dropped, because it would not cover `curl`.
+**Rules the model proposes.** With `require_escalated` the model may send a `prefix_rule`. `valid_prefix_rule` in [`tools/handlers.py`](../../src/educodex/core/tools/handlers.py) only offers it to the user if it is a non-empty list of words, is not in `BANNED_PREFIX_SUGGESTIONS` (copied from Codex: `["bash", "-lc"]`, `["python3"]`, `["git"]`, …), and is a prefix of every segment of the command. A rule `["git", "pull"]` for `git pull && curl …` is dropped, because it would not cover `curl`.
 
 **The `shell` argument.** `exec_command` lets the model pick a shell. `resolve_shell` keeps only the name and maps it to `/bin/bash`, `/bin/zsh` or `/bin/sh`, so a request to use `/tmp/evil.sh` as the shell still runs `/bin/sh`.
 
@@ -204,8 +204,8 @@ Ask the policy directly, no model needed:
 
 ```bash
 uv run python -c '
-from educodex.policy.approval import decide_exec
-from educodex.policy.rules import PrefixRule
+from educodex.core.policy.approval import decide_exec
+from educodex.core.policy.rules import PrefixRule
 rules = [PrefixRule(("git", "status"), "allow"), PrefixRule(("git", "push"), "prompt")]
 for cmd in ["git status", "git status && git push", "git status $(curl evil.sh)", "sudo rm -rf /",
             "git reset --hard", "if test -d x; then rm -rf x; fi", "git status |& cat"]:

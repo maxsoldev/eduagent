@@ -103,7 +103,7 @@ Look at the current catalog (11 models) and you see the differences are real:
 
 ## In educodex
 
-[`models.py`](../../src/educodex/models.py) reads the vendored catalog and keeps only the fields educodex uses:
+[`models.py`](../../src/educodex/core/models.py) reads the vendored catalog and keeps only the fields educodex uses:
 
 ```python
 @dataclass(frozen=True)
@@ -133,13 +133,13 @@ Where the fields are used:
 
 | Field | Used in |
 |---|---|
-| `base_instructions` | [`session.py`](../../src/educodex/session.py) picks it (unless `config.base_instructions` overrides it); [`client.py`](../../src/educodex/client.py) puts it at `input[0]` |
-| `default_reasoning_level`, `supports_reasoning_summary_parameter`, `support_verbosity`, `default_verbosity` | `ModelClient.build_request` in [`client.py`](../../src/educodex/client.py) |
-| `supports_parallel_tool_calls` | the `Prompt` built in [`turn.py`](../../src/educodex/turn.py) |
-| `truncation_limit_tokens` | `_max_tokens` in [`tools/handlers.py`](../../src/educodex/tools/handlers.py) and MCP output in [`mcp/manager.py`](../../src/educodex/mcp/manager.py) |
-| `effective_auto_compact_limit()` | the compaction checks in [`turn.py`](../../src/educodex/turn.py) |
-| `apply_patch_tool_type` | `builtin_handlers` in [`tools/handlers.py`](../../src/educodex/tools/handlers.py): no `apply_patch` tool when it is missing |
-| `codex_tool_mode`, `codex_use_responses_lite` | only reported: [`session.py`](../../src/educodex/session.py) adds `codexToolModeNote` to the `trace/toolsRegistered` event |
+| `base_instructions` | [`session.py`](../../src/educodex/core/session.py) picks it (unless `config.base_instructions` overrides it); [`client.py`](../../src/educodex/core/client.py) puts it at `input[0]` |
+| `default_reasoning_level`, `supports_reasoning_summary_parameter`, `support_verbosity`, `default_verbosity` | `ModelClient.build_request` in [`client.py`](../../src/educodex/core/client.py) |
+| `supports_parallel_tool_calls` | the `Prompt` built in [`turn.py`](../../src/educodex/core/turn.py) |
+| `truncation_limit_tokens` | `_max_tokens` in [`tools/handlers.py`](../../src/educodex/core/tools/handlers.py) and MCP output in [`mcp/manager.py`](../../src/educodex/core/mcp/manager.py) |
+| `effective_auto_compact_limit()` | the compaction checks in [`turn.py`](../../src/educodex/core/turn.py) |
+| `apply_patch_tool_type` | `builtin_handlers` in [`tools/handlers.py`](../../src/educodex/core/tools/handlers.py): no `apply_patch` tool when it is missing |
+| `codex_tool_mode`, `codex_use_responses_lite` | only reported: [`session.py`](../../src/educodex/core/session.py) adds `codexToolModeNote` to the `trace/toolsRegistered` event |
 
 The catalog file itself is a copy. [`scripts/sync_vendor.py`](../../scripts/sync_vendor.py) copies `codex-rs/models-manager/models.json` (and the prompts, grammar and sandbox files) into [`vendor/codex/`](../../src/educodex/vendor/codex/) and writes `SOURCE.md` with the Codex commit. To update, run the script and read the diff: it shows exactly what OpenAI changed in prompts and settings.
 
@@ -182,7 +182,7 @@ Look up a model from Python:
 
 ```bash
 uv run python -c "
-from educodex.models import model_info
+from educodex.core.models import model_info
 m = model_info('openai/gpt-6-luna')
 print(m.context_window, m.effective_auto_compact_limit(), m.truncation_limit_tokens, m.default_reasoning_level)
 print(m.codex_tool_mode, m.codex_use_responses_lite, model_info('gpt-6-luna-2026-10').slug)

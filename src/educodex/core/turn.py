@@ -22,15 +22,14 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from educodex import compact, hooks
-from educodex.client import Prompt
-from educodex.context import world_state
-from educodex.pricing import add_totals, cost_breakdown
-from educodex.items import ResponseItem, approx_tokens, clean_output_item, is_tool_call, message_text, tool_output, user_message
-from educodex.tools.registry import ToolCall, TurnAborted
+from educodex.core import compact, hooks
+from educodex.core.client import Prompt
+from educodex.core.context import world_state
+from educodex.core.items import ResponseItem, clean_output_item, is_tool_call, message_text, tool_output, user_message
+from educodex.core.tools.registry import ToolCall, TurnAborted
 
 if TYPE_CHECKING:
-    from educodex.session import Session
+    from educodex.core.session import Session
 
 
 @dataclass
@@ -63,6 +62,10 @@ class TurnContext:
         return self.session.rules
 
     @property
+    def probe(self):
+        return self.session.probe
+
+    @property
     def approved_commands(self) -> set[str]:
         return self.session.approved_commands
 
@@ -73,9 +76,6 @@ class TurnContext:
     async def emit(self, method: str, **params: Any) -> None:
         await self.session.bus.emit(method, threadId=self.thread_id, turnId=self.turn_id, **params)
 
-    async def trace(self, method: str, **params: Any) -> None:
-        await self.emit(method, iteration=self.iteration, **params)
-
     async def item_started(self, item: dict) -> None:
         await self.emit("item/started", item=item, startedAtMs=_now_ms())
 
@@ -84,18 +84,14 @@ class TurnContext:
 
     async def request_approval(self, method: str, params: dict) -> tuple[str, object]:
         """Ask the client (a server->client JSON-RPC request). Returns (decision name, raw decision)."""
-        await self.trace("trace/approvalRequested", requestMethod=method, request=params)
+        await self.probe.approval_requested(self, method, params)
         result = await self.session.request_client(method, params)
         # Exec/patch approvals answer {"decision": ...}; MCP elicitations answer {"action": ...}.
         raw = result.get("decision", result.get("action")) if isinstance(result, dict) else result
         # {"acceptWithExecpolicyAmendment": {"execpolicy_amendment": [...]}} is the one object-valued decision.
         name = raw if isinstance(raw, str) else next(iter(raw), "decline") if isinstance(raw, dict) else "decline"
-        await self.trace("trace/approvalResolved", requestMethod=method, decision=name)
+        await self.probe.approval_resolved(self, method, name)
         return name, raw
-
-    async def breakpoint(self, name: str, **info: Any) -> None:
-        """Step mode: pause here until the client sends debug/continue."""
-        await self.session.stepper.pause(self, name, info)
 
 
 TURN_ABORTED_GUIDANCE = (
@@ -152,9 +148,7 @@ async def run_turn(session: "Session", text: str, turn: dict | None = None) -> d
             needs_follow_up = await run_sampling_request(ctx)
             tokens = session.history.token_count()
             limit = session.model_info.effective_auto_compact_limit()
-            await ctx.trace("trace/loopIteration", needsFollowUp=needs_follow_up, tokens=tokens,
-                            autoCompactLimit=limit, contextWindow=session.model_info.context_window,
-                            decision="continue" if needs_follow_up else "stop")
+            await ctx.probe.loop_iteration(ctx, needs_follow_up, tokens, limit, session.model_info.context_window)
             if needs_follow_up and tokens >= limit:
                 await compact.run_compact(ctx, reason="auto")
                 continue
@@ -191,12 +185,7 @@ async def record_context_updates(ctx: TurnContext) -> None:
     session = ctx.session
     fragments = world_state.build_fragments(session.config)
     changed = world_state.diff(session.context_snapshot, fragments)
-    await ctx.trace("trace/promptAssembled",
-                    baseInstructions={"source": session.base_instructions_source, "chars": len(session.base_instructions),
-                                      "tokens": (len(session.base_instructions) + 3) // 4},
-                    fragments=[{"kind": f.kind, "role": f.role, "source": f.source, "text": f.text,
-                                "tokens": (len(f.text) + 3) // 4, "changed": f in changed} for f in fragments],
-                    firstTurn=session.context_snapshot is None)
+    await ctx.probe.context_built(ctx, fragments, changed, first_turn=session.context_snapshot is None)
     session.context_snapshot = world_state.snapshot(fragments)
     if changed:
         await session.record(*world_state.to_messages(changed))
@@ -212,20 +201,14 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
         parallel_tool_calls=session.model_info.supports_parallel_tool_calls,
     )
     body = session.client.build_request(prompt)
-    await ctx.breakpoint("beforeModelRequest", inputItems=len(body["input"]), tools=len(body["tools"]))
-    await ctx.trace("trace/modelRequest", url=f"{session.config.base_url}/responses", body=body,
-                    inputTokensEstimate=sum(approx_tokens(i) for i in body["input"]))
+    await ctx.probe.checkpoint(ctx, "beforeModelRequest", body=body)
+    await ctx.probe.model_request(ctx, body)
 
     tool_calls: list[ResponseItem] = []
     usage: dict | None = None
     end_turn_false = False
-    started = time.monotonic()
-    event_counts: dict[str, int] = {}
-    output_items: list[ResponseItem] = []
     async for event in session.client.stream(body):
-        event_counts[event.type] = event_counts.get(event.type, 0) + 1
-        if session.trace_sse:
-            await ctx.trace("trace/sseEvent", event=event.data)
+        await ctx.probe.sse_event(ctx, event)
         data = event.data
         if event.type == "response.output_item.added":
             await _item_added(ctx, data["item"])
@@ -236,7 +219,6 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
                            summaryIndex=data.get("summary_index", 0), delta=data.get("delta", ""))
         elif event.type == "response.output_item.done":
             item = clean_output_item(data["item"])
-            output_items.append(item)
             await session.record(item)
             if is_tool_call(item):
                 tool_calls.append(item)
@@ -248,16 +230,7 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
                 end_turn_false = True
 
     session.history.set_usage(usage)
-    cost = None
-    if usage:  # educodex extension: what this request cost and how much the prompt cache saved
-        pricing = await session.ensure_pricing()
-        cost = cost_breakdown(usage, pricing)
-        session.total_cost = add_totals(session.total_cost, cost)
-    await ctx.trace("trace/modelResponse", usage=usage, eventCounts=event_counts, outputItems=output_items,
-                    seconds=round(time.monotonic() - started, 3), cost=cost)
-    if cost:
-        await ctx.trace("trace/cost", last=cost, total=session.total_cost,
-                        inputItems=len(body["input"]), toolsTokens=approx_tokens({"tools": body["tools"]}))
+    await ctx.probe.model_response(ctx, body, usage)
     if usage:
         last = token_breakdown(usage)
         total = session.total_usage = {k: session.total_usage.get(k, 0) + v for k, v in last.items()}
@@ -284,10 +257,8 @@ async def run_tool_calls(ctx: TurnContext, calls: list[ResponseItem]) -> list[Re
     async def run_one(item: ResponseItem) -> ResponseItem:
         call = ToolCall.from_item(item)
         handler = session.router.get(call.name)
-        await ctx.breakpoint("beforeToolCall", tool=call.name, callId=call.call_id)
-        await ctx.trace("trace/toolDispatch", tool=call.name, callId=call.call_id, kind=item["type"],
-                        arguments=call.arguments or None, input=call.input or None,
-                        parallel=bool(handler and handler.supports_parallel))
+        await ctx.probe.checkpoint(ctx, "beforeToolCall", tool=call.name, callId=call.call_id)
+        await ctx.probe.tool_call(ctx, call, item, parallel=bool(handler and handler.supports_parallel))
         hooked = call.name != "write_stdin"  # Codex does not run tool hooks for write_stdin
         if hooked and (blocked := await hooks.run_pre_tool_use(ctx, call)):
             output = blocked
@@ -296,9 +267,8 @@ async def run_tool_calls(ctx: TurnContext, calls: list[ResponseItem]) -> list[Re
                 output = await session.router.dispatch(call, ctx)
             if hooked:
                 output = await hooks.run_post_tool_use(ctx, call, output)
-        await ctx.trace("trace/toolOutput", tool=call.name, callId=call.call_id, output=output,
-                        tokens=(len(output.encode()) + 3) // 4)
-        await ctx.breakpoint("afterToolCall", tool=call.name, callId=call.call_id)
+        await ctx.probe.tool_output(ctx, call, output)
+        await ctx.probe.checkpoint(ctx, "afterToolCall", tool=call.name, callId=call.call_id)
         return tool_output(item, output)
 
     try:

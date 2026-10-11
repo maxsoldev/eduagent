@@ -84,7 +84,7 @@ Each OS needs a different mechanism:
 
 ## In educodex
 
-[`sandbox/seatbelt.py`](../../src/educodex/sandbox/seatbelt.py) builds the `sandbox-exec` command. It reuses Codex's own `.sbpl` files, copied into [`vendor/codex/seatbelt/`](../../src/educodex/vendor/codex/seatbelt/):
+[`sandbox/seatbelt.py`](../../src/educodex/core/sandbox/seatbelt.py) builds the `sandbox-exec` command. It reuses Codex's own `.sbpl` files, copied into [`vendor/codex/seatbelt/`](../../src/educodex/vendor/codex/seatbelt/):
 
 ```python
 sections = [vendor.read("seatbelt/seatbelt_base_policy.sbpl"), "; allow read-only file operations\n(allow file-read*)"]
@@ -105,7 +105,7 @@ if network_access:
 
 `writable_roots()` returns `cwd`, `/tmp` and `tempfile.gettempdir()` (which reads `$TMPDIR`), all resolved. On macOS `/tmp` is really `/private/tmp`, and Seatbelt matches real paths, so resolving matters. In `read-only` mode there is no `file-write*` rule at all. The same list feeds the `<permissions instructions>` fragment ("The writable roots are …", chapter 05) and the patch check (chapter 09), so the model, the patch policy and the sandbox agree on what is writable.
 
-[`tools/handlers.py`](../../src/educodex/tools/handlers.py) connects the layers in `ExecCommandHandler.handle`:
+[`tools/handlers.py`](../../src/educodex/core/tools/handlers.py) connects the layers in `ExecCommandHandler.handle`:
 1. `decide_exec` (chapter 09) returns `allow`/`prompt`/`forbidden` **and** `sandboxed`. `sandboxed` is false only for `danger-full-access`, an approved `require_escalated` call, or a command where every segment matched an allow rule (chapter 11).
 2. If sandboxed, it wraps the shell command with `seatbelt.build(...)`, sets the env from `seatbelt.sandbox_env(...)`, and emits `trace/sandboxCommand` with the argv, policy text and `-D` params.
 3. After the run, `_is_likely_sandbox_denied` looks for a denial and emits `trace/sandboxDenied`:

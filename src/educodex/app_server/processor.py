@@ -18,17 +18,19 @@ import httpx
 
 from educodex import __version__
 from educodex.app_server.connection import INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND, Connection, RpcError
-from educodex.config import Config, load_api_key
-from educodex.events import Event, EventBus
-from educodex.models import catalog
-from educodex.session import Session
+from educodex.core.config import Config, load_api_key
+from educodex.core.events import Event, EventBus
+from educodex.core.models import catalog
+from educodex.core.session import Session
+from educodex.observe.tracer import Tracer
 
 
 class ThreadState:
     """A session plus what clients need to redraw it (turns and their completed items)."""
 
-    def __init__(self, session: Session, owner: Connection) -> None:
+    def __init__(self, session: Session, tracer: Tracer, owner: Connection) -> None:
         self.session = session
+        self.tracer = tracer  # the session's probe: trace/* events, step mode
         self.owner = owner  # the connection that receives approval requests
         self.subscribers: set[Connection] = {owner}  # connections that get this thread's notifications
         self.turns: list[dict[str, Any]] = []
@@ -131,10 +133,11 @@ class MessageProcessor:
         async def ask_client(method: str, request: dict) -> Any:
             return await state.owner.request(method, request)
 
-        session = Session(config, bus, ask_client, transport=self.transport_factory() if self.transport_factory else None)
-        state = ThreadState(session, conn)
+        tracer = Tracer(trace_sse=bool(params.get("traceSse")))
+        session = Session(config, bus, ask_client, transport=self.transport_factory() if self.transport_factory else None,
+                          probe=tracer)
+        state = ThreadState(session, tracer, conn)
         self.threads[session.thread_id] = state
-        session.trace_sse = bool(params.get("traceSse"))
         thread = await session.start()
         return {"thread": thread, "model": config.model, "modelProvider": "openrouter", "cwd": str(config.cwd),
                 "approvalPolicy": config.approval_policy, "sandbox": {"type": SANDBOX_POLICY_TAGS[config.sandbox_mode]},
@@ -197,12 +200,12 @@ class MessageProcessor:
         return {"data": data, "nextCursor": None}
 
     async def debug_step_mode_set(self, conn: Connection, params: dict) -> dict:
-        state = self._state(params)
-        state.session.stepper.configure(bool(params.get("enabled")), params.get("breakpoints"))
-        return {"enabled": state.session.stepper.enabled, "breakpoints": sorted(state.session.stepper.breakpoints)}
+        stepper = self._state(params).tracer.stepper
+        stepper.configure(bool(params.get("enabled")), params.get("breakpoints"))
+        return {"enabled": stepper.enabled, "breakpoints": sorted(stepper.breakpoints)}
 
     async def debug_continue(self, conn: Connection, params: dict) -> dict:
-        self._state(params).session.stepper.release()
+        self._state(params).tracer.stepper.release()
         return {}
 
     async def debug_context_get(self, conn: Connection, params: dict) -> dict:
@@ -227,7 +230,7 @@ class MessageProcessor:
 
 
 def _prompt_for(session: Session):
-    from educodex.client import Prompt
+    from educodex.core.client import Prompt
 
     return Prompt(input=session.history.for_prompt(), tools=session.router.specs(),
                   base_instructions=session.base_instructions,

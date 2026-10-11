@@ -12,9 +12,10 @@ from rich.console import Console
 from rich.markup import escape
 from rich.prompt import Prompt
 
-from educodex.config import Config, load_api_key
-from educodex.events import Event, EventBus
-from educodex.session import Session
+from educodex.core.config import Config, load_api_key
+from educodex.core.events import Event, EventBus
+from educodex.core.session import Session
+from educodex.observe.tracer import Tracer
 
 console = Console()
 
@@ -115,7 +116,7 @@ async def run_exec(args) -> int:
         from educodex.testing.fake_model import FakeModel
 
         transport = FakeModel.from_file(args.fake_model)
-    session = Session(build_config(args), bus, ask_user, transport=transport)
+    session = Session(build_config(args), bus, ask_user, transport=transport, probe=Tracer())
     try:
         await session.start()
         turn = await session.run(args.prompt)

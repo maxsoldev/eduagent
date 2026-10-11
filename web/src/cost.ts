@@ -1,4 +1,4 @@
-// Money and cache helpers for the UI. Costs come from trace/cost (server-side pricing.py);
+// Money and cache helpers for the UI. Costs come from trace/cost (server-side observe/pricing.py);
 // per-item numbers in the Context tab are estimates spread over items by their size.
 import type { Json } from "./rpc";
 

@@ -81,7 +81,7 @@ You can see the effect in `usage.input_tokens_details.cached_tokens`. Requests a
 
 ## In educodex
 
-[`context/world_state.py`](../../src/educodex/context/world_state.py) builds the fragments in Codex's order:
+[`context/world_state.py`](../../src/educodex/core/context/world_state.py) builds the fragments in Codex's order:
 
 ```python
 fragments.append(render_permissions(config.sandbox_mode, config.approval_policy, config.network_access, roots))
@@ -93,9 +93,9 @@ fragments.append(render_environment_context(config.cwd, config.sandbox_mode, roo
 ```
 
 (`developer_instructions` comes first when set.) Each renderer lives in its own module:
-- [`permissions.py`](../../src/educodex/context/permissions.py) joins Codex's vendored templates (`sandbox_mode/*.md` + `approval_policy/*.md`). Under `workspace-write` it ends with every root the sandbox lets the agent write, e.g. ``The writable roots are `/repo`, `/private/tmp`, `/private/var/folders/…/T`.`` (cwd, `/tmp` and `$TMPDIR`, the same list the Seatbelt policy uses, chapter 10).
-- [`agents_md.py`](../../src/educodex/context/agents_md.py) finds `AGENTS.override.md` or `AGENTS.md` in the educodex home (`~/.educodex`) and in every folder from the git root down to cwd, up to 32 KiB in total.
-- [`environment.py`](../../src/educodex/context/environment.py) writes `<environment_context>`.
+- [`permissions.py`](../../src/educodex/core/context/permissions.py) joins Codex's vendored templates (`sandbox_mode/*.md` + `approval_policy/*.md`). Under `workspace-write` it ends with every root the sandbox lets the agent write, e.g. ``The writable roots are `/repo`, `/private/tmp`, `/private/var/folders/…/T`.`` (cwd, `/tmp` and `$TMPDIR`, the same list the Seatbelt policy uses, chapter 10).
+- [`agents_md.py`](../../src/educodex/core/context/agents_md.py) finds `AGENTS.override.md` or `AGENTS.md` in the educodex home (`~/.educodex`) and in every folder from the git root down to cwd, up to 32 KiB in total.
+- [`environment.py`](../../src/educodex/core/context/environment.py) writes `<environment_context>`.
 
 `diff` and `to_messages` implement "append only what changed":
 
@@ -106,11 +106,11 @@ def diff(previous: dict[str, str] | None, current: list[Fragment]) -> list[Fragm
     return [f for f in current if previous.get(f.kind) != f.text]
 ```
 
-`to_messages` makes one developer message, then one user message, each fragment a separate part. [`turn.py`](../../src/educodex/turn.py) `record_context_updates` calls this at the start of every turn, before the user's message. It records the changed fragments and emits `trace/promptAssembled`, which lists each fragment with its source file, token estimate and a `changed` flag.
+`to_messages` makes one developer message, then one user message, each fragment a separate part. [`turn.py`](../../src/educodex/core/turn.py) `record_context_updates` calls this at the start of every turn, before the user's message. It records the changed fragments and emits `trace/promptAssembled`, which lists each fragment with its source file, token estimate and a `changed` flag.
 
-The base instructions are *not* in history. [`client.py`](../../src/educodex/client.py) puts them in front on every request: `"input": [developer_message(prompt.base_instructions), *prompt.input]`.
+The base instructions are *not* in history. [`client.py`](../../src/educodex/core/client.py) puts them in front on every request: `"input": [developer_message(prompt.base_instructions), *prompt.input]`.
 
-[`tools/registry.py`](../../src/educodex/tools/registry.py) keeps tool specs in a stable order, for the same caching reason ("a changing order would break the prompt cache").
+[`tools/registry.py`](../../src/educodex/core/tools/registry.py) keeps tool specs in a stable order, for the same caching reason ("a changing order would break the prompt cache").
 
 ## In Codex
 
@@ -158,7 +158,7 @@ Offline: add `--fake-model examples/fake/demo.json` to `exec` or `app-server`. T
 
 ### Watching the cache pay off
 
-The header shows the session's cost and cache hit rate (e.g. `$0.0019 · 84% cached`). The **Context** tab tags every item `cached`, `uncached` or `new` for the last request and estimates what it costs to send again. The **Requests** tab shows each request's bill. Prices come from OpenRouter's `/models` and usage from the response (`pricing.py`); educodex's numbers match OpenRouter's billed `usage.cost` exactly.
+The header shows the session's cost and cache hit rate (e.g. `$0.0019 · 84% cached`). The **Context** tab tags every item `cached`, `uncached` or `new` for the last request and estimates what it costs to send again. The **Requests** tab shows each request's bill. Prices come from OpenRouter's `/models` and usage from the response ([`observe/pricing.py`](../../src/educodex/observe/pricing.py)); educodex's numbers match OpenRouter's billed `usage.cost` exactly.
 
 A real `gpt-6-luna` turn:
 

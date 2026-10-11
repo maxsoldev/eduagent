@@ -12,9 +12,9 @@ the strictest one wins. Only an approved `require_escalated` request leaves the 
 from dataclasses import dataclass
 from pathlib import Path
 
-from educodex.policy.dangerous import is_dangerous, is_dangerous_command
-from educodex.policy.rules import STRICTNESS, PrefixRule
-from educodex.policy.segments import plain_segments
+from educodex.core.policy.dangerous import is_dangerous, is_dangerous_command
+from educodex.core.policy.rules import STRICTNESS, PrefixRule
+from educodex.core.policy.segments import plain_segments
 
 PROTECTED_SUBPATHS = (".git", ".codex", ".agents")  # read-only even inside writable roots
 

@@ -66,12 +66,15 @@ cd web && pnpm test:e2e             # Playwright: drives the web UI against the 
 
 | Path | What |
 |---|---|
-| `src/educodex/turn.py` | The agentic loop (`codex-rs/core/src/session/turn.rs`) |
-| `src/educodex/client.py` | Responses API request and SSE parsing (`core/src/client.rs`) |
-| `src/educodex/context/` | Prompt fragments and world-state diffs (`core/src/context/`, `prompts/`) |
-| `src/educodex/tools/` | `exec_command`, `write_stdin`, `apply_patch`, `update_plan` (`core/src/tools/`, `apply-patch/`) |
-| `src/educodex/policy/`, `sandbox/` | Approvals, rules, dangerous commands, Seatbelt (`core/src/exec_policy.rs`, `sandboxing/`) |
-| `src/educodex/mcp/` | MCP client and tool exposure (`codex-mcp/`) |
+| `src/educodex/core/` | The Codex harness; never imports `observe/` or the hosts |
+| `src/educodex/core/turn.py` | The agentic loop (`codex-rs/core/src/session/turn.rs`) |
+| `src/educodex/core/client.py` | Responses API request and SSE parsing (`core/src/client.rs`) |
+| `src/educodex/core/context/` | Prompt fragments and world-state diffs (`core/src/context/`, `prompts/`) |
+| `src/educodex/core/tools/` | `exec_command`, `write_stdin`, `apply_patch`, `update_plan` (`core/src/tools/`, `apply-patch/`) |
+| `src/educodex/core/policy/`, `sandbox/` | Approvals, rules, dangerous commands, Seatbelt (`core/src/exec_policy.rs`, `sandboxing/`) |
+| `src/educodex/core/mcp/` | MCP client and tool exposure (`codex-mcp/`) |
+| `src/educodex/core/probe.py` | No-op observability hooks the core calls (like Codex's OpenTelemetry calls, `otel/`) |
+| `src/educodex/observe/` | educodex only: `trace/*` events (`Tracer`), costs, step mode |
 | `src/educodex/app_server/` | JSON-RPC lite server (`app-server/`, `app-server-protocol/`) |
 | `web/` | React UI |
 | `docs/design.md`, `docs/guide/` | Design and the guide |

@@ -151,12 +151,12 @@ The wall time here has one decimal, as in Codex. If the patch does not parse or 
 
 | File | What |
 |---|---|
-| [`tools/specs.py`](../../src/educodex/tools/specs.py) | The JSON specs, copied field by field from Codex |
-| [`tools/handlers.py`](../../src/educodex/tools/handlers.py) | One handler class per tool: check policy, maybe ask, run, format |
-| [`tools/processes.py`](../../src/educodex/tools/processes.py) | `ProcessManager`: sessions, yield times, 1 MiB buffers |
-| [`tools/output.py`](../../src/educodex/tools/output.py) | `format_exec_output`, `truncate_middle` |
-| [`tools/apply_patch.py`](../../src/educodex/tools/apply_patch.py) | Parse the patch, `seek_sequence`, apply, summary |
-| [`tools/registry.py`](../../src/educodex/tools/registry.py) | `ToolRouter`: stable spec order, dispatch by name |
+| [`tools/specs.py`](../../src/educodex/core/tools/specs.py) | The JSON specs, copied field by field from Codex |
+| [`tools/handlers.py`](../../src/educodex/core/tools/handlers.py) | One handler class per tool: check policy, maybe ask, run, format |
+| [`tools/processes.py`](../../src/educodex/core/tools/processes.py) | `ProcessManager`: sessions, yield times, 1 MiB buffers |
+| [`tools/output.py`](../../src/educodex/core/tools/output.py) | `format_exec_output`, `truncate_middle` |
+| [`tools/apply_patch.py`](../../src/educodex/core/tools/apply_patch.py) | Parse the patch, `seek_sequence`, apply, summary |
+| [`tools/registry.py`](../../src/educodex/core/tools/registry.py) | `ToolRouter`: stable spec order, dispatch by name |
 
 The heart of sessions is `_collect`: wait for exit *or* the yield time, then return only output the model has not seen yet:
 

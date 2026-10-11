@@ -11,7 +11,7 @@ Every chapter uses the same blocks:
 | Block | Meaning |
 |---|---|
 | **Concept** | The idea, explained from scratch |
-| **In educodex** | Our Python code (`src/educodex/...`) |
+| **In educodex** | Our Python code: the harness in `src/educodex/core/`, teaching extras in `src/educodex/observe/` |
 | **In Codex** | The Rust code it mirrors, linked at the pinned commit |
 | **Where educodex is simpler** | What we left out or changed, and why |
 | **Try it** | Something to run: the CLI, the web UI, or offline with `--fake-model` |
@@ -62,7 +62,7 @@ The milestone column refers to [the design doc](../design.md#milestones). In the
 | # | Chapter | You will learn | Milestone |
 |---|---|---|---|
 | 16 | [The App Server](16-app-server.md) | JSON-RPC lite, thread/turn/item primitives, server-initiated requests | 2 |
-| 17 | [Clients and observability](17-clients-and-observability.md) | Building the web UI and TUI on one protocol; trace events | 3 |
+| 17 | [Clients and observability](17-clients-and-observability.md) | Building the web UI and TUI on one protocol; trace events and the probe seam | 3 |
 
 ### Part VII — Beyond educodex
 | # | Chapter | You will learn | Milestone |

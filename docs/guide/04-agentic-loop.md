@@ -75,7 +75,7 @@ When the model wants to stop, the harness can run a user-defined **Stop hook**: 
 
 ## In educodex
 
-[`turn.py`](../../src/educodex/turn.py) `run_turn` holds the loop:
+[`turn.py`](../../src/educodex/core/turn.py) `run_turn` holds the loop:
 
 ```python
 while True:

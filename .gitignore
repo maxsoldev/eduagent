@@ -22,3 +22,6 @@ web/tsconfig.tsbuildinfo
 .playwright-mcp/
 .DS_Store
 *.log
+
+# Agent worktrees
+.claude/

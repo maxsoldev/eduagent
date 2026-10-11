@@ -9,14 +9,14 @@ Mirrors codex-rs/core/src/session/world_state.rs + context_manager/updates.rs:
     fragment being a separate content part.
 """
 
-from educodex.config import Config
-from educodex.context.agents_md import render_agents_md
-from educodex.context.environment import render_environment_context
-from educodex.context.fragments import Fragment
-from educodex.context.permissions import render_permissions
-from educodex.items import ResponseItem, message
-from educodex.models import catalog, model_info
-from educodex.sandbox import seatbelt
+from educodex.core.config import Config
+from educodex.core.context.agents_md import render_agents_md
+from educodex.core.context.environment import render_environment_context
+from educodex.core.context.fragments import Fragment
+from educodex.core.context.permissions import render_permissions
+from educodex.core.items import ResponseItem, message
+from educodex.core.models import catalog, model_info
+from educodex.core.sandbox import seatbelt
 
 
 def collaboration_mode_text(model: str) -> str | None:

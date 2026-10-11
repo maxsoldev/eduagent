@@ -1,6 +1,6 @@
 import pytest
 
-from educodex.tools.apply_patch import PatchError, apply_planned, parse_patch, plan_changes, seek_sequence
+from educodex.core.tools.apply_patch import PatchError, apply_planned, parse_patch, plan_changes, seek_sequence
 
 
 def run(patch, cwd):

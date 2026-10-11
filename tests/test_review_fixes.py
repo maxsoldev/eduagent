@@ -11,13 +11,13 @@ from starlette.websockets import WebSocketDisconnect
 
 from educodex.app_server.main import build_app
 from educodex.app_server.processor import MessageProcessor
-from educodex.config import Config
-from educodex.items import message_text
-from educodex.policy.approval import decide_exec, decide_patch
-from educodex.policy.rules import PrefixRule
-from educodex.sandbox import seatbelt
-from educodex.tools.apply_patch import apply_planned, plan_changes
-from educodex.tools.processes import ProcessManager
+from educodex.core.config import Config
+from educodex.core.items import message_text
+from educodex.core.policy.approval import decide_exec, decide_patch
+from educodex.core.policy.rules import PrefixRule
+from educodex.core.sandbox import seatbelt
+from educodex.core.tools.apply_patch import apply_planned, plan_changes
+from educodex.core.tools.processes import ProcessManager
 
 RULES = [PrefixRule(("git", "status"), "allow"), PrefixRule(("rm",), "forbidden")]
 
@@ -171,13 +171,13 @@ def test_hash_does_not_hide_forced_rm():
 
 
 def test_model_cannot_choose_shell_binary():
-    from educodex.tools.handlers import resolve_shell
+    from educodex.core.tools.handlers import resolve_shell
 
     assert resolve_shell("/tmp/evil.sh") == "/bin/sh" and resolve_shell("/usr/local/bin/bash") == "/bin/bash"
 
 
 def test_prefix_rule_suggestions_are_validated():
-    from educodex.tools.handlers import valid_prefix_rule
+    from educodex.core.tools.handlers import valid_prefix_rule
 
     assert valid_prefix_rule("ls", "ls") is None  # not a list
     assert valid_prefix_rule(["bash"], "bash -c x") is None  # banned catch-all

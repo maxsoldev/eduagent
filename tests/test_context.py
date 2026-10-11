@@ -1,6 +1,6 @@
-from educodex.config import Config
-from educodex.context import world_state
-from educodex.context.agents_md import render_agents_md
+from educodex.core.config import Config
+from educodex.core.context import world_state
+from educodex.core.context.agents_md import render_agents_md
 
 
 def test_initial_layout_matches_codex(workspace, tmp_path):

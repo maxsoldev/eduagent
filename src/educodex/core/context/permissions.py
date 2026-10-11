@@ -6,7 +6,7 @@ sandbox text, approval text, writable roots.
 """
 
 from educodex import vendor
-from educodex.context.fragments import Fragment
+from educodex.core.context.fragments import Fragment
 
 SANDBOX_TEMPLATES = {
     "read-only": "templates/permissions/sandbox_mode/read_only.md",

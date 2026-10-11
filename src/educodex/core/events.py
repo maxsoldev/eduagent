@@ -6,7 +6,8 @@ or terminal output.
 
 Two families:
   * protocol events  -> same names as Codex app-server v2 notifications (e.g. "item/started")
-  * trace events     -> educodex-only, "trace/*", showing steps production harnesses hide
+  * trace events     -> educodex-only (trace/*), showing steps production harnesses hide; the core
+                        never emits them itself, educodex.observe.Tracer does (see probe.py)
 """
 
 import asyncio
@@ -23,7 +24,7 @@ _seq = itertools.count(1)
 
 @dataclass
 class Event:
-    method: str  # e.g. "item/completed" or "trace/modelRequest"
+    method: str  # e.g. "item/completed" or trace/modelRequest
     params: dict[str, Any]
     seq: int = field(default_factory=lambda: next(_seq))
     ts: float = field(default_factory=time.time)

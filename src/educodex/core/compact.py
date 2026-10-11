@@ -13,13 +13,13 @@ answered with one encrypted `compaction` item (core/src/compact_remote_v2*.rs; t
 from typing import TYPE_CHECKING
 
 from educodex import vendor
-from educodex.client import Prompt
-from educodex.context import world_state
-from educodex.items import ResponseItem, message_text, user_message
-from educodex.tools.output import approx_token_count, truncate_middle
+from educodex.core.client import Prompt
+from educodex.core.context import world_state
+from educodex.core.items import ResponseItem, message_text, user_message
+from educodex.core.tools.output import approx_token_count, truncate_middle
 
 if TYPE_CHECKING:
-    from educodex.turn import TurnContext
+    from educodex.core.turn import TurnContext
 
 COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
 CONTEXT_PREFIXES = ("<environment_context>", "# AGENTS.md instructions", "<permissions instructions>")
@@ -68,7 +68,7 @@ async def run_compact(ctx: "TurnContext", reason: str = "manual") -> str:
     prompt = Prompt(input=[*session.history.for_prompt(), user_message(summary_prompt())], tools=[],
                     base_instructions=session.base_instructions, parallel_tool_calls=False)
     body = session.client.build_request(prompt)
-    await ctx.trace("trace/compactionRequest", reason=reason, body=body, tokensBefore=before_tokens)
+    await ctx.probe.compaction_requested(ctx, reason, body, before_tokens)
     summary = ""
     async for event in session.client.stream(body):
         if event.type == "response.output_item.done" and event.data["item"].get("type") == "message":
@@ -79,9 +79,7 @@ async def run_compact(ctx: "TurnContext", reason: str = "manual") -> str:
     new_history = build_compacted_history(before, summary, world_state.to_messages(fragments))
     session.history.replace(new_history)
     session.rollout.compacted(summary, new_history)
-    await ctx.trace("trace/compacted", reason=reason, summary=summary, itemsBefore=len(before),
-                    itemsAfter=len(new_history), tokensBefore=before_tokens, tokensAfter=session.history.token_count(),
-                    newHistory=new_history)
+    await ctx.probe.compacted(ctx, reason, summary, len(before), before_tokens, new_history)
     await ctx.item_completed(item)
     await ctx.emit("thread/compacted")
     return summary

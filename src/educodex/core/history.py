@@ -5,7 +5,7 @@ Mirrors codex-rs/core/src/context_manager/history.rs. `for_prompt()` returns wha
 mirroring context_manager/normalize.rs.
 """
 
-from educodex.items import ResponseItem, approx_tokens, is_tool_call, tool_output
+from educodex.core.items import ResponseItem, approx_tokens, is_tool_call, tool_output
 
 
 class History:
