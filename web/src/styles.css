@@ -71,6 +71,7 @@ pre.diff .add { color: var(--ok); } pre.diff .del { color: var(--bad); } pre.dif
 .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .chip { font-size: 12px; padding: 2px 8px; border-radius: 12px; border-width: 1px; } .chip.off { opacity: .4; }
 .t-row, .ctx-item { border-bottom: 1px solid #1a2430; }
+.t-row.other-thread { opacity: 0.45; }
 .t-head { display: flex; gap: 8px; align-items: baseline; padding: 4px 2px; cursor: pointer; }
 .t-head:hover { background: var(--panel); }
 .t-time { color: var(--muted); font-size: 11px; width: 50px; flex: none; text-align: right; }

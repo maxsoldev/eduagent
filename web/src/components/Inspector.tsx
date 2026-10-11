@@ -14,6 +14,8 @@ export function Inspector({ state, rpc }: { state: State; rpc: RpcClient | null 
   const [tab, setTab] = useState<Tab>("Timeline");
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => { if (body.current) body.current.scrollTop = 0; }, [tab]); // tabs share one scroller
+  // state.events spans every thread on this connection; per-thread tabs only show the current one.
+  const threadEvents = useMemo(() => state.events.filter((e) => e.params.threadId === state.threadId), [state.events, state.threadId]);
   return (
     <div className="inspector">
       <div className="tabs">
@@ -22,11 +24,11 @@ export function Inspector({ state, rpc }: { state: State; rpc: RpcClient | null 
         ))}
       </div>
       <div className="tab-body" ref={body}>
-        {tab === "Timeline" && <Timeline events={state.events} />}
+        {tab === "Timeline" && <Timeline events={state.events} threadId={state.threadId} />}
         {tab === "Context" && <ContextView state={state} rpc={rpc} />}
-        {tab === "Requests" && <Requests events={state.events} />}
-        {tab === "Tools" && <Tools events={state.events} />}
-        {tab === "Guardrails" && <Guardrails events={state.events} />}
+        {tab === "Requests" && <Requests key={state.threadId} events={threadEvents} />}
+        {tab === "Tools" && <Tools events={threadEvents} />}
+        {tab === "Guardrails" && <Guardrails events={threadEvents} />}
         {tab === "Protocol" && <Protocol wire={state.wire} />}
       </div>
     </div>
@@ -64,7 +66,7 @@ function summarize(e: TraceEvent): string {
   }
 }
 
-function Timeline({ events }: { events: TraceEvent[] }) {
+function Timeline({ events, threadId }: { events: TraceEvent[]; threadId: string | null }) {
   const [showNoisy, setShowNoisy] = useState(false);
   const [hidden, setHidden] = useState<Set<Category>>(new Set());
   const [open, setOpen] = useState<number | null>(null);
@@ -90,7 +92,8 @@ function Timeline({ events }: { events: TraceEvent[] }) {
         {shown.map((e) => {
           const i = info(e.method);
           return (
-            <div key={e.seq} className="t-row" data-method={e.method}>
+            <div key={e.seq} className={e.params.threadId && e.params.threadId !== threadId ? "t-row other-thread" : "t-row"} data-method={e.method}
+              title={e.params.threadId && e.params.threadId !== threadId ? `thread ${e.params.threadId.slice(0, 8)} (not the current one)` : undefined}>
               <div className="t-head" onClick={() => setOpen(open === e.seq ? null : e.seq)}>
                 <span className="t-time">{((e.ts - t0) / 1000).toFixed(2)}s</span>
                 <span className="dot" style={{ background: CATEGORY_COLORS[i.category] }} />
@@ -171,7 +174,7 @@ function ContextView({ state, rpc }: { state: State; rpc: RpcClient | null }) {
       <div className="muted small">
         <label><input type="checkbox" checked={zoom} onChange={(e) => setZoom(e.target.checked)} /> zoom to used</label> · ~{total.toLocaleString()} of {ctx.contextWindow.toLocaleString()} tokens (estimate) · auto-compact at {ctx.autoCompactLimit.toLocaleString()} · {ctx.request.tools.length} tools (~{toolsTokens} tok)</div>
       {last ? <CostPanel costs={state.costs} pricing={state.pricing} next={{ withCache: nextTotal, withoutCache: nextUncached }} />
-        : <div className="cost-empty muted small">{state.events.some((e) => e.method === "trace/modelRequest")
+        : <div className="cost-empty muted small">{state.events.some((e) => e.method === "trace/modelRequest" && e.params.threadId === state.threadId)
             ? <>The app server sent no cost data. It is probably older than this UI: restart <code>educodex app-server</code>.</>
             : <>Costs and the prompt cache appear here after the first request.</>}</div>}
       {last && <div className="muted small cost-note">Per-item costs below are estimates for the next request: the provider bills per request, so the total is spread over items by size. <i>cached</i> = inside the prefix the last request read from the cache.</div>}

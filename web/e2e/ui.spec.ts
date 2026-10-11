@@ -71,6 +71,15 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
 
   await page.getByTestId("tab-Protocol").click();
   await expect(page.getByTestId("protocol-view")).toContainText("item/commandExecution/requestApproval");
+
+  // A new thread starts its per-thread tabs empty; the timeline keeps old events, dimmed.
+  await page.getByTestId("new-thread").click();
+  await page.getByTestId("tab-Requests").click();
+  await expect(page.getByText("No model requests yet.")).toBeVisible();
+  await page.getByTestId("tab-Guardrails").click();
+  await expect(page.getByText("No tool has run yet.", { exact: false })).toBeVisible();
+  await page.getByTestId("tab-Timeline").click();
+  await expect(page.locator(".t-row.other-thread").first()).toBeAttached();
 });
 
 test("step mode pauses before each model call", async ({ page }) => {
