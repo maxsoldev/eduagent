@@ -59,6 +59,17 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
 
   await page.getByTestId("tab-Requests").click();
   await expect(page.getByTestId("requests-view")).toContainText("unchanged ✓");
+  // JSON tree: the key opens one level, the arrow opens everything below.
+  const reasoning = page.getByTestId("requests-view").locator(".j-key.clickable", { hasText: /^reasoning: $/ }).first().locator("..");
+  await reasoning.locator("> .j-key").click();
+  await expect(reasoning.locator(".j-key", { hasText: "effort" })).toBeVisible();
+  const input = page.getByTestId("requests-view").locator(".j-key.clickable", { hasText: /^input: $/ }).first().locator("..");
+  await input.locator("> .j-key").click();
+  await expect(input.locator(".j-key", { hasText: /^role: $/ })).toHaveCount(0);
+  await input.locator("> .j-key").click(); // collapse, then expand all with the arrow
+  await input.locator("> .j-toggle").click();
+  await expect(input.locator(".j-key", { hasText: /^role: $/ }).first()).toBeVisible();
+  await expect(input.locator(".j-key", { hasText: /^text: $/ }).first()).toBeVisible();
   await expect(page.getByTestId("cost-table")).toContainText("read from cache");
   await expect(page.getByTestId("cost-table")).toContainText("caching saved");
   await expect(page.getByTestId("cost-badge")).toContainText("cached");

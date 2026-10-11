@@ -100,6 +100,7 @@ h4 { margin: 12px 0 4px; color: var(--muted); font-weight: 600; }
 .j-number { color: #fde68a; } .j-boolean { color: #c4b5fd; } .j-object { color: var(--muted); } .j-punct { color: var(--muted); }
 .j-toggle { border: none; background: none; padding: 0 2px; color: var(--muted); font-size: 11px; }
 .j-summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+.j-key.clickable { cursor: pointer; } .j-key.clickable:hover { text-decoration: underline; }
 .j-more { border: none; background: none; color: var(--accent); font-size: 11px; padding: 0 4px; }
 .j-str, .j-number, .j-boolean, .j-key, .j-punct, .j-summary { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
 
