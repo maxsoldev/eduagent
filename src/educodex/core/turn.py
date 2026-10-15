@@ -4,7 +4,8 @@ Mirrors codex-rs/core/src/session/turn.rs (`run_turn`, `run_sampling_request`) a
 core/src/stream_events_utils.rs (`handle_output_item_done`).
 
     run_turn
-      ├─ append context updates + the user's message to history
+      ├─ scan the skill roots
+      ├─ append context updates + the user's message + any `$skill` the user named
       └─ loop:
            ├─ run_sampling_request: send history, stream the reply, record output items
            ├─ run the tool calls the model asked for, record their outputs
@@ -25,7 +26,11 @@ from typing import TYPE_CHECKING, Any
 from educodex.core import compact, hooks
 from educodex.core.client import Prompt
 from educodex.core.context import world_state
+from educodex.core.memories.citations import parse_memory_citation, strip_citations
 from educodex.core.items import ResponseItem, clean_output_item, is_tool_call, message_text, tool_output, user_message
+from educodex.core.skills.loader import load_skills
+from educodex.core.skills.mentions import collect_explicit_skill_mentions
+from educodex.core.skills.render import skill_instructions
 from educodex.core.tools.registry import ToolCall, TurnAborted
 
 if TYPE_CHECKING:
@@ -121,8 +126,9 @@ def new_turn() -> dict:
             "startedAt": _now_ms(), "completedAt": None, "durationMs": None}
 
 
-async def run_turn(session: "Session", text: str, turn: dict | None = None) -> dict:
-    """Run one turn and return the Turn object."""
+async def run_turn(session: "Session", text: str, turn: dict | None = None,
+                   skill_inputs: list[dict] | None = None) -> dict:
+    """Run one turn and return the Turn object. `skill_inputs`: UserInput skill items from the client."""
     turn = turn or new_turn()
     turn_id = turn["id"]
     ctx = TurnContext(session, turn_id)
@@ -135,13 +141,17 @@ async def run_turn(session: "Session", text: str, turn: dict | None = None) -> d
         # Pre-turn compaction: already over the limit before this turn's input (turn.rs run_pre_sampling_compact).
         if session.history.token_count() >= session.model_info.effective_auto_compact_limit():
             await compact.run_compact(ctx, reason="pre-turn")
+        session.skills = load_skills(session.config)
+        await ctx.probe.skills_loaded(ctx, session.skills)
         await record_context_updates(ctx)
         session.rollout.turn_context(turn_id, session.config)
-        user_item = {"type": "userMessage", "id": str(uuid.uuid4()), "content": [{"type": "text", "text": text}]}
+        inputs = [{"type": "text", "text": text}, *(skill_inputs or [])]
+        user_item = {"type": "userMessage", "id": str(uuid.uuid4()), "content": inputs}
         await ctx.item_started(user_item)
         await session.record(user_message(text))
         await ctx.item_completed(user_item)
         session.rollout.event("user_message", message=text)
+        await record_skill_injections(ctx, inputs)
 
         while True:
             ctx.iteration += 1
@@ -183,12 +193,24 @@ async def run_turn(session: "Session", text: str, turn: dict | None = None) -> d
 async def record_context_updates(ctx: TurnContext) -> None:
     """Append only the context fragments that changed (all of them on the first turn)."""
     session = ctx.session
-    fragments = world_state.build_fragments(session.config)
+    fragments = world_state.build_fragments(session.config, session.skills, session.memory_instructions)
     changed = world_state.diff(session.context_snapshot, fragments)
     await ctx.probe.context_built(ctx, fragments, changed, first_turn=session.context_snapshot is None)
     session.context_snapshot = world_state.snapshot(fragments)
     if changed:
         await session.record(*world_state.to_messages(changed))
+
+
+async def record_skill_injections(ctx: TurnContext, inputs: list[dict]) -> None:
+    """Each skill the user named: its whole SKILL.md as a user message (turn.rs, after the prompt)."""
+    for skill in collect_explicit_skill_mentions(inputs, ctx.session.skills):
+        try:
+            item = skill_instructions(skill)
+        except OSError as err:  # deleted since the scan: tell the user, go on without it
+            await ctx.emit("warning", message=f"Failed to load skill {skill.name} at {skill.path}: {err}")
+            continue
+        await ctx.session.record(item)
+        await ctx.probe.skill_injected(ctx, skill, item)
 
 
 async def run_sampling_request(ctx: TurnContext) -> bool:
@@ -321,8 +343,10 @@ async def _item_added(ctx: TurnContext, item: ResponseItem) -> None:
 
 async def _item_done(ctx: TurnContext, item: ResponseItem) -> None:
     if item.get("type") == "message":
-        text = message_text(item)
-        await ctx.item_completed({"type": "agentMessage", "id": item.get("id"), "text": text})
+        # History keeps the raw text; the user sees it without the memory citation block.
+        text, citations = strip_citations(message_text(item))
+        await ctx.item_completed({"type": "agentMessage", "id": item.get("id"), "text": text,
+                                  "memoryCitation": parse_memory_citation(citations)})
         ctx.session.rollout.event("agent_message", message=text)
     elif item.get("type") == "reasoning":
         summary = [s.get("text", "") for s in item.get("summary", [])]

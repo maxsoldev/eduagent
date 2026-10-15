@@ -17,6 +17,8 @@ from educodex.core.context.permissions import render_permissions
 from educodex.core.items import ResponseItem, message
 from educodex.core.models import catalog, model_info
 from educodex.core.sandbox import seatbelt
+from educodex.core.skills.loader import SkillLoadOutcome
+from educodex.core.skills.render import render_available_skills
 
 
 def collaboration_mode_text(model: str) -> str | None:
@@ -32,17 +34,26 @@ def writable_roots(config: Config) -> list[str]:
     """What the sandbox really lets the agent write: cwd, /tmp and $TMPDIR (as Codex's workspace-write)."""
     if config.sandbox_mode != "workspace-write":
         return []
-    return [str(r) for r in seatbelt.writable_roots(config.cwd)]
+    return [str(r) for r in seatbelt.writable_roots(config.cwd, config.exclude_tmp_writable_roots)]
 
 
-def build_fragments(config: Config) -> list[Fragment]:
-    """All fragments for the current config, in Codex's order."""
+def build_fragments(config: Config, skills: SkillLoadOutcome | None = None,
+                    memories: Fragment | None = None) -> list[Fragment]:
+    """All fragments for the current config, in Codex's order (core/src/session/mod.rs
+    `build_initial_context_with_world_state`): developer instructions, thread context from
+    extensions (memories), then the world-state sections, where skills go before permissions."""
     roots = writable_roots(config)
     fragments: list[Fragment] = []
     if config.developer_instructions:
         fragments.append(
             Fragment("developer_instructions", "developer", config.developer_instructions, "config.developer_instructions")
         )
+    if memories:
+        fragments.append(memories)
+    if skills and config.include_skill_instructions:
+        model = model_info(config.model)
+        if catalog_fragment := render_available_skills(skills, model.include_skills_usage_instructions):
+            fragments.append(catalog_fragment)
     fragments.append(render_permissions(config.sandbox_mode, config.approval_policy, config.network_access, roots))
     if mode := collaboration_mode_text(config.model):
         fragments.append(Fragment("collaboration_mode", "developer", f"<collaboration_mode>{mode}</collaboration_mode>",

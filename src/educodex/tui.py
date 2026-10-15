@@ -7,6 +7,7 @@ extensions talk to the Codex harness. Left: the conversation. Right: the trace o
 
 import asyncio
 import json
+import re
 import sys
 from typing import Any
 
@@ -14,6 +15,7 @@ from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
+from textual.suggester import Suggester
 from textual.widgets import Button, Footer, Header, Input, Label, RichLog
 
 TRACE_SUMMARY = {
@@ -25,7 +27,37 @@ TRACE_SUMMARY = {
     "trace/policyDecision": lambda p: f"policy: {p['tool']} → {p['decision']}{' (sandboxed)' if p['sandboxed'] else ''}",
     "trace/sandboxCommand": lambda p: "sandbox: " + " ".join(p["argv"])[:120],
     "trace/compacted": lambda p: f"compacted: {p['itemsBefore']} → {p['itemsAfter']} items",
+    "trace/skillInjected": lambda p: f"skill injected: ${p['name']}",
+    "trace/memoryExtracted": lambda p: f"memory phase 1: {p['result']['threadId'][:8]} {p['result']['status']}",
+    "trace/memoryConsolidationStarted": lambda p: f"memory phase 2: sub-agent starts ({p['inputs']} memories)",
+    "trace/memoryAgent": lambda p: f"memory agent: {p['item']['type'] if p.get('item') else p['agentMethod']}",
 }
+
+# Slash commands in Codex's popup order (web/src/commands.ts has the same list).
+COMMANDS = {
+    "skills": "use skills to improve how Codex performs specific tasks",
+    "new": "start a new chat during a conversation",
+    "compact": "summarize conversation to prevent hitting the context limit",
+    "memory-update": "learn from earlier threads now (memory phase 1 + phase 2)",
+    "memory-drop": "delete all memories",
+}
+MENTION = re.compile(r"(^|\s)\$([A-Za-z0-9_:-]*)$")
+
+
+class CommandSuggester(Suggester):
+    """Inline completion (press → to accept): the first matching /command or $skill."""
+
+    def __init__(self, app: "EducodexTui") -> None:
+        super().__init__(use_cache=False, case_sensitive=True)
+        self.app = app
+
+    async def get_suggestion(self, value: str) -> str | None:
+        matches = self.app.matches(value)
+        if not matches:
+            return None
+        if value.startswith("/"):
+            return "/" + matches[0][0]
+        return value[: len(value) - len(MENTION.search(value).group(2))] + matches[0][0]
 
 
 class ApprovalScreen(ModalScreen[str]):
@@ -58,6 +90,7 @@ class EducodexTui(App):
     #chat { width: 55%; border: round $accent; }
     #trace { width: 45%; border: round $panel; }
     #approval { padding: 1 2; border: thick $error; background: $surface; width: 80%; height: auto; }
+    #hints { height: 1; padding: 0 1; }
     """
     BINDINGS = [("ctrl+c", "quit", "Quit"), ("escape", "interrupt", "Interrupt turn")]
 
@@ -69,13 +102,16 @@ class EducodexTui(App):
         self.next_id = 1
         self.thread_id: str | None = None
         self.turn_id: str | None = None
+        self.skills: list[dict] = []  # from skills/list, refreshed when a $mention starts
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Horizontal():
             yield RichLog(id="chat", wrap=True, markup=True)
             yield RichLog(id="trace", wrap=True, markup=True)
-        yield Input(placeholder="Ask the agent… (Enter to send, Esc to interrupt)")
+        yield Label("", id="hints")
+        yield Input(placeholder="Ask the agent… (/ commands, $ skills, → completes, Esc interrupts)",
+                    suggester=CommandSuggester(self))
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -148,6 +184,12 @@ class EducodexTui(App):
                 chat.write(f"[green]mcp[/] {item['server']}.{item['tool']} [dim]({item['status']})[/]")
             elif item["type"] == "reasoning" and item["summary"]:
                 chat.write(f"[dim i]{escape(' '.join(item['summary']))}[/]")
+            elif item["type"] == "contextCompaction":
+                chat.write("[dim]⟲ context compacted[/]")
+            elif item["type"] == "memoryUpdate":
+                phase2 = item.get("phase2") or {}
+                chat.write(f"[magenta]memory update[/] {item['status']} · phase 1: {len(item.get('phase1') or [])} log(s)"
+                           f" · phase 2: {phase2.get('status', '-')} {escape(phase2.get('error') or item.get('error') or '')}")
         elif method == "turn/plan/updated":
             chat.write("[yellow]plan[/] " + escape(" · ".join(f"{s['step']} [{s['status']}]" for s in p["plan"])))
         elif method == "turn/completed":
@@ -155,10 +197,55 @@ class EducodexTui(App):
         elif method == "error":
             chat.write(f"[b red]error[/] {escape(p['error']['message'])}")
 
+    def matches(self, value: str) -> list[tuple[str, str]]:
+        """(name, description) of the commands or skills that the text so far could mean."""
+        if re.fullmatch(r"/\S*", value):
+            return [(n, d) for n, d in COMMANDS.items() if n.startswith(value[1:])]
+        if mention := MENTION.search(value):
+            return [(s["name"], s.get("shortDescription") or s["description"]) for s in self.skills
+                    if s["name"].startswith(mention.group(2))]
+        return []
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        if MENTION.search(event.value) and event.value.endswith("$"):  # a new mention: scan skills again
+            self.skills = (await self.request("skills/list", {}))["data"][0]["skills"]
+        hints = self.matches(event.value)
+        prefix = "/" if event.value.startswith("/") else "$"
+        self.query_one("#hints", Label).update(
+            "  ".join(f"[b cyan]{prefix}{escape(n)}[/] [dim]{escape(d[:60])}[/]" for n, d in hints[:6]))
+
+    async def run_command(self, name: str) -> None:
+        """Each slash command is one app-server request, as in Codex's TUI."""
+        chat = self.query_one("#chat", RichLog)
+        chat.write(f"[b]/{name}[/]")
+        if name == "new":
+            thread = await self.request("thread/start", {})
+            self.thread_id = thread["thread"]["id"]
+            chat.write(f"[dim]thread {self.thread_id}[/]")
+        elif name == "compact":
+            await self.request("thread/compact/start", {"threadId": self.thread_id})
+        elif name == "memory-update":
+            await self.request("memory/update/start", {"threadId": self.thread_id})
+        elif name == "memory-drop":
+            await self.request("memory/reset", {})
+            chat.write("[dim]All memories were deleted.[/]")
+        elif name == "skills":
+            skills = (await self.request("skills/list", {}))["data"][0]["skills"]
+            if not skills:
+                chat.write("[dim]No skills found. Add a folder with a SKILL.md to .agents/skills/ in your project.[/]")
+            for skill in skills:
+                chat.write(f"[cyan]${escape(skill['name'])}[/] [dim]({skill['scope']}) {escape(skill['description'])}[/]")
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         event.input.value = ""
         if not text or not self.thread_id:
+            return
+        if text.startswith("/") and text[1:] in COMMANDS:
+            try:
+                await self.run_command(text[1:])
+            except RuntimeError as err:
+                self.query_one("#chat", RichLog).write(f"[red]{escape(str(err))}[/]")
             return
         self.query_one("#chat", RichLog).write(f"[b]you[/] {escape(text)}")
         try:
@@ -188,4 +275,6 @@ def run_tui(args) -> None:
         server_args += ["--mcp", spec]
     if getattr(args, "fake_model", None):
         server_args += ["--fake-model", args.fake_model]
+    if args.memories:
+        server_args.append("--memories")
     EducodexTui(server_args).run()

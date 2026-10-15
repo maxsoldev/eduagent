@@ -1,4 +1,4 @@
-# 15 — Session logs
+# 16 — Session logs
 
 ## Concept
 
@@ -37,7 +37,7 @@ Every line has the same envelope:
 | `turn_context` | Settings for this turn: cwd, approval policy, sandbox, model, date | Each turn |
 | `response_item` | One item **exactly as the model sees it**: message, reasoning, function_call, ..._output | Each time history grows |
 | `event_msg` | Something that happened, for UIs: `task_started`, `user_message`, `agent_message`, `token_count`, `task_complete`, `turn_aborted` | As it happens |
-| `compacted` | The summary plus `replacement_history`: the new, shorter history | After compaction (chapter 14) |
+| `compacted` | The summary plus `replacement_history`: the new, shorter history | After compaction (chapter 15) |
 
 A real educodex session, shortened:
 
@@ -105,6 +105,8 @@ Who writes what:
 `tests/test_turn.py::test_rollout_replays_history` checks the main promise: `history_from_rollout(lines) == session.history.items`.
 
 The app server's `thread/start` result includes the rollout `path`, so a UI can show where the log is.
+
+An **ephemeral** thread (`Config(ephemeral=True)`) writes no log, and its `path` is `null`, as in Codex. The memory agent (chapter 17) runs this way. Session logs are also the input of memories: phase 1 reads them, so a thread that should never become a memory must not leave a log.
 
 ## In Codex
 

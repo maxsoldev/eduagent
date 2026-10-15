@@ -1,4 +1,4 @@
-# 14 — Context management and compaction
+# 15 — Context management and compaction
 
 ## Concept
 
@@ -145,9 +145,9 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 `run_compact` ties it together. It shows up in every client:
 - a `contextCompaction` item (`item/started` / `item/completed`) and a `thread/compacted` notification;
 - `trace/compactionRequest` with the exact request body, and `trace/compacted` with token counts before and after plus the whole new history;
-- a `compacted` line in the rollout file with `message` and `replacement_history`, the same fields Codex writes. Replay uses it to rebuild history (chapter 15).
+- a `compacted` line in the rollout file with `message` and `replacement_history`, the same fields Codex writes. Replay uses it to rebuild history (chapter 16).
 
-**Manual compaction.** The web UI's **compact** button calls `thread/compact/start` ([`app_server/processor.py`](../../src/educodex/app_server/processor.py)). Like Codex, the server replies `{}` right away. `Session.start_compaction` then runs `run_compact(ctx, reason="manual")` as the session's task, the same slot a turn uses, so a compaction and a turn can never overlap. It is refused while a turn is running. Progress arrives as `item/started` / `item/completed` for the `contextCompaction` item.
+**Manual compaction.** The web UI's **compact** button and the `/compact` command (web UI and TUI) call `thread/compact/start` ([`app_server/processor.py`](../../src/educodex/app_server/processor.py)). Like Codex, the server replies `{}` right away. `Session.start_compaction` then runs `run_compact(ctx, reason="manual")` as the session's task, the same slot a turn uses, so a compaction and a turn can never overlap. It is refused while a turn is running. Progress arrives as `item/started` / `item/completed` for the `contextCompaction` item.
 
 **Remote compaction, for reference.** The module docstring describes what Codex does instead: a normal `/responses` request whose input ends in a `compaction_trigger` item, answered with one encrypted `compaction` item. The older `/responses/compact` endpoint is gone.
 
@@ -183,7 +183,7 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
    echo '[[{"type":"message","text":"Hi!"}],[{"type":"message","text":"## Progress\n- greeted"}]]' > /tmp/compact.json
    uv run educodex app-server --listen stdio:// --fake-model /tmp/compact.json
    ```
-   Paste `initialize`, `initialized`, `thread/start` and a `turn/start` with the text `hello` (see chapter 16), then `{"id":9,"method":"thread/compact/start","params":{"threadId":"<id>"}}`. The reply is `{"id":9,"result":{}}`, sent before the compaction finishes. Then look for `trace/compacted`: the new history is the fresh context (a developer message with permissions, an `<environment_context>` user message), `"hello"`, then the summary.
+   Paste `initialize`, `initialized`, `thread/start` and a `turn/start` with the text `hello` (see chapter 18), then `{"id":9,"method":"thread/compact/start","params":{"threadId":"<id>"}}`. The reply is `{"id":9,"result":{}}`, sent before the compaction finishes. Then look for `trace/compacted`: the new history is the fresh context (a developer message with permissions, an `<environment_context>` user message), `"hello"`, then the summary.
 
 ## Further reading
 - [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/): the "context window" section explains `/compact`, auto-compaction and the encrypted `compaction` item.

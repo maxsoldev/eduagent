@@ -77,7 +77,7 @@ The code has two parts:
 | Folder | What it holds |
 |---|---|
 | [`src/educodex/core/`](../../src/educodex/core/) | The harness itself, kept close to Codex: loop, prompt, tools, policy, sandbox, MCP, hooks, compaction |
-| [`src/educodex/observe/`](../../src/educodex/observe/) | What educodex adds for teaching: `trace/*` events, costs, step mode. It plugs into the core through one seam, the `Probe` (chapter 17) |
+| [`src/educodex/observe/`](../../src/educodex/observe/) | What educodex adds for teaching: `trace/*` events, costs, step mode. It plugs into the core through one seam, the `Probe` (chapter 19) |
 
 The hosts (`app_server/`, `cli.py`, `tui.py`) sit on top of both. The full module list is in [the design doc](../design.md#module-layout).
 
@@ -96,14 +96,14 @@ Codex is about 2 million lines of Rust in ~160 crates. The parts this guide cove
 | MCP | [`codex-mcp/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/codex-mcp) |
 | App Server | [`app-server/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server), [`app-server-protocol/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol) |
 
-The rest is product features: the terminal UI, cloud tasks, realtime voice, sub-agents, plugins, Windows and Linux sandboxes, telemetry. Chapter 18 gives a tour.
+The rest is product features: the terminal UI, cloud tasks, realtime voice, sub-agents, plugins, Windows and Linux sandboxes, telemetry. Chapter 20 gives a tour.
 
 ## Where educodex is simpler
 
 - **About 4,000 lines of Python** instead of millions of lines of Rust. Each module says which Codex file it mirrors in its docstring.
 - **One provider.** educodex talks to OpenRouter's Responses API over HTTP. Codex supports several providers, a WebSocket transport and ChatGPT login.
 - **macOS sandbox only.** Linux and Windows sandboxes are left out (chapter 10).
-- **Extra visibility.** educodex emits `trace/*` events for steps Codex keeps hidden, so the web UI can show them (chapter 17).
+- **Extra visibility.** educodex emits `trace/*` events for steps Codex keeps hidden, so the web UI can show them (chapter 19).
 
 Each later chapter lists what it leaves out in this section.
 

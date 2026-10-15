@@ -1,10 +1,10 @@
-# 17 — Clients and observability
+# 19 — Clients and observability
 
 ## Concept
 
 ### One protocol, many clients
 
-Chapter 16 put a protocol between the harness and the UI. The benefit shows up here: every client is just a JSON-RPC reader and writer. It does not need to know about prompts, SSE or sandboxes. A client has four jobs:
+Chapter 18 put a protocol between the harness and the UI. The benefit shows up here: every client is just a JSON-RPC reader and writer. It does not need to know about prompts, SSE or sandboxes. A client has four jobs:
 
 1. **Connect and handshake:** `initialize`, then `initialized`.
 2. **Send requests:** `thread/start`, `turn/start`, `turn/interrupt`.
@@ -28,7 +28,7 @@ This has useful consequences:
 
 ### Observability: seeing what the agent did
 
-When an agent does something odd, "the model was wrong" is rarely the full answer. You need to see what it was *given*: which prompt, which tools, which outputs, and which policy decisions. Production harnesses record this for debugging, telemetry and evals. educodex goes one step further and puts it in the UI, live, as `trace/*` events (chapter 16).
+When an agent does something odd, "the model was wrong" is rarely the full answer. You need to see what it was *given*: which prompt, which tools, which outputs, and which policy decisions. Production harnesses record this for debugging, telemetry and evals. educodex goes one step further and puts it in the UI, live, as `trace/*` events (chapter 18).
 
 Useful things to record, roughly in order of value:
 
@@ -41,7 +41,7 @@ Useful things to record, roughly in order of value:
 | Tool latency and output size | Slow tools; outputs that eat the context window |
 | Compactions (tokens before/after) | How often long sessions lose detail |
 
-Recorded sessions (chapter 15) can then be replayed, compared across harness versions, or turned into eval cases.
+Recorded sessions (chapter 16) can then be replayed, compared across harness versions, or turned into eval cases.
 
 ### Testing without a model
 
@@ -55,7 +55,8 @@ Real models are slow, cost money, and give different answers each time. For test
 |---|---|
 | [`rpc.ts`](../../web/src/rpc.ts) | JSON-RPC lite over WebSocket. Sorts incoming messages into notification, server request or response |
 | [`store.ts`](../../web/src/store.ts) | A React reducer. All UI state comes from notifications |
-| [`App.tsx`](../../web/src/App.tsx) | Handshake, controls (model, approval, sandbox, step mode, **compact**, new thread). The message box stays disabled until `thread/start` has returned a thread |
+| [`App.tsx`](../../web/src/App.tsx) | Handshake, controls (model, approval, sandbox, step mode, **compact**, new thread), and what each slash command does |
+| [`components/Composer.tsx`](../../web/src/components/Composer.tsx), [`commands.ts`](../../web/src/commands.ts) | The message box with the `/` command list and the `$` skill list. It stays disabled until `thread/start` has returned a thread |
 | [`components/Chat.tsx`](../../web/src/components/Chat.tsx) | Items as a chat, plus approval cards. The buttons come from the request's `availableDecisions`, so `acceptWithExecpolicyAmendment` appears only when the server offers it (it answers with the proposed rule). A `serverRequest/resolved` notification removes the card |
 | [`components/Inspector.tsx`](../../web/src/components/Inspector.tsx) | The inspector tabs |
 | [`explain.ts`](../../web/src/explain.ts) | One explanation per event, with a guide chapter and a Codex link |
@@ -106,11 +107,11 @@ Every notification is also appended to `events`, which the inspector reads. Ever
 **`explain.ts`** turns the UI into a teaching tool. Each event name maps to a title, a category colour, a short text, the guide chapter and a Codex path:
 
 ```ts
-"trace/compacted": { title: "History compacted", category: "memory", chapter: "14", codex: "core/src/compact.rs",
+"trace/compacted": { title: "History compacted", category: "memory", chapter: "15", codex: "core/src/compact.rs",
   text: "History was replaced by recent user messages + fresh context + the summary." },
 ```
 
-The "guide ch.14" link opens `/guide/14`. The app server serves the matching `docs/guide/14-*.md` file ([`app_server/main.py`](../../src/educodex/app_server/main.py)).
+The "guide ch.15" link opens `/guide/15`. The app server serves the matching `docs/guide/15-*.md` file ([`app_server/main.py`](../../src/educodex/app_server/main.py)).
 
 ### TUI over stdio ([`tui.py`](../../src/educodex/tui.py))
 
@@ -131,6 +132,22 @@ while line := await self.proc.stdout.readline():
 ```
 
 On the left is the chat; on the right is a one-line summary of selected `trace/*` events (`TRACE_SUMMARY`). Closing stdin is the shutdown signal.
+
+### Slash commands and `$` mentions
+
+Codex's TUI opens a list when you type `/` (commands) or `$` (skills). Both clients here do the same. The commands are a **client** feature: the server does not know them. Each command is one app-server request:
+
+| Command | Request | Chapter |
+|---|---|---|
+| `/skills` | `skills/list`, printed into the chat | 14 |
+| `/new` | `thread/start` | 18 |
+| `/compact` | `thread/compact/start` | 15 |
+| `/memory-update` | `memory/update/start` (educodex) | 17 |
+| `/memory-drop` | `memory/reset` | 17 |
+
+The order is Codex's: its enum order is the order in the list ([`slash_command.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui/src/slash_command.rs#L12)). The list shows exact matches first, then prefix matches ([`command_popup.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui/src/bottom_pane/command_popup.rs#L159)). In Codex, the two memory commands are hidden debug stubs (`/debug-m-update`, `/debug-m-drop`).
+
+The `$` list comes from `skills/list` and is fetched again each time you start a mention, so a new `SKILL.md` shows up at once. Picking a skill inserts `$name` and remembers its path. On send, the web UI adds a `{"type": "skill", "name", "path"}` item for each picked skill that is still in the text. The path is exact, so even two skills with the same name work. The TUI shows the matches in a hint line, completes the first one with →, and sends text only; the server then matches plain `$name`.
 
 ### CLI printer ([`cli.py`](../../src/educodex/cli.py))
 
@@ -200,7 +217,7 @@ It is used in three places:
 - **Untyped clients.** The web UI uses `any` for payloads. Codex clients use generated types.
 - **Simple reconnects.** `thread/read` with `includeTrace` returns the whole event log. Codex has thread resume, history paging and lossless event queues.
 - **One fake-model script per thread.** Each `thread/start` creates a fresh `FakeModel`, so "new thread" restarts the script. A manual compaction also uses up one scripted response.
-- **The TUI is minimal:** no diff view, no slash commands, no history browsing.
+- **The TUI is minimal:** no diff view, no history browsing, five slash commands (Codex has about 60), and a hint line instead of a selectable list.
 
 ## Try it
 
@@ -210,7 +227,7 @@ It is used in three places:
    uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/edx
    ```
    (`mkdir -p /tmp/edx` first.) Open http://127.0.0.1:8765 and send any message (the box unlocks once the thread has started). Click rows in the **Timeline** and follow the "guide ch.NN" and "Codex:" links. In **Requests**, confirm that each request only appends items.
-2. **With a real model**, drop `--fake-model` (needs `OPENROUTER_API_KEY`) and compare the **Protocol** tab with the sequence in chapter 16.
+2. **With a real model**, drop `--fake-model` (needs `OPENROUTER_API_KEY`) and compare the **Protocol** tab with the sequence in chapter 18.
 3. **TUI:**
    ```bash
    uv run educodex tui --fake-model examples/fake/demo.json --cwd /tmp/edx

@@ -33,6 +33,16 @@ class Config:
     mcp_servers: dict[str, dict] = field(default_factory=dict)  # name -> {"command": ..., "args": [...]}
     rules: list[dict] = field(default_factory=list)  # exec policy prefix rules
     hooks: dict[str, list[str]] = field(default_factory=dict)  # event -> shell commands
+    # [skills] include_instructions and [skills.bundled] enabled in Codex's config.toml.
+    include_skill_instructions: bool = True
+    bundled_skills: bool = True
+    # [features] memories (Codex: off by default). Codex also has [memories] use_memories and
+    # generate_memories (both true when the feature is on); one switch is enough here.
+    memories: bool = False
+    # A thread that writes no session log, so memories never learn from it (the memory agent).
+    ephemeral: bool = False
+    # workspace-write without /tmp and $TMPDIR (Codex's exclude_slash_tmp + exclude_tmpdir_env_var).
+    exclude_tmp_writable_roots: bool = False
 
     def __post_init__(self) -> None:
         self.cwd = Path(self.cwd).resolve()

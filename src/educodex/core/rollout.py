@@ -15,14 +15,17 @@ from educodex import __version__
 
 
 class RolloutRecorder:
-    def __init__(self, home: Path, thread_id: str, path: Path | None = None) -> None:
+    def __init__(self, home: Path, thread_id: str, path: Path | None = None, enabled: bool = True) -> None:
         now = datetime.datetime.now()
         self.path = path or home / "sessions" / now.strftime("%Y/%m/%d") / (
             f"rollout-{now.strftime('%Y-%m-%dT%H-%M-%S')}-{thread_id}.jsonl")
         self.thread_id = thread_id
+        self.enabled = enabled  # False for ephemeral threads: nothing is written
         self._file = None
 
     def _write(self, kind: str, payload: dict[str, Any]) -> None:
+        if not self.enabled:
+            return
         if self._file is None:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self._file = self.path.open("a")

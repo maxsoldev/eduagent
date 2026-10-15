@@ -79,3 +79,31 @@ def test_opt_out_notifications(workspace, tmp_path):
         while (msg := json.loads(ws.receive_text())).get("method") != "turn/completed":
             seen.append(msg)
         assert "item/agentMessage/delta" not in [m.get("method") for m in seen]
+
+
+def test_skills_list_skill_input_and_memory_methods(workspace, tmp_path):
+    skill = workspace / ".agents" / "skills" / "deploy" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: deploy\ndescription: Deploy the app\n---\nSteps.\n")
+    home = tmp_path / "home"
+    fake = FakeModel([[{"type": "message", "text": "ok"}]])
+    processor = MessageProcessor(Config(cwd=workspace, home=home, api_key="t"), lambda: fake)
+    with TestClient(build_app(processor)) as client, client.websocket_connect("/") as ws:
+        request, seen = rpc_client(ws)
+        request("initialize", {"clientInfo": {"name": "test", "version": "1"}})
+        thread = request("thread/start", {"cwd": str(workspace)})["result"]["thread"]
+        listed = request("skills/list", {"cwds": [str(workspace)]})["result"]["data"][0]
+        assert listed["cwd"] == str(workspace) and listed["errors"] == []
+        assert {"name": "deploy", "scope": "repo", "path": str(skill), "enabled": True}.items() <= listed["skills"][0].items()
+        # A skill picked from the `$` list arrives as a UserInput skill item; the text has no $deploy.
+        request("turn/start", {"threadId": thread["id"], "input": [
+            {"type": "text", "text": "ship it"}, {"type": "skill", "name": "deploy", "path": str(skill)}]})
+        while json.loads(ws.receive_text()).get("method") != "turn/completed":
+            pass
+        assert fake.requests[0]["input"][-1]["content"][0]["text"].startswith("<skill>\n<name>deploy</name>")
+        # Memories are off by default (Codex: [features] memories = false).
+        assert "memories are off" in request("memory/update/start", {"threadId": thread["id"]})["error"]["message"]
+        (home / "memories").mkdir()
+        (home / "memories" / "MEMORY.md").write_text("x")
+        assert request("memory/reset")["result"] == {}
+        assert not (home / "memories").exists()

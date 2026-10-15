@@ -128,3 +128,33 @@ test("step mode pauses before each model call", async ({ page }) => {
   }
   await expect(page.getByTestId("turn-sep").last()).toContainText("turn completed");
 });
+
+test("slash commands and $skill mentions in the composer", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  const composer = page.getByTestId("composer");
+
+  // "/" lists the commands in Codex's order; typing filters by prefix.
+  await composer.fill("/");
+  const commands = page.getByTestId("command-popup");
+  await expect(commands.locator(".popup-name")).toHaveText(["/skills", "/new", "/compact", "/memory-update", "/memory-drop"]);
+  await composer.fill("/mem");
+  await expect(commands.locator(".popup-name")).toHaveText(["/memory-update", "/memory-drop"]);
+  await composer.press("Enter"); // runs the selected command: memories are off on this server
+  await expect(page.getByTestId("note").last()).toContainText("memories are off");
+
+  // "$" lists skills, here the bundled skill-creator; Enter inserts the mention.
+  await composer.fill("please use $skill");
+  const skills = page.getByTestId("skill-popup");
+  await expect(skills).toContainText("$skill-creator");
+  await expect(skills).toContainText("system");
+  await composer.press("Enter");
+  await expect(composer).toHaveValue("please use $skill-creator ");
+  await expect(skills).toHaveCount(0);
+
+  // /skills prints the list into the chat.
+  await composer.fill("/skills");
+  await composer.press("Escape");
+  await composer.press("Enter");
+  await expect(page.getByTestId("note").last()).toContainText("$skill-creator (system)");
+});

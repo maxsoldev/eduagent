@@ -3,14 +3,16 @@ notifications. Mirrors codex-rs/app-server/src/codex_message_processor.rs + thre
 
 Codex methods (same names and main fields as app-server protocol v2):
   initialize, thread/start, thread/list, thread/read, turn/start, turn/interrupt,
-  thread/compact/start, model/list
+  thread/compact/start, model/list, skills/list, memory/reset
 educodex extensions (not in Codex):
-  debug/stepMode/set, debug/continue, debug/context/get
+  debug/stepMode/set, debug/continue, debug/context/get,
+  memory/update/start (Codex runs the memory pipeline on its own; its TUI command is a stub)
 """
 
 import platform
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +22,10 @@ from educodex import __version__
 from educodex.app_server.connection import INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND, Connection, RpcError
 from educodex.core.config import Config, load_api_key
 from educodex.core.events import Event, EventBus
+from educodex.core.memories.start import clear_memories
 from educodex.core.models import catalog
 from educodex.core.session import Session
+from educodex.core.skills.loader import load_skills
 from educodex.observe.tracer import Tracer
 
 
@@ -125,6 +129,7 @@ class MessageProcessor:
             developer_instructions=params.get("developerInstructions") or self.defaults.developer_instructions,
             base_instructions=params.get("baseInstructions"), reasoning_effort=params.get("effort") or self.defaults.reasoning_effort,
             home=self.defaults.home, mcp_servers=self.defaults.mcp_servers, rules=self.defaults.rules, hooks=self.defaults.hooks,
+            memories=self.defaults.memories,
         )
         bus = EventBus()
         bus.subscribe(self._broadcast)
@@ -164,7 +169,9 @@ class MessageProcessor:
         state = self._state(params)
         state.owner = conn
         state.subscribers.add(conn)
-        text = "\n".join(i.get("text", "") for i in params.get("input", []) if i.get("type") == "text")
+        inputs = params.get("input", [])
+        text = "\n".join(i.get("text", "") for i in inputs if i.get("type") == "text")
+        skill_inputs = [{"type": "skill", "name": i["name"], "path": i["path"]} for i in inputs if i.get("type") == "skill"]
         if not text.strip():
             raise RpcError(INVALID_PARAMS, "input must contain at least one text item")
         if state.session.turn_running:  # reject before touching the running turn's settings
@@ -175,7 +182,7 @@ class MessageProcessor:
             sandbox_mode=sandbox_mode_from_policy(sandbox) if sandbox else None, model=params.get("model"),
             reasoning_effort=params.get("effort"))
         try:
-            turn = state.session.start_turn(text)
+            turn = state.session.start_turn(text, skill_inputs)
         except RuntimeError as err:
             raise RpcError(-32600, str(err)) from err
         return {"turn": turn}
@@ -191,6 +198,29 @@ class MessageProcessor:
         except RuntimeError as err:
             raise RpcError(-32600, str(err)) from err
         return {}
+
+    async def memory_update_start(self, conn: Connection, params: dict) -> dict:
+        # Like thread/compact/start: reply now; a memoryUpdate item and trace/memory* events follow.
+        try:
+            self._state(params).session.start_memory_update()
+        except RuntimeError as err:
+            raise RpcError(-32600, str(err)) from err
+        return {}
+
+    async def memory_reset(self, conn: Connection, params: dict) -> dict:
+        clear_memories(self.defaults.home)
+        return {}
+
+    async def skills_list(self, conn: Connection, params: dict) -> dict:
+        """Skills for each cwd, scanned now (Codex caches them unless forceReload is set)."""
+        data = []
+        for cwd in params.get("cwds") or [str(self.defaults.cwd)]:
+            outcome = load_skills(replace(self.defaults, cwd=Path(cwd)))
+            skills = [{"name": s.name, "description": s.description, "shortDescription": s.short_description,
+                       "path": str(s.path), "scope": s.scope, "enabled": True, "pluginId": None} for s in outcome.skills]
+            errors = [{"path": str(e.path), "message": e.message} for e in outcome.errors]
+            data.append({"cwd": str(Path(cwd).resolve()), "skills": skills, "errors": errors})
+        return {"data": data}
 
     async def model_list(self, conn: Connection, params: dict) -> dict:
         data = [{"id": f"openai/{slug}", "model": slug, "displayName": m.get("display_name", slug),
@@ -219,7 +249,8 @@ class MessageProcessor:
     METHODS = {
         "initialize": initialize, "thread/start": thread_start, "thread/list": thread_list,
         "thread/read": thread_read, "turn/start": turn_start, "turn/interrupt": turn_interrupt,
-        "thread/compact/start": thread_compact_start, "model/list": model_list,
+        "thread/compact/start": thread_compact_start, "model/list": model_list, "skills/list": skills_list,
+        "memory/reset": memory_reset, "memory/update/start": memory_update_start,
         "debug/stepMode/set": debug_step_mode_set, "debug/continue": debug_continue,
         "debug/context/get": debug_context_get,
     }

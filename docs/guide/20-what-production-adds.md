@@ -1,4 +1,4 @@
-# 18 — What production adds
+# 20 — What production adds
 
 ## Concept
 
@@ -8,7 +8,7 @@ educodex keeps Codex's *ideas*: the loop, the prompt layout, the tools, the guar
 |---|---|
 | **Speed and cost** | WebSocket transport, prewarm, incremental requests, prompt-cache care |
 | **Reliability** | Retries, fallbacks, remote compaction |
-| **More capability** | Sub-agents, skills, plugins, apps, code mode |
+| **More capability** | Sub-agents, plugins, apps, code mode |
 | **More places to run safely** | Linux and Windows sandboxes, network proxy, auto-review, many UIs, cloud |
 
 This chapter is a map. Each entry says what the feature is, why it exists, and where to start reading in Codex. All paths are at the pinned commit.
@@ -21,10 +21,10 @@ What educodex does instead, in one table:
 |---|---|
 | Model transport | One HTTP POST + SSE per request ([`client.py`](../../src/educodex/core/client.py)); full history every time |
 | Retries | Up to 3 attempts for connection errors, 429 and 5xx, and only before the first event arrives |
-| Compaction | Local, plain-text summary only ([`compact.py`](../../src/educodex/core/compact.py), chapter 14) |
+| Compaction | Local, plain-text summary only ([`compact.py`](../../src/educodex/core/compact.py), chapter 15) |
 | Sandbox | macOS Seatbelt only ([`sandbox/seatbelt.py`](../../src/educodex/core/sandbox/seatbelt.py)) |
 | Approvals | A human answers every prompt (chapter 09) |
-| Telemetry | `trace/*` events shown in the UI (chapter 17) |
+| Telemetry | `trace/*` events shown in the UI (chapter 19) |
 | Providers | OpenAI models through OpenRouter's Responses API |
 | Tool calling | Classic `tools` for every model, as Codex does for `gpt-5.5`. No code mode, no Responses Lite (chapter 06) |
 
@@ -40,13 +40,13 @@ What educodex does instead, in one table:
 
 **Responses Lite.** For models marked `use_responses_lite: true` (most of today's catalog, including `gpt-6-luna`), Codex leaves the top-level `tools` field empty. It puts the tool list into `input` as one `additional_tools` item with role `developer`, and sends `parallel_tool_calls: false` ([`client.rs` ~L915](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/client.rs#L915), [L1001](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/client.rs#L1001)). The item gets a stable id derived from the thread id and the tool list, so it is cache-friendly too. *Why:* a lighter request shape that these models were trained on. educodex records the flag (`codex_use_responses_lite`) and notes it in `trace/toolsRegistered`, but always uses the classic layout.
 
-**Remote compaction.** The server summarises and returns an encrypted `compaction` item ([`compact_remote_v2.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/compact_remote_v2.rs#L430), triggered by a [`compaction_trigger`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/compact_remote_v2_attempt.rs#L95) item). *Why:* it keeps more than a text summary can. See chapter 14.
+**Remote compaction.** The server summarises and returns an encrypted `compaction` item ([`compact_remote_v2.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/compact_remote_v2.rs#L430), triggered by a [`compaction_trigger`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/compact_remote_v2_attempt.rs#L95) item). *Why:* it keeps more than a text summary can. See chapter 15.
 
 ### Doing more
 
 **Sub-agents (multi-agent).** The model can call `spawn_agent`, `send_message`, `wait_agent` and similar tools ([`multi_agents_spec.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L92), [`multi_agents_v2/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/tools/handlers/multi_agents_v2)). Each child is its own thread with its own context ([`core/src/agent/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/agent)), and roles come from [`agent-roles/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/agent-roles). *Why:* a sub-agent can read 50 files and return one paragraph, so the parent's context stays small. Independent work can also run in parallel.
 
-**Skills.** A skill is a folder with a `SKILL.md` ([`skills/src/mentions.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/skills/src/mentions.rs#L40)). Only its name and short description go into the prompt; the model reads the full file when it needs it. *Why:* you can have many specialised instructions without paying for all of them in every request.
+**Skills and memories.** educodex ports the core of both: the skills catalog and `$name` injection (chapter 14), and the two-phase memory pipeline (chapter 17). Codex adds a context budget for the catalog, plugin, cloud and executor skill sources with `skills.list`/`skills.read` tools ([`ext/skills/src/tools/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/ext/skills/src/tools)), and for memories a SQLite job queue with leases, usage-ranked inputs and an automatic start on every turn ([`state/src/runtime/memories.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/state/src/runtime/memories.rs)). *Why:* many skills and many threads must stay cheap, and several Codex processes can share one memory folder.
 
 **Plugins and apps.** Plugins bundle skills, MCP servers and hooks into one installable package ([`plugin/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/plugin/src), [`core-plugins/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core-plugins/src)). Apps (connectors) bring hosted integrations in as tools ([`connectors/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/connectors/src)). *Why:* teams want to share a setup, not copy config files around.
 
@@ -70,7 +70,7 @@ What educodex does instead, in one table:
 
 ### More surfaces
 
-**TUI, IDEs and desktop.** The Rust [`tui/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui) talks to the App Server through [`app-server-client/`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-client/src/lib.rs#L1). The VS Code extension and desktop app are not in this repo. They ship a pinned Codex binary and speak JSON-RPC over stdio to `codex app-server` (chapter 16). *Why:* one harness, many front ends.
+**TUI, IDEs and desktop.** The Rust [`tui/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui) talks to the App Server through [`app-server-client/`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-client/src/lib.rs#L1). The VS Code extension and desktop app are not in this repo. They ship a pinned Codex binary and speak JSON-RPC over stdio to `codex app-server` (chapter 18). *Why:* one harness, many front ends.
 
 **Cloud tasks.** [`cloud-tasks/`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/cloud-tasks/src/cli.rs) submits and tracks Codex Cloud tasks from the CLI. In the cloud, the App Server runs inside a container next to the checked-out repo. *Why:* long tasks keep running when your laptop sleeps, and many can run at once.
 

@@ -39,13 +39,15 @@ uv run --group dev educodex tui --cwd /path/to/project
 uv run educodex exec --mcp notes="python examples/mcp/notes_server.py" "List my notes"
 ```
 
-Options: `--approval on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--effort low|medium|high`, `--network`, `--model openai/<slug>`.
+Options: `--approval on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--effort low|medium|high`, `--network`, `--model openai/<slug>`, `--memories`.
+
+In the web UI and the TUI, type `/` for commands (`/skills`, `/new`, `/compact`, `/memory-update`, `/memory-drop`) and `$` to use a skill. Skills are `SKILL.md` folders in `.agents/skills/` of your project or `~/.agents/skills/`.
 
 ## What the web UI shows
 
 | Panel | Shows |
 |---|---|
-| Chat | Messages, commands with live output, diffs, MCP calls, plans, and approval prompts that pause the turn |
+| Chat | Messages, commands with live output, diffs, MCP calls, plans, memory updates, and approval prompts that pause the turn |
 | Timeline | Every protocol and `trace/*` event, each with a plain-language explanation and links to the guide and the Codex code |
 | Context | The exact `input` array of the next request, coloured by where each item came from, against the context window |
 | Requests | The raw body of every model call, plus a check that each request extends the previous one (so the prompt cache can hit) |
@@ -73,6 +75,8 @@ cd web && pnpm test:e2e             # Playwright: drives the web UI against the 
 | `src/educodex/core/tools/` | `exec_command`, `write_stdin`, `apply_patch`, `update_plan` (`core/src/tools/`, `apply-patch/`) |
 | `src/educodex/core/policy/`, `sandbox/` | Approvals, rules, dangerous commands, Seatbelt (`core/src/exec_policy.rs`, `sandboxing/`) |
 | `src/educodex/core/mcp/` | MCP client and tool exposure (`codex-mcp/`) |
+| `src/educodex/core/skills/` | Skill discovery, the catalog, `$name` injection (`skills/`, `ext/skills/`) |
+| `src/educodex/core/memories/` | Memories: read path and the two-phase write path (`memories/`, `ext/memories/`) |
 | `src/educodex/core/probe.py` | No-op observability hooks the core calls (like Codex's OpenTelemetry calls, `otel/`) |
 | `src/educodex/observe/` | educodex only: `trace/*` events (`Tracer`), costs, step mode |
 | `src/educodex/app_server/` | JSON-RPC lite server (`app-server/`, `app-server-protocol/`) |

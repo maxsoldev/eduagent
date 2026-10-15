@@ -51,23 +51,25 @@ The milestone column refers to [the design doc](../design.md#milestones). In the
 |---|---|---|---|
 | 12 | [MCP](12-mcp.md) | How external tools reach the model: discovery, naming, schema cleanup, annotations, cache effects | 5 |
 | 13 | [Hooks](13-hooks.md) | Running your own code before/after tool calls and at turn end | 6 |
+| 14 | [Skills](14-skills.md) | `SKILL.md` folders, the skills catalog, progressive disclosure, `$name` mentions, bundled skills | 8 |
 
 ### Part V — Long sessions
 | # | Chapter | You will learn | Milestone |
 |---|---|---|---|
-| 14 | [Context management and compaction](14-compaction.md) | Running out of context; summarising history; local vs remote compaction | 6 |
-| 15 | [Session logs](15-session-logs.md) | Rollout JSONL files, resume and replay | 2 |
+| 15 | [Context management and compaction](15-compaction.md) | Running out of context; summarising history; local vs remote compaction; `/compact` | 6 |
+| 16 | [Session logs](16-session-logs.md) | Rollout JSONL files, resume and replay | 2 |
+| 17 | [Memories](17-memories.md) | Learning across threads: the read path, two-phase extraction and consolidation, a sub-agent that edits files | 9 |
 
 ### Part VI — Serving the harness
 | # | Chapter | You will learn | Milestone |
 |---|---|---|---|
-| 16 | [The App Server](16-app-server.md) | JSON-RPC lite, thread/turn/item primitives, server-initiated requests | 2 |
-| 17 | [Clients and observability](17-clients-and-observability.md) | Building the web UI and TUI on one protocol; trace events and the probe seam | 3 |
+| 18 | [The App Server](18-app-server.md) | JSON-RPC lite, thread/turn/item primitives, server-initiated requests | 2 |
+| 19 | [Clients and observability](19-clients-and-observability.md) | Building the web UI and TUI on one protocol; slash commands; trace events and the probe seam | 3 |
 
 ### Part VII — Beyond educodex
 | # | Chapter | You will learn | Milestone |
 |---|---|---|---|
-| 18 | [What production adds](18-what-production-adds.md) | WebSocket transport, prompt-cache tricks, code mode, sub-agents, auto-review, skills, multi-provider, evals | – |
+| 20 | [What production adds](20-what-production-adds.md) | WebSocket transport, prompt-cache tricks, code mode, sub-agents, auto-review, plugins, multi-provider, evals | – |
 
 ## Reading list
 

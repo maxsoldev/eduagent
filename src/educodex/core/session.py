@@ -20,10 +20,13 @@ from educodex.core.events import EventBus
 from educodex.core.history import History
 from educodex.core.items import ResponseItem
 from educodex.core.mcp.manager import McpManager
+from educodex.core.memories.read import render_memory_instructions
 from educodex.core.models import model_info
 from educodex.core.policy.rules import load_rules
 from educodex.core.probe import Probe
 from educodex.core.rollout import RolloutRecorder
+from educodex.core.skills.loader import SkillLoadOutcome
+from educodex.core.skills.system import install_system_skills
 from educodex.core.tools.handlers import builtin_handlers
 from educodex.core.tools.processes import ProcessManager
 from educodex.core.tools.registry import ToolRouter
@@ -61,8 +64,10 @@ class Session:
         self.running_items: dict[int, dict] = {}  # exec items whose process is still running
         self.total_usage: dict[str, int] = {}  # summed over all model requests
         self.context_snapshot: dict[str, str] | None = None  # last emitted context fragments
-        self.rollout = RolloutRecorder(config.home, self.thread_id)
-        self._transport = transport
+        self.skills = SkillLoadOutcome()  # scanned again at the start of every turn
+        self.memory_instructions = None  # the "## Memory" fragment, read when the thread starts
+        self.rollout = RolloutRecorder(config.home, self.thread_id, enabled=not config.ephemeral)
+        self.transport = transport  # None: the real API; tests and --fake-model pass a fake one
         self._turn_task: asyncio.Task | None = None
         self._configure_model()
 
@@ -71,11 +76,14 @@ class Session:
         self.base_instructions = self.config.base_instructions or self.model_info.base_instructions
         self.client = ModelClient(
             self.config.model, self.model_info, self.config.api_key, self.config.base_url, self.thread_id,
-            self.config.reasoning_effort, self.config.reasoning_summary, self._transport,
+            self.config.reasoning_effort, self.config.reasoning_summary, self.transport,
         )
 
     async def start(self) -> dict:
         """Connect MCP servers, build the tool list, write the session log header."""
+        if self.config.bundled_skills:
+            install_system_skills(self.config.home)
+        self.refresh_memory_instructions()
         await self.mcp.start(self)
         self.router = ToolRouter(builtin_handlers(self.config.include_plan_tool, self.model_info.apply_patch_tool_type) + self.mcp.handlers(),
                                  self.mcp.namespace_specs())
@@ -87,7 +95,7 @@ class Session:
 
     def thread_info(self) -> dict:
         return {"id": self.thread_id, "preview": "", "modelProvider": "openrouter", "model": self.config.model,
-                "cwd": str(self.config.cwd), "path": str(self.rollout.path), "status": "idle", "ephemeral": False}
+                "cwd": str(self.config.cwd), "path": str(self.rollout.path) if self.rollout.enabled else None, "status": "idle", "ephemeral": self.config.ephemeral}
 
     async def record(self, *items: ResponseItem) -> None:
         """Append to history (and the session log), and tell observers."""
@@ -112,12 +120,16 @@ class Session:
     def turn_running(self) -> bool:
         return bool(self._turn_task and not self._turn_task.done())
 
-    def start_turn(self, text: str) -> dict:
-        """Start a turn in the background and return its Turn object (status inProgress)."""
+    def refresh_memory_instructions(self) -> None:
+        self.memory_instructions = render_memory_instructions(self.config.home) if self.config.memories else None
+
+    def start_turn(self, text: str, skill_inputs: list[dict] | None = None) -> dict:
+        """Start a turn in the background and return its Turn object (status inProgress).
+        `skill_inputs`: UserInput items {"type": "skill", "name", "path"} the client attached."""
         if self.turn_running:
             raise RuntimeError("a turn is already running")
         turn = new_turn()
-        self._turn_task = asyncio.create_task(run_turn(self, text, turn))
+        self._turn_task = asyncio.create_task(run_turn(self, text, turn, skill_inputs or []))
         return {**turn, "items": []}
 
     def start_compaction(self) -> None:
@@ -130,9 +142,21 @@ class Session:
         ctx = TurnContext(self, turn_id=f"compact-{uuid.uuid4()}")
         self._turn_task = asyncio.create_task(run_compact(ctx, reason="manual"))
 
-    async def run(self, text: str) -> dict:
-        """Run one turn to completion (CLI and tests)."""
-        self.start_turn(text)
+    def start_memory_update(self) -> None:
+        """Run the memory write pipeline as the session's task (`/memory-update`)."""
+        from educodex.core.memories.start import run_memory_update
+        from educodex.core.turn import TurnContext
+
+        if not self.config.memories:
+            raise RuntimeError("memories are off: start educodex with --memories")
+        if self.turn_running:
+            raise RuntimeError("a turn is already running")
+        ctx = TurnContext(self, turn_id=f"memory-{uuid.uuid4()}")
+        self._turn_task = asyncio.create_task(run_memory_update(ctx))
+
+    async def run(self, text: str, skill_inputs: list[dict] | None = None) -> dict:
+        """Run one turn to completion (CLI, tests, the memory agent)."""
+        self.start_turn(text, skill_inputs)
         return await self._turn_task
 
     def interrupt(self) -> bool:

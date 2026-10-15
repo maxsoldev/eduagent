@@ -62,6 +62,13 @@ function summarize(e: TraceEvent): string {
     case "trace/toolsRegistered": return p.tools.map((t: Json) => t.name).join(", ");
     case "trace/compacted": return `${p.itemsBefore} → ${p.itemsAfter} items`;
     case "trace/paused": return p.breakpoint;
+    case "trace/skillsLoaded": return `${p.skills.length} skills in ${p.roots.length} roots${p.errors.length ? ` · ${p.errors.length} errors` : ""}`;
+    case "trace/skillInjected": return `$${p.name} · ${p.tokens} tok`;
+    case "trace/memoryCandidates": return `${p.candidates.length} session log(s)`;
+    case "trace/memoryExtractionRequest": return `thread ${p.sourceThreadId.slice(0, 8)} · ${p.body.model}`;
+    case "trace/memoryExtracted": return `thread ${p.result.threadId.slice(0, 8)}: ${p.result.status}`;
+    case "trace/memoryConsolidationStarted": return `${p.inputs} memories · ${p.changes.length} changed files`;
+    case "trace/memoryAgent": return p.item ? `${p.item.type}${p.item.command ? `: ${p.item.command.slice(0, 70)}` : ""}` : p.agentMethod;
     case "trace/cost": return `${usd(p.last.billedUsd ?? p.last.usd?.total)} · ${pct(p.last.cacheHitRate)} of ${p.last.tokens.input} input tokens cached · session ${usd(p.total.billedUsd ?? p.total.usd?.total)}`;
     case "trace/pricing": return p.pricing ? `input $${p.pricing.perMillionTokens.prompt}/M · cached $${p.pricing.perMillionTokens.cache_read}/M · output $${p.pricing.perMillionTokens.completion}/M` : "no pricing";
     default: return "";
@@ -120,9 +127,10 @@ function classify(item: Json, index: number): { label: string; cat: CtxCat } {
   const text = item.content?.[0]?.text ?? "";
   if (item.type === "message") {
     if (index === 0 && item.role === "developer") return { label: "base instructions", cat: "base" };
-    if (item.role === "developer") return { label: text.startsWith("<permissions") ? "permissions" : "developer", cat: "injected" };
+    if (item.role === "developer") return { label: developerLabel(item), cat: "injected" };
     if (item.role === "user") {
       if (text.startsWith("# AGENTS.md") || text.startsWith("<environment_context>")) return { label: "context (AGENTS.md / env)", cat: "injected" };
+      if (text.startsWith("<skill>")) return { label: `skill ${/<name>(.*?)<\/name>/.exec(text)?.[1] ?? ""} (SKILL.md)`, cat: "injected" };
       if (text.startsWith("Another language model started")) return { label: "compaction summary", cat: "summary" };
       return { label: "user", cat: "user" };
     }
@@ -132,6 +140,14 @@ function classify(item: Json, index: number): { label: string; cat: CtxCat } {
   if (item.type.endsWith("_output")) return { label: "tool output", cat: "output" };
   if (item.type.endsWith("call")) return { label: "tool call", cat: "call" };
   return { label: item.type, cat: "other" };
+}
+
+// The developer bundle holds several fragments, one per content part: name them all.
+const DEV_PARTS: [string, string][] = [["## Memory", "memories"], ["<skills_instructions>", "skills"],
+  ["<permissions", "permissions"], ["<collaboration_mode>", "collaboration mode"]];
+function developerLabel(item: Json): string {
+  const names = (item.content ?? []).map((p: Json) => DEV_PARTS.find(([prefix]) => (p.text ?? "").startsWith(prefix))?.[1] ?? "instructions");
+  return `developer: ${names.join(" + ")}`;
 }
 
 // A short text snippet of an item, for the bar tooltip.

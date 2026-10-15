@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from educodex.core.turn import TurnContext
 
 COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
-CONTEXT_PREFIXES = ("<environment_context>", "# AGENTS.md instructions", "<permissions instructions>")
+CONTEXT_PREFIXES = ("<environment_context>", "# AGENTS.md instructions", "<permissions instructions>", "<skill>")
 
 
 def summary_prompt() -> str:
@@ -74,7 +74,8 @@ async def run_compact(ctx: "TurnContext", reason: str = "manual") -> str:
         if event.type == "response.output_item.done" and event.data["item"].get("type") == "message":
             summary = message_text(event.data["item"])
 
-    fragments = world_state.build_fragments(session.config)
+    session.refresh_memory_instructions()  # Codex rebuilds the thread context, so a new summary shows up
+    fragments = world_state.build_fragments(session.config, session.skills, session.memory_instructions)
     session.context_snapshot = world_state.snapshot(fragments)
     new_history = build_compacted_history(before, summary, world_state.to_messages(fragments))
     session.history.replace(new_history)

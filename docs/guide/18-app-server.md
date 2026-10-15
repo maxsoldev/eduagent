@@ -1,4 +1,4 @@
-# 16 — The App Server
+# 18 — The App Server
 
 ## Concept
 
@@ -121,10 +121,10 @@ The transports handle **every message in its own task**. Otherwise a turn waitin
 
 **Core events become notifications.** The core never imports `app_server` (see [the design doc](../design.md#architecture)). It emits events on an `EventBus` ([`events.py`](../../src/educodex/core/events.py)). `MessageProcessor._broadcast` sends each event only to the connections subscribed to that thread (the one that started it, plus any that called `thread/read` or `turn/start` on it), adding `_seq`/`_ts` fields so UIs can order their timeline. A failing listener is logged and skipped; it never breaks the turn. `Connection.notify` drops methods listed in `optOutNotificationMethods`.
 
-**Methods.** `initialize`, `thread/start`, `thread/list`, `thread/read`, `turn/start`, `turn/interrupt`, `thread/compact/start` and `model/list` use Codex's names and main fields. Some rules copied from Codex:
+**Methods.** `initialize`, `thread/start`, `thread/list`, `thread/read`, `turn/start`, `turn/interrupt`, `thread/compact/start`, `model/list`, `skills/list` (chapter 14) and `memory/reset` (chapter 17) use Codex's names and main fields. `turn/start` accepts `{"type": "skill", "name", "path"}` input items next to the text, as Codex does. Some rules copied from Codex:
 - Any method other than `initialize` sent before it gets `-32600 "not initialized"`; a second `initialize` gets "Already initialized".
 - `turn/start` while a turn is running is rejected *before* its overrides (model, sandbox, cwd …) are applied, so it cannot change the running turn's settings.
-- `thread/compact/start` replies `{}` at once; the compaction runs as the thread's task (chapter 14).
+- `thread/compact/start` replies `{}` at once; the compaction runs as the thread's task (chapter 15).
 - `turn/interrupt` stops only that thread's turn.
 
 **educodex extensions** (not in Codex):
@@ -132,6 +132,7 @@ The transports handle **every message in its own task**. Otherwise a turn waitin
 - **Step mode** ([`stepper.py`](../../src/educodex/observe/stepper.py)): `debug/stepMode/set {threadId, enabled, breakpoints}` pauses the loop at `beforeModelRequest`, `beforeToolCall` and `afterToolCall`. The server emits `trace/paused` and waits for `debug/continue`.
 - `debug/context/get` returns the exact request body the next model call would send, with token counts. The Context tab uses it.
 - `thread/read` with `includeTrace: true` returns the full event log, so a UI that reconnects can rebuild its timeline.
+- `memory/update/start {threadId}` runs the memory write path now and replies `{}` at once; a `memoryUpdate` item and `trace/memory*` events follow (chapter 17). Codex starts that pipeline on its own and has no method for it.
 
 **Origin check.** A web page on any site can open a WebSocket to `127.0.0.1`. If it could talk to the server, it could start turns and approve its own commands. Codex rejects *any* request with an `Origin` header. educodex has to serve its own UI, so it allows only loopback origins:
 
@@ -149,7 +150,7 @@ if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1")
 - **Handshake types:** [`InitializeParams`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v1.rs#L29), [`InitializeCapabilities`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v1.rs#L46) (with `optOutNotificationMethods`, `experimentalApi`, …) and [`InitializeResponse`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v1.rs#L74). The ["Not initialized"](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src/message_processor.rs#L975) guard is in the message processor.
 - **v2 shapes:** [`protocol/v2/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2): [`ThreadItem`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/item.rs#L236), [`CommandExecutionApprovalDecision`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/item.rs#L66), [`ThreadStartParams`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L62), [`TurnStartParams`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L167). The same Rust types generate TypeScript (`codex app-server generate-ts`) and JSON Schema for clients in other languages.
 - **Transports:** [`app-server-transport/src/transport/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport). The [`--listen`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/mod.rs#L100) options are `stdio://` (the default), `unix://`, `ws://IP:PORT` or `off`. [`stdio.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/stdio.rs#L141) appends `\n` to each message. [`websocket.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/websocket.rs#L89) rejects any request with an `Origin` header.
-- **Server:** [`app-server/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src) (message processor, request processors, thread manager). [`in_process.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src/in_process.rs) runs the same protocol without a process boundary (chapter 17).
+- **Server:** [`app-server/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src) (message processor, request processors, thread manager). [`in_process.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src/in_process.rs) runs the same protocol without a process boundary (chapter 19).
 
 ## Where educodex is simpler
 

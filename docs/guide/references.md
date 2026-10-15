@@ -14,6 +14,7 @@ External reading for the guide, grouped by topic. Each chapter links the relevan
 - [Sandboxing](https://developers.openai.com/codex/concepts/sandboxing) and [Auto-review](https://developers.openai.com/codex/concepts/sandboxing/auto-review).
 - [Custom instructions with AGENTS.md](https://developers.openai.com/codex/guides/agents-md) — discovery and merge order.
 - [Configuration reference](https://developers.openai.com/codex/config-reference).
+- [Skills](https://developers.openai.com/codex/skills) and [Memories](https://developers.openai.com/codex/memories).
 - Codex source at the pinned commit: [`codex-rs/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs).
 
 ## What a harness is
@@ -31,6 +32,8 @@ External reading for the guide, grouped by topic. Each chapter links the relevan
 - [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Anthropic, 2025.
 - [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) — Manus, Jul 2025. KV-cache hit rate, keeping errors in context, todo recitation.
 - [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Anthropic.
+- [Equipping agents for the real world with Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) — Anthropic. Skills and progressive disclosure. The format is shared at [agentskills.io](https://agentskills.io/).
+- [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560) — Packer et al., 2023. Paging memory in and out of the context.
 
 ## Tools
 - [Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — Anthropic, 2025.
