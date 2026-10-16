@@ -23,7 +23,7 @@ def _first_existing(directory: Path) -> Path | None:
     return None
 
 
-def _project_dirs(cwd: Path) -> list[Path]:
+def project_dirs(cwd: Path) -> list[Path]:
     """Directories from the project root (nearest ancestor with .git) down to cwd."""
     for ancestor in [cwd, *cwd.parents]:
         if (ancestor / ".git").exists():
@@ -37,7 +37,7 @@ def _project_dirs(cwd: Path) -> list[Path]:
 def discover(cwd: Path, home: Path) -> list[Path]:
     """All instruction files that apply, global first."""
     found = [p for p in [_first_existing(home)] if p]
-    found += [p for d in _project_dirs(cwd) if (p := _first_existing(d))]
+    found += [p for d in project_dirs(cwd) if (p := _first_existing(d))]
     return found
 
 

@@ -30,6 +30,8 @@ class ModelInfo:
     # (what Codex does for gpt-5.5); see docs/guide/06-model-catalog.md.
     codex_tool_mode: str | None  # "code_mode_only": Codex exposes one JavaScript `exec` tool instead
     codex_use_responses_lite: bool  # Codex sends tools as an `additional_tools` input item
+    include_skills_usage_instructions: bool  # add "### How to use skills" to the skills catalog
+    effective_context_window_percent: int  # share of the context window usable for input
 
     def effective_auto_compact_limit(self) -> int:
         """Codex compacts at min(configured limit, 90% of the context window)."""
@@ -70,4 +72,6 @@ def model_info(model: str) -> ModelInfo:
         support_verbosity=raw.get("support_verbosity", False),
         codex_tool_mode=raw.get("tool_mode"),
         codex_use_responses_lite=raw.get("use_responses_lite", False),
+        include_skills_usage_instructions=raw.get("include_skills_usage_instructions", False),
+        effective_context_window_percent=raw.get("effective_context_window_percent", 95),
     )

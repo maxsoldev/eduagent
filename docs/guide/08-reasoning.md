@@ -142,7 +142,7 @@ The effort can be set per thread or per turn (`--effort low|medium|high` on the 
 uv run educodex exec --effort high "Is 2^89-1 prime? One sentence why."
 ```
 
-The dim `reasoning:` line is the summary. Run it again with `--effort low` and compare. The token counts per request (`output_tokens_details.reasoning_tokens`) are in the session log as `token_count` events (chapter 15), and in the web UI's `trace/modelResponse` events.
+The dim `reasoning:` line is the summary. Run it again with `--effort low` and compare. The token counts per request (`output_tokens_details.reasoning_tokens`) are in the session log as `token_count` events (chapter 16), and in the web UI's `trace/modelResponse` events.
 
 Look at the raw spike output:
 

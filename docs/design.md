@@ -14,7 +14,7 @@ An educational Python re-implementation of the [OpenAI Codex](https://github.com
 **Non-goals**
 - Performance: WebSocket transport to the model, prewarm, `previous_response_id`, smart retries.
 - Non-OpenAI models (for now). We use OpenAI models through OpenRouter's Responses API.
-- Codex product features: cloud tasks, realtime voice, multi-agent, plugins/apps/skills, code mode, review mode, auto-review, Windows/Linux sandboxes, telemetry.
+- Codex product features: cloud tasks, realtime voice, multi-agent, plugins/apps, code mode, review mode, auto-review, Windows/Linux sandboxes, telemetry.
 
 ## Decisions
 
@@ -86,6 +86,8 @@ Everything educodex adds for teaching lives in `observe/`. The core calls a `Pro
 | `core/compact.py` | Local compaction | `core/src/compact.rs` |
 | `core/rollout.py` | JSONL session log | `rollout/src/recorder.rs` |
 | `core/hooks.py` | PreToolUse / PostToolUse / UserPromptSubmit / Stop | `hooks/`, `core/src/hook_runtime.rs` |
+| `core/skills/` | Skill roots and scan, bundled skills, the catalog, `$name` injection | `skills/`, `ext/skills/` |
+| `core/memories/` | Read path, citations, `/memory-update` (phase 1 + phase-2 sub-agent), `/memory-drop` | `memories/`, `ext/memories/`, `state/` (memories tables) |
 | `observe/tracer.py` | `trace/*` events (a `Probe` subclass) | – (educodex only) |
 | `observe/pricing.py`, `observe/stepper.py` | Request costs; step mode | – (educodex only) |
 | `app_server/` | JSON-RPC lite over WebSocket and stdio | `app-server/`, `app-server-protocol/`, `app-server-transport/` |
@@ -99,9 +101,10 @@ At the start of a thread (layout from Codex's `model_visible_layout` snapshots):
 
 ```
 [0] developer  base instructions        ← models.json model_messages.instructions_template (added by client.py, not stored in history)
-[1] developer  [developer_instructions] <permissions instructions>…  <collaboration_mode>…
+[1] developer  [developer_instructions] [## Memory…] [<skills_instructions>…] <permissions instructions>…  <collaboration_mode>…
 [2] user       # AGENTS.md instructions for {cwd} <INSTRUCTIONS>…</INSTRUCTIONS>   <environment_context>…
 [3] user       the user's message
+[4] user       <skill>…</skill>, one per skill the user named with $name
 ```
 
 On later turns, only fragments whose text changed are appended as new messages. Earlier messages never change, so each request is an exact prefix of the next and the prompt cache keeps hitting.
@@ -147,7 +150,7 @@ JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over st
 
 | Kind | Codex v2 methods (same names) |
 |---|---|
-| Client → server | `initialize` (+ `initialized`), `thread/start`, `thread/list`, `thread/read`, `turn/start`, `turn/interrupt`, `thread/compact/start`, `model/list` |
+| Client → server | `initialize` (+ `initialized`), `thread/start`, `thread/list`, `thread/read`, `turn/start`, `turn/interrupt`, `thread/compact/start`, `model/list`, `skills/list`, `memory/reset` |
 | Notifications | `thread/started`, `turn/started`, `turn/completed`, `item/started`, `item/completed`, `item/agentMessage/delta`, `item/reasoning/summaryTextDelta`, `item/commandExecution/outputDelta`, `item/commandExecution/terminalInteraction`, `turn/plan/updated`, `thread/tokenUsage/updated`, `thread/compacted`, `error`, `warning` |
 | Server → client requests | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` (decisions `accept`, `acceptForSession`, `acceptWithExecpolicyAmendment`, `decline`, `cancel`), `mcpServer/elicitation/request` (`accept`, `decline`, `cancel`) |
 
@@ -157,6 +160,7 @@ JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over st
 - `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `sseEvent` (opt-in), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
 - `trace/pricing` and `trace/cost`: prices from OpenRouter's `/models`, and each request's cost split into uncached input, cache reads, cache writes and output, with the savings from caching (`observe/pricing.py`). Codex reports tokens, not money.
 - `debug/*` requests: `debug/stepMode/set`, `debug/continue`, `debug/context/get`.
+- `memory/update/start`: run the memory write path now (Codex starts it on its own), with a `memoryUpdate` item and `trace/memory*` events. Also `trace/skillsLoaded` and `trace/skillInjected`.
 - Notifications carry `_seq` and `_ts` so the timeline can be ordered and timed.
 
 Clients can opt out of any notification with Codex's `optOutNotificationMethods`.
@@ -177,6 +181,8 @@ Clients can opt out of any notification with Codex's `optOutNotificationMethods`
 - **No OS sandbox outside macOS.** There, commands that would be sandboxed need approval under `on-request`.
 - **Rollout:** `token_count` stores the raw API usage.
 - **Hooks** only run shell commands.
+- **Skills:** no catalog budget, no per-skill enable/disable, no `agents/openai.yaml`, no plugin/admin/cloud roots (chapter 14).
+- **Memories:** run on `/memory-update`, not on every turn; a JSON file instead of SQLite job tables, leases and retries; no usage ranking (chapter 17).
 
 ## Documentation
 
@@ -194,3 +200,5 @@ Clients can opt out of any notification with Codex's `optOutNotificationMethods`
 | 5 | MCP (demo server `examples/mcp/notes_server.py`) | ✅ |
 | 6 | Compaction, hooks, `write_stdin` sessions | ✅ |
 | 7 | TUI | ✅ |
+| 8 | Skills: roots, catalog, `$name` injection, bundled `skill-creator`, `/` and `$` lists in the clients | ✅ |
+| 9 | Memories (Codex v1): read path, citations, `/memory-update`, `/memory-drop` | ✅ |

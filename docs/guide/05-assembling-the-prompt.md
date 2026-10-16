@@ -34,6 +34,8 @@ The other context pieces are **fragments**. Each one has a role:
 | Fragment | Role | Wrapper | Why this role |
 |---|---|---|---|
 | `developer_instructions` (from config) | developer | none | The harness owner's rules |
+| Memories (when on, chapter 17) | developer | starts with `## Memory` | What earlier threads learned |
+| Skills catalog (chapter 14) | developer | `<skills_instructions>` … `</skills_instructions>` | Which skills exist and where |
 | Permissions | developer | `<permissions instructions>` … `</permissions instructions>` | Rules the model must follow |
 | Collaboration mode | developer | `<collaboration_mode>` … `</collaboration_mode>` | How to behave: Default or Plan mode |
 | AGENTS.md | user | `# AGENTS.md instructions for <cwd>` … `<INSTRUCTIONS>` … `</INSTRUCTIONS>` | Written by the user's team |

@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import os
+import pwd
 import sys
 import uuid
 from pathlib import Path
@@ -95,7 +97,8 @@ async def test_cancel_interrupts_turn(make_session):
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt is macOS only")
 async def test_sandbox_blocks_writes_outside_workspace(make_session, workspace):
-    outside = Path.home() / f".educodex-sandbox-test-{uuid.uuid4().hex}"  # not under a writable root ($TMPDIR is one)
+    real_home = Path(pwd.getpwuid(os.getuid()).pw_dir)  # $HOME is a temp dir in tests, and $TMPDIR is writable
+    outside = real_home / f".educodex-sandbox-test-{uuid.uuid4().hex}"
     session, fake, events = await make_session([[call("exec_command", cmd=f"echo x > {outside}")], [say("ok")]])
     await session.run("try")
     assert not outside.exists()

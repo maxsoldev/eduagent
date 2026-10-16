@@ -165,3 +165,36 @@ class Tracer(Probe):
         await self._turn(ctx, "trace/compacted", reason=reason, summary=summary, itemsBefore=items_before,
                          itemsAfter=len(new_history), tokensBefore=tokens_before,
                          tokensAfter=ctx.session.history.token_count(), newHistory=new_history)
+
+    # --- skills ---------------------------------------------------------------------------
+    async def skills_loaded(self, ctx, outcome) -> None:
+        await self._turn(ctx, "trace/skillsLoaded",
+                         roots=[{"path": str(r.path), "scope": r.scope} for r in outcome.roots],
+                         skills=[{"name": s.name, "description": s.description, "path": str(s.path), "scope": s.scope}
+                                 for s in outcome.skills],
+                         errors=[{"path": str(e.path), "message": e.message} for e in outcome.errors])
+
+    async def skill_injected(self, ctx, skill, item) -> None:
+        await self._turn(ctx, "trace/skillInjected", name=skill.name, path=str(skill.path),
+                         tokens=approx_tokens(item))
+
+    # --- memories -------------------------------------------------------------------------
+    async def memory_candidates(self, ctx, candidates) -> None:
+        await self._turn(ctx, "trace/memoryCandidates", candidates=candidates)
+
+    async def memory_extraction_requested(self, ctx, thread_id, rollout_path, body) -> None:
+        await self._turn(ctx, "trace/memoryExtractionRequest", sourceThreadId=thread_id, rolloutPath=rollout_path,
+                         url=f"{ctx.config.base_url}/responses", body=body)
+
+    async def memory_extracted(self, ctx, result) -> None:
+        await self._turn(ctx, "trace/memoryExtracted", result=result)
+
+    async def memory_consolidation_started(self, ctx, inputs, changes) -> None:
+        await self._turn(ctx, "trace/memoryConsolidationStarted", inputs=inputs,
+                         changes=[{"status": s, "path": p} for s, p in changes])
+
+    async def memory_agent_event(self, ctx, method, params) -> None:
+        if method in ("item/completed", "turn/completed", "error"):  # the sub-agent's steps, not its deltas
+            await self._turn(ctx, "trace/memoryAgent", agentMethod=method,
+                             agentThreadId=params.get("threadId"), **{k: v for k, v in params.items() if k in
+                                                                       ("item", "turn", "error")})

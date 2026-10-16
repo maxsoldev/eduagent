@@ -62,8 +62,8 @@ This is part of the `gpt-6-luna` entry (the real one has ~50 fields and an 18,00
 | `apply_patch_tool_type` | `"freeform"` means: offer `apply_patch` as a custom tool with a grammar. Missing means: no `apply_patch` tool | 03, 07 |
 | `shell_type` | Which shell tool to offer. `"shell_command"` is an old name that now means `exec_command` / `write_stdin`; `"disabled"` means no shell | 07 |
 | `truncation_policy` | The most tool output (here 10,000 tokens) that goes back to the model. Longer output is cut in the middle | 07 |
-| `context_window` | How many tokens the model can see at once | 14 |
-| `auto_compact_token_limit` | When to start compaction. The harness uses `min(limit, 90% of context_window)`. `null` means just 90% | 14 |
+| `context_window` | How many tokens the model can see at once | 15 |
+| `auto_compact_token_limit` | When to start compaction. The harness uses `min(limit, 90% of context_window)`. `null` means just 90% | 15 |
 | `default_reasoning_level` | The `reasoning.effort` to send when the user did not pick one | 08 |
 | `default_reasoning_summary`, `supports_reasoning_summary_parameter` | Whether to ask for reasoning summaries, and whether the model accepts that parameter at all | 08 |
 | `support_verbosity`, `default_verbosity` | `text.verbosity`: how long the model's answers should be (`low` / `medium` / `high`) | 02 |
@@ -91,7 +91,7 @@ Two fields change the request shape a lot, so it is worth knowing what they do e
 
 In today's catalog every listed model except `gpt-5.5` has both: `tool_mode: "code_mode_only"` and `use_responses_lite: true`. So **Codex talks to `gpt-6-luna` through one JavaScript `exec` tool, with the tool list inside `input`.** For `gpt-5.5` (`tool_mode: null`, `use_responses_lite: false`) it uses classic tool calling.
 
-educodex uses classic tool calling for every model, the way Codex calls `gpt-5.5`. Classic tools show each step as its own tool call, which is easier to learn from. The cost is that educodex does not send `gpt-6-luna` exactly what Codex sends. To keep this visible, educodex stores both values (`codex_tool_mode`, `codex_use_responses_lite`) and prints a note when it registers tools. Chapter 18 has pointers into Codex's code-mode implementation.
+educodex uses classic tool calling for every model, the way Codex calls `gpt-5.5`. Classic tools show each step as its own tool call, which is easier to learn from. The cost is that educodex does not send `gpt-6-luna` exactly what Codex sends. To keep this visible, educodex stores both values (`codex_tool_mode`, `codex_use_responses_lite`) and prints a note when it registers tools. Chapter 20 has pointers into Codex's code-mode implementation.
 
 ### Why per-model settings matter
 

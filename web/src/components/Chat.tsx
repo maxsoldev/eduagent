@@ -32,6 +32,7 @@ function Welcome() {
       <p>Send a task. On the right you can watch everything the harness does: how the prompt is assembled,
         the exact request to the model, every tool call, every policy decision.</p>
       <p className="muted">Try: <i>"Create hello.py that prints hi, then run it."</i> or turn on <b>Step mode</b> to pause before each model call.</p>
+      <p className="muted">Type <code>/</code> for commands (<code>/compact</code>, <code>/memory-update</code>, …) and <code>$</code> to use a skill.</p>
     </div>
   );
 }
@@ -40,6 +41,7 @@ function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.kind === "item") return <Item item={entry.item} />;
   if (entry.kind === "plan") return <Plan plan={entry.plan} explanation={entry.explanation} />;
   if (entry.kind === "error") return <div className="card error">⚠ {entry.message}</div>;
+  if (entry.kind === "note") return <pre className={`note${entry.error ? " bad" : ""}`} data-testid="note">{entry.text}</pre>;
   const t = entry.turn;
   return <div className="turn-sep" data-testid="turn-sep">turn {t.status} · {(t.durationMs / 1000).toFixed(1)}s</div>;
 }
@@ -47,9 +49,17 @@ function Entry({ entry }: { entry: ChatEntry }) {
 function Item({ item, live }: { item: Json; live?: boolean }) {
   switch (item.type) {
     case "userMessage":
-      return <div className="msg user"><div className="who">you</div><div className="text">{item.content?.map((c: Json) => c.text).join("\n")}</div></div>;
+      return <div className="msg user"><div className="who">you</div><div className="text">{item.content?.filter((c: Json) => c.type === "text").map((c: Json) => c.text).join("\n")}
+        {item.content?.filter((c: Json) => c.type === "skill").map((c: Json) => <span key={c.path} className="badge skill" title={c.path}>${c.name}</span>)}</div></div>;
     case "agentMessage":
-      return <div className="msg agent" data-testid="agent-message"><div className="who">agent</div><div className="text">{item.text}{live && <span className="cursor">▍</span>}</div></div>;
+      return (
+        <div className="msg agent" data-testid="agent-message"><div className="who">agent</div>
+          <div className="text">{item.text}{live && <span className="cursor">▍</span>}
+            {item.memoryCitation && <div className="muted small" data-testid="memory-citation" title="the model's <oai-mem-citation> block, hidden from the text">
+              memory used: {item.memoryCitation.entries.map((e: Json) => `${e.path}:${e.lineStart}-${e.lineEnd} (${e.note})`).join(", ") || item.memoryCitation.threadIds.join(", ")}</div>}
+          </div>
+        </div>
+      );
     case "reasoning":
       return item.summary?.length ? <details className="reasoning" open={live}><summary>reasoning summary</summary>{item.summary.join("\n\n")}</details> : null;
     case "commandExecution":
@@ -66,6 +76,8 @@ function Item({ item, live }: { item: Json; live?: boolean }) {
       );
     case "contextCompaction":
       return <div className="turn-sep compaction">⟲ context compacted{live ? "…" : ""}</div>;
+    case "memoryUpdate":
+      return <MemoryUpdate item={item} live={live} />;
     default:
       return <pre className="small">{JSON.stringify(item)}</pre>;
   }
@@ -115,6 +127,31 @@ function FileChange({ item }: { item: Json }) {
           ))}</pre>
         </div>
       ))}
+    </ToolCard>
+  );
+}
+
+// /memory-update (an educodex item): phase 1 per session log, then the phase-2 sub-agent.
+function MemoryUpdate({ item, live }: { item: Json; live?: boolean }) {
+  const p2 = item.phase2;
+  return (
+    <ToolCard testId="memory-update" head={<><span className="badge memory">memory</span>
+      <span className="grow">{live ? "updating memories…" : "memory update"}</span><Status s={live ? "inProgress" : item.status} /></>}>
+      {live && <div className="muted small">Phase 1 reads recent session logs; phase 2 runs a sub-agent in the memory folder. Watch the Timeline.</div>}
+      {item.error && <pre className="out err">{item.error}</pre>}
+      {item.phase1 && (
+        <div className="small"><b>Phase 1</b> · {item.phase1.length ? `${item.phase1.length} session log(s)` : "no new session logs"}
+          {item.phase1.map((r: Json) => (
+            <div key={r.threadId} className="muted">thread {r.threadId.slice(0, 8)}: {r.status}{r.slug ? ` · ${r.slug}` : ""}{r.error ? ` · ${r.error}` : ""}</div>
+          ))}
+        </div>
+      )}
+      {p2 && (
+        <div className="small"><b>Phase 2</b> · {p2.status}{p2.error ? `: ${p2.error}` : ""}
+          {p2.changes?.length > 0 && <div className="muted">inputs changed: {p2.changes.map((c: [string, string]) => `${c[0]} ${c[1]}`).join(", ")}</div>}
+          {p2.files && <div className="muted">memory folder: {p2.files.join(", ")}</div>}
+        </div>
+      )}
     </ToolCard>
   );
 }

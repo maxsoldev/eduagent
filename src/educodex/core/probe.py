@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from educodex.core.client import ResponseEvent
     from educodex.core.items import ResponseItem
     from educodex.core.session import Session
+    from educodex.core.skills.loader import Skill, SkillLoadOutcome
     from educodex.core.tools.registry import ToolCall
     from educodex.core.turn import TurnContext
 
@@ -77,6 +78,30 @@ class Probe:
     async def hook_ran(self, ctx: "TurnContext", event: str, command: str, exit_code: int, stdout: str,
                        stderr: str) -> None:
         """A configured hook command finished."""
+
+    # --- skills ---------------------------------------------------------------------------
+    async def skills_loaded(self, ctx: "TurnContext", outcome: "SkillLoadOutcome") -> None:
+        """The skill roots were scanned at the start of a turn."""
+
+    async def skill_injected(self, ctx: "TurnContext", skill: "Skill", item: "ResponseItem") -> None:
+        """The user mentioned a skill; its SKILL.md was added to history."""
+
+    # --- memories (/memory-update) ----------------------------------------------------------
+    async def memory_candidates(self, ctx: "TurnContext", candidates: list[dict]) -> None:
+        """Phase 1 chose the session logs to learn from."""
+
+    async def memory_extraction_requested(self, ctx: "TurnContext", thread_id: str, rollout_path: str,
+                                          body: dict) -> None:
+        """A phase-1 request is about to be sent."""
+
+    async def memory_extracted(self, ctx: "TurnContext", result: dict) -> None:
+        """A phase-1 request finished (status, raw memory, rollout summary or error)."""
+
+    async def memory_consolidation_started(self, ctx: "TurnContext", inputs: int, changes: list) -> None:
+        """Phase 2 starts its sub-agent; `changes` is the git diff it will read."""
+
+    async def memory_agent_event(self, ctx: "TurnContext", method: str, params: dict) -> None:
+        """An event of the phase-2 sub-agent (its own session)."""
 
     # --- compaction -----------------------------------------------------------------------
     async def compaction_requested(self, ctx: "TurnContext", reason: str, body: dict, tokens_before: int) -> None:

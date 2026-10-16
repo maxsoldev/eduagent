@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { defaultUrl, RpcClient, type Json } from "./rpc";
 import { initialState, reducer, type Approval } from "./store";
 import { Chat } from "./components/Chat";
+import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { pct, usd } from "./cost";
 
@@ -16,7 +17,6 @@ export function App() {
   const [models, setModels] = useState<Json[]>([]);
   const [settings, setSettings] = useState<Settings>({ model: "", approvalPolicy: "on-request", sandbox: "workspace-write", effort: "", cwd: "" });
   const [stepMode, setStepMode] = useState(false);
-  const [text, setText] = useState("");
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const startThread = useCallback(async (s: Settings) => {
@@ -53,15 +53,39 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const send = async () => {
-    if (!text.trim() || !state.threadId || state.turnRunning) return;
-    const input = text;
-    setText("");
+  const note = (text: string, error = false) => dispatch({ type: "note", text, error });
+
+  const send = async (text: string, skills: Json[]) => {
+    if (!state.threadId || state.turnRunning) return;
     await rpcRef.current!.request("turn/start", {
-      threadId: state.threadId, input: [{ type: "text", text: input }],
+      threadId: state.threadId, input: [{ type: "text", text }, ...skills],
       approvalPolicy: settings.approvalPolicy, sandboxPolicy: { type: SANDBOX_POLICY_TAGS[settings.sandbox] }, model: settings.model || undefined,
       effort: settings.effort || undefined,
-    });
+    }).catch((err) => note(String(err.message ?? err), true));
+  };
+
+  const loadSkills = useCallback(async () => {
+    const res = await rpcRef.current!.request("skills/list", { cwds: settings.cwd ? [settings.cwd] : undefined });
+    return res.data[0]?.skills ?? [];
+  }, [settings.cwd]);
+
+  // Slash commands from the composer. Like Codex, each maps to one app-server request.
+  const runCommand = async (name: string) => {
+    const rpc = rpcRef.current!;
+    note(`/${name}`);
+    try {
+      if (name === "new") await startThread(settings);
+      else if (name === "compact") await rpc.request("thread/compact/start", { threadId: state.threadId });
+      else if (name === "memory-update") await rpc.request("memory/update/start", { threadId: state.threadId });
+      else if (name === "memory-drop") { await rpc.request("memory/reset"); note("All memories were deleted. New threads start without them."); }
+      else if (name === "skills") {
+        const skills = await loadSkills();
+        note(skills.length ? `Skills (type $ to use one):\n${skills.map((s: Json) => `$${s.name} (${s.scope}): ${s.shortDescription || s.description}`).join("\n")}`
+          : "No skills found. Add a folder with a SKILL.md to .agents/skills/ in your project.");
+      }
+    } catch (err) {
+      note(String((err as Error).message ?? err), true);
+    }
   };
 
   const answer = (a: Approval, result: Json) => {
@@ -113,15 +137,9 @@ export function App() {
           <div className="thread-info muted small">thread {state.threadId?.slice(0, 8) ?? "—"} · cwd <input className="cwd" value={settings.cwd} onChange={set("cwd")} title="working directory (applies to new threads)" /></div>
           <Chat chat={state.chat} live={state.live} approvals={state.approvals} onAnswer={answer} paused={state.paused}
             onContinue={() => call("debug/continue")} />
-          <div className="composer">
-            <textarea value={text} disabled={!state.threadId}
-              placeholder={!state.threadId ? "starting thread…" : state.turnRunning ? "agent is working…" : "Ask the agent to do something (Enter to send, Shift+Enter for newline)"}
-              onChange={(e) => setText(e.target.value)} data-testid="composer"
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
-            {state.turnRunning
-              ? <button className="danger" onClick={() => call("turn/interrupt")} data-testid="interrupt">interrupt</button>
-              : <button className="primary" onClick={send} disabled={!state.threadId} data-testid="send">send</button>}
-          </div>
+          <Composer disabled={!state.threadId} turnRunning={state.turnRunning} loadSkills={loadSkills}
+            placeholder={!state.threadId ? "starting thread…" : state.turnRunning ? "agent is working…" : "Ask the agent to do something (/ for commands, $ for skills, Shift+Enter for newline)"}
+            onSend={send} onCommand={runCommand} onInterrupt={() => call("turn/interrupt")} />
         </section>
         <section className="right"><Inspector state={state} rpc={rpcRef.current} /></section>
       </main>

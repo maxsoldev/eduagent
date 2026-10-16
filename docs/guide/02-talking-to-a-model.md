@@ -65,7 +65,7 @@ Every model has a **context window**: the most tokens one request can hold, inpu
           "total_tokens": 459}
 ```
 
-(Real numbers from `spikes/out/roundtrip_2.json`.) `cached_tokens` matters in chapter 05. Running out of window matters in chapter 14.
+(Real numbers from `spikes/out/roundtrip_2.json`.) `cached_tokens` matters in chapter 05. Running out of window matters in chapter 15.
 
 ### Streaming: Server-Sent Events
 

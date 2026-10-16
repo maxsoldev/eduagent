@@ -83,6 +83,8 @@ def print_event(event: Event, verbose: bool) -> None:
         console.print(f"[bold red]error:[/] {escape(p['error']['message'])}")
     elif m.startswith("trace/") and verbose:
         console.print(f"  [dim]{m} {escape(json.dumps(p)[:300])}[/]")
+    elif m == "trace/skillInjected":
+        console.print(f"  [cyan]skill[/] ${escape(p['name'])} injected ({p['tokens']} tok)  [dim]{escape(p['path'])}[/]")
     elif m in ("trace/compacted", "trace/hook", "trace/sandboxDenied", "trace/mcpToolExposed", "trace/mcpServerFailed"):
         console.print(f"  [bold]{m}[/] {escape(json.dumps(p)[:400])}")
 
@@ -105,7 +107,7 @@ def build_config(args) -> Config:
         servers[name] = {"command": parts[0], "args": parts[1:]}
     return Config(cwd=cwd, model=args.model, approval_policy=args.approval, sandbox_mode=args.sandbox,
                   api_key=load_api_key(cwd) or load_api_key(Path.cwd()), reasoning_effort=args.effort,
-                  network_access=args.network, mcp_servers=servers)
+                  network_access=args.network, mcp_servers=servers, memories=args.memories)
 
 
 async def run_exec(args) -> int:
@@ -138,6 +140,8 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--effort", default=None, choices=["low", "medium", "high"])
         p.add_argument("--network", action="store_true", help="allow network access inside the sandbox")
         p.add_argument("--mcp", action="append", metavar="NAME=COMMAND", help="add a stdio MCP server")
+        p.add_argument("--memories", action="store_true",
+                       help="use memories from earlier threads and allow /memory-update (Codex: [features] memories)")
         p.add_argument("--fake-model", default=None, help="replay scripted model responses from a JSON file (offline)")
 
     p_exec = sub.add_parser("exec", help="run one task and print every step")

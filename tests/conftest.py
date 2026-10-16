@@ -10,6 +10,15 @@ from educodex.observe.tracer import Tracer
 from educodex.testing.fake_model import FakeModel
 
 
+@pytest.fixture(autouse=True)
+def user_home(tmp_path: Path, monkeypatch) -> Path:
+    """A fake $HOME, so ~/.agents/skills of the real user never leaks into a test."""
+    home = tmp_path / "user-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"

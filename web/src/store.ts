@@ -6,7 +6,8 @@ export type ChatEntry =
   | { kind: "item"; item: Json }
   | { kind: "plan"; plan: { step: string; status: string }[]; explanation?: string }
   | { kind: "turn"; turn: Json }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "note"; text: string; error?: boolean }; // client-side lines: slash commands and their results
 export type Approval = { id: string | number; method: string; params: Json };
 
 export type State = {
@@ -40,6 +41,7 @@ export type Action =
   | { type: "serverRequest"; approval: Approval }
   | { type: "approvalAnswered"; id: string | number }
   | { type: "wire"; direction: Direction; message: WireMessage }
+  | { type: "note"; text: string; error?: boolean }
   | { type: "reset" };
 
 let localSeq = 1_000_000;
@@ -58,6 +60,8 @@ export function reducer(state: State, action: Action): State {
       return { ...state, wire: [...state.wire.slice(-1500), { direction: action.direction, message: action.message, at: Date.now() }] };
     case "serverRequest":
       return { ...state, approvals: [...state.approvals, action.approval] };
+    case "note":
+      return { ...state, chat: [...state.chat, { kind: "note", text: action.text, error: action.error }] };
     case "approvalAnswered":
       return { ...state, approvals: state.approvals.filter((a) => a.id !== action.id) };
     case "notification":

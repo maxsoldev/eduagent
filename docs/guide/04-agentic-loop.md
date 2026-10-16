@@ -37,7 +37,7 @@ If yes, the tool outputs are in history and the model must see them, so we call 
 A turn can also end for other reasons:
 - **Error.** The API failed after retries. The turn ends as `failed`.
 - **Interrupt.** The user pressed stop. The turn ends as `interrupted` (see below).
-- **Context full.** Before continuing, the harness may have to compact history first (chapter 14).
+- **Context full.** Before continuing, the harness may have to compact history first (chapter 15).
 - **Stop hook.** A hook may say "not done yet" and keep the loop going (preview below).
 
 ### Several tools in one reply
@@ -135,7 +135,7 @@ Each iteration emits `trace/loopIteration` with `needsFollowUp`, token usage and
 
 - **Tools start after the stream.** Codex starts each tool as soon as its `output_item.done` arrives, while the model is still writing. educodex waits for `response.completed`. History order is the same either way.
 - **No mid-turn input.** Codex lets you "steer" a running turn with new messages (`has_pending_input`). educodex runs one turn at a time and accepts input only between turns.
-- **Less compaction.** No post-turn compaction and no context-window-exceeded recovery (chapter 14).
+- **Less compaction.** No post-turn compaction and no context-window-exceeded recovery (chapter 15).
 
 ## Try it
 

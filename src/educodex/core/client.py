@@ -28,6 +28,7 @@ class Prompt:
     tools: list[dict[str, Any]]
     base_instructions: str
     parallel_tool_calls: bool = True
+    output_schema: dict[str, Any] | None = None  # ask for JSON that matches this schema (memories phase 1)
 
 
 @dataclass
@@ -85,6 +86,9 @@ class ModelClient:
         }
         if self.info.support_verbosity and self.info.default_verbosity:
             body["text"] = {"verbosity": self.info.default_verbosity}
+        if prompt.output_schema:  # codex-api/src/common.rs `create_text_param_for_request`
+            body["text"] = {**body.get("text", {}), "format": {
+                "type": "json_schema", "strict": True, "schema": prompt.output_schema, "name": "codex_output_schema"}}
         return body
 
     async def stream(self, body: dict[str, Any]) -> AsyncIterator[ResponseEvent]:

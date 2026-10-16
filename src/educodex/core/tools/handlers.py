@@ -95,7 +95,8 @@ class ExecCommandHandler:
         argv = [shell, "-lc" if args.get("login", True) else "-c", cmd]
         env = None
         if sandboxed and seatbelt.available():
-            sb = seatbelt.build(argv, config.sandbox_mode, config.cwd, config.network_access)
+            sb = seatbelt.build(argv, config.sandbox_mode, config.cwd, config.network_access,
+                               config.exclude_tmp_writable_roots)
             await ctx.probe.sandbox_command(ctx, sb.argv, sb.policy, sb.params)
             argv, env = sb.argv, seatbelt.sandbox_env(config.network_access)
         elif sandboxed:
@@ -171,7 +172,7 @@ class ApplyPatchHandler:
         await ctx.item_started(item)
 
         paths = [w.path for _, writes in planned for w in writes]
-        roots = [Path(r).resolve() for r in seatbelt.writable_roots(ctx.config.cwd)]
+        roots = [Path(r).resolve() for r in seatbelt.writable_roots(ctx.config.cwd, ctx.config.exclude_tmp_writable_roots)]
         decision = decide_patch(paths, ctx.config.approval_policy, ctx.config.sandbox_mode, roots)
         await ctx.probe.policy_decision(ctx, tool="apply_patch", decision=decision.decision, sandboxed=False,
                                         reason=decision.reason, matched_rules=[], paths=[str(p) for p in paths])

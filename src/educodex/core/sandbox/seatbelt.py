@@ -34,9 +34,9 @@ class SeatbeltCommand:
     params: dict[str, str]  # -D parameters
 
 
-def writable_roots(cwd: Path) -> list[Path]:
+def writable_roots(cwd: Path, exclude_tmp: bool = False) -> list[Path]:
     """workspace-write roots: cwd plus temp dirs, as in Codex's default WorkspaceWrite policy."""
-    roots = [cwd, Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()]
+    roots = [cwd] if exclude_tmp else [cwd, Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()]
     seen: list[Path] = []
     for root in roots:
         if root not in seen:
@@ -44,13 +44,14 @@ def writable_roots(cwd: Path) -> list[Path]:
     return seen
 
 
-def build(command: list[str], sandbox_mode: str, cwd: Path, network_access: bool) -> SeatbeltCommand:
+def build(command: list[str], sandbox_mode: str, cwd: Path, network_access: bool,
+          exclude_tmp: bool = False) -> SeatbeltCommand:
     params: dict[str, str] = {}
     sections = [vendor.read("seatbelt/seatbelt_base_policy.sbpl"), "; allow read-only file operations\n(allow file-read*)"]
 
     if sandbox_mode == "workspace-write":
         rules = []
-        roots = writable_roots(cwd)
+        roots = writable_roots(cwd, exclude_tmp)
         for i, root in enumerate(roots):
             params[f"WRITABLE_ROOT_{i}"] = str(root)
             # Protect .git/.codex/.agents of this root and of any root nested in it (cwd under /tmp),
