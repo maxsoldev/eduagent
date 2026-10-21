@@ -4,6 +4,10 @@ import type { AgentMessage } from "../../../agent/types.ts";
 import type { Message } from "../../../ai/types.ts";
 import { contentText } from "../../../ai/utils/transcript.ts";
 
+// ============================================================================
+// File Operation Tracking
+// ============================================================================
+
 export interface FileOperations {
 	read: Set<string>;
 	written: Set<string>;
@@ -18,13 +22,16 @@ export function createFileOps(): FileOperations {
 export function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
 	if (message.role !== "assistant") return;
 	for (const block of message.content) {
-		if (block.type !== "toolCall") continue;
-		const path = typeof block.arguments?.path === "string" ? block.arguments.path : undefined;
-		if (!path) continue;
-		if (block.name === "read") fileOps.read.add(path);
-		else if (block.name === "write") fileOps.written.add(path);
-		else if (block.name === "edit") fileOps.edited.add(path);
+		if (block.type === "toolCall") addFileOp(block.name, block.arguments, fileOps);
 	}
+}
+
+function addFileOp(toolName: string, args: Record<string, unknown> | undefined, fileOps: FileOperations): void {
+	const path = typeof args?.path === "string" ? args.path : undefined;
+	if (!path) return;
+	if (toolName === "read") fileOps.read.add(path);
+	else if (toolName === "write") fileOps.written.add(path);
+	else if (toolName === "edit") fileOps.edited.add(path);
 }
 
 /** readFiles: files only read, not modified. modifiedFiles: written or edited. Both sorted. */
@@ -42,6 +49,10 @@ export function formatFileOperations(readFiles: string[], modifiedFiles: string[
 	if (sections.length === 0) return "";
 	return `\n\n${sections.join("\n\n")}`;
 }
+
+// ============================================================================
+// Message Serialization
+// ============================================================================
 
 /** Maximum characters for a tool result in serialized summaries. */
 const TOOL_RESULT_MAX_CHARS = 2000;
@@ -80,6 +91,10 @@ export function serializeConversation(messages: Message[]): string {
 	}
 	return parts.join("\n\n");
 }
+
+// ============================================================================
+// Summarization System Prompt
+// ============================================================================
 
 export const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
 
