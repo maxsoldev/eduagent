@@ -53,10 +53,24 @@ Guide links use the pinned commit.
 ```bash
 cd backends/educodex && uv run --group dev pytest   # educodex Python tests
 pnpm install && pnpm build                          # at the repo root: build the visualiser
-pnpm test                                           # at the repo root: typecheck (visualiser incl. tests, edupi, launcher), then vitest
+pnpm test                                           # at the repo root: biome check, typecheck (visualiser incl. tests, edupi, launcher), then vitest
 pnpm test:e2e                                       # at the repo root: Playwright tests (starts the launcher with backends.test.json)
 pnpm eduagent                                       # at the repo root: start the launcher on http://127.0.0.1:8765
 ```
+
+### Format and lint
+
+Run these before every commit, and commit only when they are clean.
+
+```bash
+pnpm format && pnpm lint                            # at the repo root: Biome (TypeScript and JavaScript; config in biome.json)
+cd backends/educodex && uv run ruff format && uv run ruff check   # educodex: Ruff (config in pyproject.toml)
+```
+
+- `pnpm format` is `biome check --write`: it formats, sorts imports and applies safe fixes. `pnpm lint` is `biome check`. `pnpm test` runs `biome check` first, so it fails on lint errors.
+- `uv run ruff check --fix` applies Ruff's safe fixes.
+- The style follows pi (tabs, indent width 3, line width 120), so edupi files look like the pi files they mirror. Do not reformat by hand against it.
+- Disable a rule only where it fights a deliberate pattern, and say why next to it (in `biome.json`, `pyproject.toml` or a `biome-ignore` / `noqa` comment).
 
 ## Agent skills
 

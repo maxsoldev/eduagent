@@ -110,6 +110,16 @@ pnpm test                                           # at the repo root. vitest: 
 pnpm test:e2e                                       # at the repo root. Playwright: the launcher with launcher/backends.test.json (fake model)
 ```
 
+## Format and lint
+
+TypeScript and JavaScript use [Biome](https://biomejs.dev) (`biome.json`, pi's style: tabs, indent width 3, line width 120). educodex uses [Ruff](https://docs.astral.sh/ruff/) (`[tool.ruff]` in `backends/educodex/pyproject.toml`, line length 120). `.editorconfig` matches both. Run them before you commit (agents must):
+
+```bash
+pnpm format                                         # at the repo root: biome check --write (format, sort imports, safe fixes)
+pnpm lint                                           # at the repo root: biome check (pnpm test runs it too)
+cd backends/educodex && uv run ruff format && uv run ruff check
+```
+
 ## Layout
 
 Paths are relative to `backends/educodex/`, except the last two rows.
