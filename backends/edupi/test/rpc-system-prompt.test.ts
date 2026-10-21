@@ -258,17 +258,30 @@ test("get_commands lists the skills as /skill:name, and /skill:name sends the sk
 	const home = join(dir, "home", "agent", "skills");
 	const { commands } = (await edupi.command("get_commands")).data;
 	expect(commands.map((c: Message) => c.name)).toEqual(["skill:deploy", "skill:greet", "skill:release"]);
+	// Real pi (get_commands at the pinned commit): auto-discovered skills have source "auto" and
+	// the folder's base dir (the agent dir, or <cwd>/.pi), not the skill's own folder.
 	expect(commands[2]).toEqual({
 		name: "skill:release",
 		description: "Cuts a release.",
 		source: "skill",
 		sourceInfo: {
 			path: join(home, "release", "SKILL.md"),
-			source: "local",
+			source: "auto",
 			scope: "user",
 			origin: "top-level",
-			baseDir: join(home, "release"),
+			baseDir: join(dir, "home", "agent"),
 		},
+	});
+	await edupi.close();
+
+	edupi = startEdupi({ responses: ["Released."] }, ["--approve"], { dir });
+	const trusted = (await edupi.command("get_commands")).data.commands;
+	expect(trusted.find((c: Message) => c.name === "skill:deploy").sourceInfo).toEqual({
+		path: join(dir, ".pi", "skills", "deploy", "SKILL.md"),
+		source: "auto",
+		scope: "project",
+		origin: "top-level",
+		baseDir: join(dir, ".pi"),
 	});
 
 	await prompt("/skill:release v1.2");
@@ -297,4 +310,33 @@ test("SYSTEM.md replaces the preamble, tools and rules; APPEND_SYSTEM.md adds an
 	expect(edupi.requests().at(-1)!.body.messages[0].content).toMatch(
 		/^You are the project's assistant\.\n\n<addendum>/,
 	);
+});
+
+test("a broken trust.json stops edupi at startup with pi's message", async () => {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+	writeSkills(dir); // .pi/skills needs a trust decision, so trust.json is read
+	const trustPath = join(dir, "home", "agent", "trust.json");
+	put(trustPath, "{bad");
+	edupi = startEdupi({ responses: [] }, [], { dir });
+	expect(await edupi.close()).toBe(1);
+	expect(edupi.stderrText()).toContain(
+		`Failed to read trust store ${trustPath}: Expected property name or '}' in JSON at position 1`,
+	);
+
+	put(trustPath, JSON.stringify({ [dir]: "yes" }));
+	edupi = startEdupi({ responses: [] }, [], { dir });
+	expect(await edupi.close()).toBe(1);
+	expect(edupi.stderrText()).toContain(
+		`Invalid trust store ${trustPath}: value for ${JSON.stringify(dir)} must be true, false, or null`,
+	);
+});
+
+test("an unreadable SYSTEM.md warns, and pi's resolvePromptInput then uses the path itself as the prompt", async () => {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+	const systemPath = join(dir, "home", "agent", "SYSTEM.md");
+	mkdirSync(systemPath, { recursive: true }); // a folder: it exists, but reading it fails
+	edupi = startEdupi({ responses: ["Hi."] }, [], { dir });
+	await prompt("Hello?");
+	expect(firstRequest()[0].content).toBe(`${systemPath}\n\n<cwd>\n${dir}\n</cwd>`);
+	expect(edupi.stderrText()).toContain(`Warning: Could not read system prompt file ${systemPath}: Error: EISDIR`);
 });

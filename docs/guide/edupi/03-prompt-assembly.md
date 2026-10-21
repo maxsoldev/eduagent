@@ -112,7 +112,9 @@ So a changed section changes the **start** of the next request. That is a cache 
 The run's starting messages, in edupi's code:
 
 ```ts
-private _prepareRun(text: string, images: ImageContent[]): AgentMessage[] {
+private async _prepareRun(text: string, images: ImageContent[]): Promise<AgentMessage[]> {
+  const lastAssistant = this._findLastAssistantMessage();
+  if (lastAssistant) await this._checkCompaction(lastAssistant, false); // chapter 07
   const messages: AgentMessage[] = [{ role: "user", content: [{ type: "text", text }, ...images], timestamp: Date.now() }];
   const update = this._preparePromptAndToolLoadout(this._baseSystemPromptOptions);
   if (update) messages.unshift(update); // the changed sections go before the user message
@@ -156,6 +158,7 @@ The Codex side: [`build_initial_context_with_world_state`](https://github.com/op
 - **No mid-conversation updates.** edupi's provider always collapses the system messages into one, as pi does for OpenRouter. pi can also send updates in place for providers that accept them.
 - **No nested-worktree rule.** pi skips the main repo's AGENTS.md when cwd is in a git worktree nested inside it, so the same file does not appear twice. edupi does not.
 - **No PowerShell rules** and no `.agents` folders.
+- **No prompt flags.** pi's `--system-prompt`, `--append-system-prompt` and `--no-context-files` are not in edupi; only the files set the prompt.
 
 ## Try it
 

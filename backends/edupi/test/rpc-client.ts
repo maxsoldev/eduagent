@@ -84,6 +84,11 @@ export class RpcClient {
 			.map((l) => JSON.parse(l));
 	}
 
+	/** What edupi wrote to stderr so far (warnings, startup errors). */
+	stderrText(): string {
+		return this.stderr;
+	}
+
 	close(): Promise<number | null> {
 		if (this.proc.exitCode !== null) return Promise.resolve(this.proc.exitCode);
 		this.proc.stdin.end();

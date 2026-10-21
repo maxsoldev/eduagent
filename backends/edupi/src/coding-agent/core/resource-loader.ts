@@ -4,7 +4,7 @@
 // <cwd>/.pi/skills (only in a trusted project), then <agentDir>/skills. edupi leaves out extensions,
 // prompt templates, themes, packages, the .agents/skills folders and nested git worktrees.
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { PROJECT_CONFIG_DIR_NAME } from "../config.ts";
 import { stripBom } from "../utils/frontmatter.ts";
 import { type LoadSkillsResult, loadSkills } from "./skills.ts";
@@ -12,6 +12,20 @@ import { type LoadSkillsResult, loadSkills } from "./skills.ts";
 export interface ContextFile {
 	path: string;
 	content: string;
+}
+
+/** pi: the file's text; if it exists but cannot be read, a warning, and the input itself is the text. */
+function resolvePromptInput(input: string | undefined, description: string): string | undefined {
+	if (!input) return undefined;
+	if (existsSync(input)) {
+		try {
+			return stripBom(readFileSync(input, "utf-8"));
+		} catch (error) {
+			console.error(`Warning: Could not read ${description} file ${input}: ${error}`);
+			return input;
+		}
+	}
+	return input;
 }
 
 /** The first existing file of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD in dir. */
@@ -93,16 +107,28 @@ export class DefaultResourceLoader {
 			...(this.projectTrusted ? [{ path: projectSkillsDir, scope: "project" as const }] : []),
 			{ path: join(this.agentDir, "skills"), scope: "user" as const },
 		];
-		this.skills = loadSkills({
+		const skillsResult = loadSkills({
 			cwd: this.cwd,
 			agentDir: this.agentDir,
 			skillPaths: this.skillRoots.map((root) => root.path),
 		});
+		// pi updateSkillsFromPaths: an auto-discovered skill gets its folder's metadata (package-manager.ts
+		// addAutoDiscoveredResources): source "auto", baseDir = the agent dir or <cwd>/.pi.
+		this.skills = {
+			...skillsResult,
+			skills: skillsResult.skills.map((skill) => {
+				const root = this.skillRoots.find((r) => skill.filePath.startsWith(`${r.path}${sep}`));
+				if (!root) return skill;
+				const sourceInfo = { ...skill.sourceInfo, source: "auto", scope: root.scope, baseDir: dirname(root.path) };
+				return { ...skill, sourceInfo };
+			}),
+		};
 		this.agentsFiles = loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir });
 		const systemPromptFile = this.discoverPromptFile("SYSTEM.md");
-		this.systemPrompt = systemPromptFile ? stripBom(readFileSync(systemPromptFile, "utf-8")) : undefined;
+		this.systemPrompt = resolvePromptInput(systemPromptFile, "system prompt");
 		const appendFile = this.discoverPromptFile("APPEND_SYSTEM.md");
-		this.appendSystemPrompt = appendFile ? [stripBom(readFileSync(appendFile, "utf-8"))] : [];
+		const appendSystemPrompt = resolvePromptInput(appendFile, "append system prompt");
+		this.appendSystemPrompt = appendSystemPrompt !== undefined ? [appendSystemPrompt] : [];
 		this.promptFiles = { systemPrompt: systemPromptFile, appendSystemPrompt: appendFile };
 	}
 
