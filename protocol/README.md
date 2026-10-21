@@ -62,6 +62,12 @@ A `NativePart` is `{protocol, type, data}`. `data` has the native shape, and onl
 | `tool` | `fileChange` | file list with diffs |
 | `assistant` | `agentMessage` | the message and its memory citation (only when `memoryCitation` is set) |
 
+pi uses one part:
+
+| Entry | `part.type` | Drawn as |
+|---|---|---|
+| `tool` | `editDiff` | the edit tool's diff (`data: {path, diff, firstChangedLine}`; `diff` is pi's display diff from `result.details.diff` of `tool_execution_end`: `+NN`, `-NN`, ` NN` lines) |
+
 An `Approval` is `{id, part}`: the native request id and the native request as a part. The adapter's `ApprovalCard` draws it and passes the native answer to `adapter.respond`.
 
 ### Timeline events
