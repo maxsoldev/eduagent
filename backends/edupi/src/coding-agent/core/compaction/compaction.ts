@@ -20,6 +20,7 @@ import {
 	type ProjectedSessionEntry,
 	type SessionEntry,
 	type SessionProjection,
+	sessionEntryToContextMessages,
 } from "../session-manager.ts";
 import {
 	computeFileLists,
@@ -277,16 +278,45 @@ function findProjectedCutPoint(
 	if (cutPoints.length === 0) return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
 
 	let accumulatedTokens = 0;
+	let exceededBudget = false;
 	let cutIndex = cutPoints[0];
 	for (let i = endIndex - 1; i >= startIndex; i--) {
 		const messageTokens = entries[i].messages.reduce((sum, message) => sum + estimateTokens(message), 0);
 		if (messageTokens === 0) continue;
 		accumulatedTokens += messageTokens;
 		if (accumulatedTokens >= keepRecentTokens) {
+			exceededBudget = true;
 			cutIndex = cutPoints.find((candidate) => candidate >= i) ?? cutPoints[cutPoints.length - 1];
 			break;
 		}
 	}
+
+	// After an overflow, only the omitted reply (and its context edits) follows the last input.
+	// Then the cut moves one entry on, past that input: it goes into the summary (a split turn),
+	// so the retry does not send the input that overflowed again.
+	const suffix = entries.slice(cutIndex + 1, endIndex);
+	const isIntrinsicallyVisible = (entry: ProjectedSessionEntry): boolean =>
+		entry.sourceEntry.type !== "context_edit" && sessionEntryToContextMessages(entry.sourceEntry).length > 0;
+	const isOmitted = (entry: ProjectedSessionEntry): boolean =>
+		isIntrinsicallyVisible(entry) && entry.messages.length === 0;
+	const omittedSuffixIds = new Set(suffix.filter(isOmitted).map((entry) => entry.sourceEntry.id));
+	const hasExternalReplacement = suffix.some(
+		(entry) =>
+			entry.sourceEntry.type === "context_edit" &&
+			entry.sourceEntry.replacement !== null &&
+			!omittedSuffixIds.has(entry.sourceEntry.targetId),
+	);
+	const isRecoveryOmissionSuffix =
+		exceededBudget &&
+		!hasExternalReplacement &&
+		suffix.some(
+			(entry) =>
+				entry.sourceEntry.type === "message" && entry.sourceEntry.message.role === "assistant" && isOmitted(entry),
+		) &&
+		suffix.every(
+			(entry) => entry.sourceEntry.type !== "compaction" && (!isIntrinsicallyVisible(entry) || isOmitted(entry)),
+		);
+	if (isRecoveryOmissionSuffix) cutIndex++;
 
 	// Keep the settings entries just before the cut with it.
 	while (cutIndex > startIndex) {
