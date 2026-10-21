@@ -22,11 +22,22 @@ def write_skill(root: Path, folder: str, frontmatter: str, body: str = "Do the t
 
 
 def test_frontmatter_rules():
-    assert parse_skill_frontmatter("---\nname: a\ndescription: Use   it\n  now\n---\nbody", "dir") == ("a", "Use it now", None)
-    assert parse_skill_frontmatter("---\ndescription: x\nmetadata:\n  short-description: s\n---", "dir") == ("dir", "x", "s")
-    for bad, message in [("no frontmatter", "missing YAML frontmatter"), ("---\n---\n", "missing YAML frontmatter"),
-                         ("---\nname: a\n---", "missing field `description`"),
-                         (f"---\nname: {'n' * 65}\ndescription: d\n---", "exceeds maximum length of 64")]:
+    assert parse_skill_frontmatter("---\nname: a\ndescription: Use   it\n  now\n---\nbody", "dir") == (
+        "a",
+        "Use it now",
+        None,
+    )
+    assert parse_skill_frontmatter("---\ndescription: x\nmetadata:\n  short-description: s\n---", "dir") == (
+        "dir",
+        "x",
+        "s",
+    )
+    for bad, message in [
+        ("no frontmatter", "missing YAML frontmatter"),
+        ("---\n---\n", "missing YAML frontmatter"),
+        ("---\nname: a\n---", "missing field `description`"),
+        (f"---\nname: {'n' * 65}\ndescription: d\n---", "exceeds maximum length of 64"),
+    ]:
         with pytest.raises(SkillParseError, match=message):
             parse_skill_frontmatter(bad, "dir")
 
@@ -59,7 +70,8 @@ def test_catalog_text_matches_codex(workspace, tmp_path):
         f"### Skill roots\n- `r0` = `{home / 'skills'}`\n- `r1` = `{workspace / '.agents' / 'skills'}`\n"
         "### Available skills\n"
         "- deploy: Deploy the app (file: r1/deploy/SKILL.md)\n"
-        "- notes: Take notes (file: r0/notes/SKILL.md)\n</skills_instructions>")
+        "- notes: Take notes (file: r0/notes/SKILL.md)\n</skills_instructions>"
+    )
     with_usage = render_available_skills(load_skills(Config(cwd=workspace, home=home)), include_usage_instructions=True)
     assert "### How to use skills\n- Discovery:" in with_usage.text
 
@@ -78,9 +90,12 @@ def test_mentions(workspace, tmp_path):
     assert names({"type": "text", "text": "please $deploy now"}) == ["deploy"]
     assert names({"type": "text", "text": "$twin"}) == []  # ambiguous: two skills share the name
     assert names({"type": "text", "text": f"[$whatever]({deploy})"}) == ["deploy"]
-    assert names({"type": "text", "text": "$deploy"}, {"type": "skill", "name": "deploy", "path": str(deploy)}) == ["deploy"]
+    assert names({"type": "text", "text": "$deploy"}, {"type": "skill", "name": "deploy", "path": str(deploy)}) == [
+        "deploy"
+    ]
     assert message_text(skill_instructions(outcome.skills[0])) == (
-        f"<skill>\n<name>deploy</name>\n<path>{deploy}</path>\n{deploy.read_text()}\n</skill>")
+        f"<skill>\n<name>deploy</name>\n<path>{deploy}</path>\n{deploy.read_text()}\n</skill>"
+    )
 
 
 def test_catalog_goes_before_permissions(workspace, tmp_path):
@@ -98,11 +113,15 @@ def test_catalog_goes_before_permissions(workspace, tmp_path):
 
 async def test_turn_injects_mentioned_skill(make_session, workspace):
     deploy = write_skill(workspace / ".agents" / "skills", "deploy", "name: deploy\ndescription: Deploy the app")
-    session, fake, events = await make_session([[{"type": "message", "text": "ok"}], [{"type": "message", "text": "ok"}]])
+    session, fake, events = await make_session(
+        [[{"type": "message", "text": "ok"}], [{"type": "message", "text": "ok"}]]
+    )
     await session.run("please $deploy it")
     body = fake.requests[0]["input"]
     catalog = message_text(body[1])
-    assert catalog.startswith("<skills_instructions>") and "- deploy: Deploy the app (file: r1/deploy/SKILL.md)" in catalog
+    assert (
+        catalog.startswith("<skills_instructions>") and "- deploy: Deploy the app (file: r1/deploy/SKILL.md)" in catalog
+    )
     assert "- skill-creator: Create or update a Codex skill" in catalog  # the bundled system skill
     assert message_text(body[-2]) == "please $deploy it"
     assert message_text(body[-1]).startswith("<skill>\n<name>deploy</name>")
@@ -110,7 +129,7 @@ async def test_turn_injects_mentioned_skill(make_session, workspace):
     assert find(events, "trace/skillInjected")[0]["path"] == str(deploy)
     # The catalog did not change, so the second turn does not repeat it.
     await session.run("thanks")
-    second = fake.requests[1]["input"][len(body) + 1:]
+    second = fake.requests[1]["input"][len(body) + 1 :]
     assert [message_text(i) for i in second if i.get("type") == "message"] == ["thanks"]
 
 

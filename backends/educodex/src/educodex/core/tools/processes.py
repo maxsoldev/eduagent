@@ -8,10 +8,11 @@ Codex can also allocate a PTY (`tty: true`); educodex always uses pipes.
 """
 
 import asyncio
+import contextlib
+import inspect
 import os
 import signal
 import time
-import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -46,15 +47,24 @@ class ProcessManager:
         self._next_id = 1000
 
     async def start(
-        self, argv: list[str], cwd: str, env: dict[str, str] | None, yield_ms: int | None,
+        self,
+        argv: list[str],
+        cwd: str,
+        env: dict[str, str] | None,
+        yield_ms: int | None,
         on_output: Callable[[str], object] | None = None,
     ) -> ExecResult:
         if len(self._processes) >= MAX_PROCESSES:
             raise RuntimeError(f"too many running processes (max {MAX_PROCESSES}); finish some with write_stdin")
         started = time.monotonic()
         proc = await asyncio.create_subprocess_exec(
-            *argv, cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True,
+            *argv,
+            cwd=cwd,
+            env=env,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
         self._next_id += 1
         process = Process(self._next_id, proc, on_output=on_output)
@@ -93,10 +103,8 @@ class ProcessManager:
 
     async def _collect(self, process: Process, yield_ms: int, started: float) -> ExecResult:
         """Wait until the process exits or the yield time passes, then return new output."""
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(asyncio.shield(process.proc.wait()), yield_ms / 1000)
-        except TimeoutError:
-            pass
         exited = process.proc.returncode is not None
         if exited and process.reader:
             # Drain what is left, but a background child (`npm run dev &`) may keep the pipe open:
@@ -116,16 +124,13 @@ class ProcessManager:
     async def terminate_all(self) -> None:
         """Kill every process group we started (including background children), then wait for readers."""
         for process in list(self._lingering.values()):
-            try:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
         for process in list(self._processes.values()):
             await process.proc.wait()
         self._processes.clear()
         if self._lingering:
             await asyncio.wait(list(self._lingering), timeout=1)
-
 
 
 def _clamp(value: int | None, default: int) -> int:

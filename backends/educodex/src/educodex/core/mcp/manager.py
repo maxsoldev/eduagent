@@ -12,7 +12,7 @@ and must enforce their own guardrails.
 
 import hashlib
 import json
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from typing import TYPE_CHECKING, Any
 
 from educodex.core.mcp.naming import namespace_for, qualified, sanitize
@@ -47,30 +47,61 @@ class McpToolHandler:
         return None  # exposed through the server's namespace spec instead
 
     def function_spec(self) -> dict[str, Any]:
-        return {"type": "function", "name": self.callable_name, "description": self.tool.get("description") or "",
-                "strict": False, "parameters": sanitize_schema(self.tool.get("inputSchema") or {"type": "object"})}
+        return {
+            "type": "function",
+            "name": self.callable_name,
+            "description": self.tool.get("description") or "",
+            "strict": False,
+            "parameters": sanitize_schema(self.tool.get("inputSchema") or {"type": "object"}),
+        }
 
     async def handle(self, call: ToolCall, ctx: "TurnContext") -> str:
-        item = {"type": "mcpToolCall", "id": call.call_id, "server": self.server, "tool": self.tool["name"],
-                "status": "inProgress", "arguments": call.arguments, "result": None, "error": None, "durationMs": None}
+        item = {
+            "type": "mcpToolCall",
+            "id": call.call_id,
+            "server": self.server,
+            "tool": self.tool["name"],
+            "status": "inProgress",
+            "arguments": call.arguments,
+            "result": None,
+            "error": None,
+            "durationMs": None,
+        }
         await ctx.item_started(item)
         annotations = self.tool.get("annotations")
         approval = needs_approval(annotations)
         policy, sandbox = ctx.config.approval_policy, ctx.config.sandbox_mode
-        decision = "allow" if not approval or (policy == "never" and sandbox == "danger-full-access") else (
-            "forbidden" if policy == "never" else "prompt")
+        decision = (
+            "allow"
+            if not approval or (policy == "never" and sandbox == "danger-full-access")
+            else ("forbidden" if policy == "never" else "prompt")
+        )
         await ctx.probe.policy_decision(
-            ctx, tool=call.name, decision=decision, sandboxed=False, matched_rules=[],
-            reason=f"MCP annotations {annotations or {}} -> {'needs' if approval else 'no'} approval")
+            ctx,
+            tool=call.name,
+            decision=decision,
+            sandboxed=False,
+            matched_rules=[],
+            reason=f"MCP annotations {annotations or {}} -> {'needs' if approval else 'no'} approval",
+        )
         if decision == "forbidden":
-            return await self._finish(ctx, item, "failed", error="rejected: tool needs approval but approval_policy is never")
+            return await self._finish(
+                ctx, item, "failed", error="rejected: tool needs approval but approval_policy is never"
+            )
         if decision == "prompt":
             # Codex asks via an MCP-style elicitation (app-server v2 mcpServer/elicitation/request).
-            action, _ = await ctx.request_approval("mcpServer/elicitation/request", {
-                "threadId": ctx.thread_id, "turnId": ctx.turn_id, "serverName": self.server, "mode": "form",
-                "message": f"Allow the {self.server} MCP server to run tool \"{self.tool['name']}\"?",
-                "requestedSchema": {"type": "object", "properties": {}},
-                "_meta": {"tool": self.tool["name"], "arguments": call.arguments, "annotations": annotations}})
+            action, _ = await ctx.request_approval(
+                "mcpServer/elicitation/request",
+                {
+                    "threadId": ctx.thread_id,
+                    "turnId": ctx.turn_id,
+                    "serverName": self.server,
+                    "mode": "form",
+                    "message": f'Allow the {self.server} MCP server to run tool "{self.tool["name"]}"?',
+                    "requestedSchema": {"type": "object", "properties": {}},
+                    "_meta": {"tool": self.tool["name"], "arguments": call.arguments, "annotations": annotations},
+                },
+            )
             if action == "cancel":
                 raise TurnAborted("cancelled at MCP approval")
             if action != "accept":
@@ -117,8 +148,9 @@ class McpManager:
         for name in sorted(self.servers):  # stable order keeps the tool list (and prompt cache) stable
             cfg = self.servers[name]
             try:
-                params = StdioServerParameters(command=cfg["command"], args=cfg.get("args", []), env=cfg.get("env"),
-                                               cwd=cfg.get("cwd"))
+                params = StdioServerParameters(
+                    command=cfg["command"], args=cfg.get("args", []), env=cfg.get("env"), cwd=cfg.get("cwd")
+                )
                 read, write = await self._stack.enter_async_context(stdio_client(params))
                 client = await self._stack.enter_async_context(ClientSession(read, write))
                 init = await client.initialize()
@@ -128,17 +160,24 @@ class McpManager:
                 await session.probe.mcp_server_failed(session, name, str(err))
                 continue
             self._sessions[name] = client
-            tools = sorted((t.model_dump(exclude_none=True, by_alias=True) for t in listed.tools), key=lambda t: t["name"])
+            tools = sorted(
+                (t.model_dump(exclude_none=True, by_alias=True) for t in listed.tools), key=lambda t: t["name"]
+            )
             self._raw[name] = tools
             namespace = namespace_for(name)
             handlers = _dedupe([McpToolHandler(self, name, namespace, t) for t in tools])
             self._handlers += handlers
-            await session.probe.mcp_server_listed(session, name, _server_info(init), tools,
-                                                  self._namespace_spec(name, namespace, handlers))
+            await session.probe.mcp_server_listed(
+                session, name, _server_info(init), tools, self._namespace_spec(name, namespace, handlers)
+            )
 
     def _namespace_spec(self, server: str, namespace: str, handlers: list[McpToolHandler]) -> dict[str, Any]:
-        return {"type": "namespace", "name": namespace, "description": f"Tools in the {namespace} namespace.",
-                "tools": [h.function_spec() for h in handlers]}
+        return {
+            "type": "namespace",
+            "name": namespace,
+            "description": f"Tools in the {namespace} namespace.",
+            "tools": [h.function_spec() for h in handlers],
+        }
 
     def handlers(self) -> list[McpToolHandler]:
         return list(self._handlers)
@@ -152,18 +191,22 @@ class McpManager:
         return specs
 
     def summary(self) -> dict[str, Any]:
-        return {name: {"status": "failed" if name in self._errors else "ready", "error": self._errors.get(name),
-                       "tools": [t["name"] for t in self._raw.get(name, [])]} for name in sorted(self.servers)}
+        return {
+            name: {
+                "status": "failed" if name in self._errors else "ready",
+                "error": self._errors.get(name),
+                "tools": [t["name"] for t in self._raw.get(name, [])],
+            }
+            for name in sorted(self.servers)
+        }
 
     async def call(self, server: str, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         result = await self._sessions[server].call_tool(tool, arguments)
         return result.model_dump(exclude_none=True, by_alias=True)
 
     async def close(self) -> None:
-        try:
+        with suppress(Exception):
             await self._stack.aclose()
-        except Exception:
-            pass
 
 
 def _dedupe(handlers: list[McpToolHandler]) -> list[McpToolHandler]:

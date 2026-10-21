@@ -76,8 +76,14 @@ class Session:
         self.model_info = model_info(self.config.model)
         self.base_instructions = self.config.base_instructions or self.model_info.base_instructions
         self.client = ModelClient(
-            self.config.model, self.model_info, self.config.api_key, self.config.base_url, self.thread_id,
-            self.config.reasoning_effort, self.config.reasoning_summary, self.transport,
+            self.config.model,
+            self.model_info,
+            self.config.api_key,
+            self.config.base_url,
+            self.thread_id,
+            self.config.reasoning_effort,
+            self.config.reasoning_summary,
+            self.transport,
         )
 
     async def start(self) -> dict:
@@ -89,8 +95,11 @@ class Session:
                 print(f"failed to install system skills: {err}", file=sys.stderr)
         self.refresh_memory_instructions()
         await self.mcp.start(self)
-        self.router = ToolRouter(builtin_handlers(self.config.include_plan_tool, self.model_info.apply_patch_tool_type) + self.mcp.handlers(),
-                                 self.mcp.namespace_specs())
+        self.router = ToolRouter(
+            builtin_handlers(self.config.include_plan_tool, self.model_info.apply_patch_tool_type)
+            + self.mcp.handlers(),
+            self.mcp.namespace_specs(),
+        )
         await self.probe.thread_started(self)
         self.rollout.session_meta(self.config, self.base_instructions)
         thread = self.thread_info()
@@ -98,8 +107,16 @@ class Session:
         return thread
 
     def thread_info(self) -> dict:
-        return {"id": self.thread_id, "preview": "", "modelProvider": "openrouter", "model": self.config.model,
-                "cwd": str(self.config.cwd), "path": str(self.rollout.path) if self.rollout.enabled else None, "status": "idle", "ephemeral": self.config.ephemeral}
+        return {
+            "id": self.thread_id,
+            "preview": "",
+            "modelProvider": "openrouter",
+            "model": self.config.model,
+            "cwd": str(self.config.cwd),
+            "path": str(self.rollout.path) if self.rollout.enabled else None,
+            "status": "idle",
+            "ephemeral": self.config.ephemeral,
+        }
 
     async def record(self, *items: ResponseItem) -> None:
         """Append to history (and the session log), and tell observers."""

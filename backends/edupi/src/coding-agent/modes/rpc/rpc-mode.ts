@@ -14,188 +14,200 @@ import type { RpcCommand, RpcDebugContext, RpcResponse, RpcSessionState, RpcSlas
  * to stderr. Mirrors pi's takeOverStdout (core/output-guard.ts). Returns the real stdout writer.
  */
 function takeOverStdout(): (line: string, done?: () => void) => void {
-  const write = process.stdout.write.bind(process.stdout);
-  process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
-  return (line, done) => {
-    write(line, done);
-  };
+	const write = process.stdout.write.bind(process.stdout);
+	process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
+	return (line, done) => {
+		write(line, done);
+	};
 }
 
 /** edupi only: the teaching extras' debug_ commands (step mode, get context). pi has none. */
 export interface DebugCommands {
-  setStepMode(enabled: boolean, breakpoints?: string[]): { enabled: boolean; breakpoints: string[] };
-  continue(): void;
-  getContext(session: AgentSession): Promise<RpcDebugContext>;
+	setStepMode(enabled: boolean, breakpoints?: string[]): { enabled: boolean; breakpoints: string[] };
+	continue(): void;
+	getContext(session: AgentSession): Promise<RpcDebugContext>;
 }
 
 export interface RpcModeOptions {
-  /** edupi: gets the protocol line writer, so the tracer can send trace messages on stdout. */
-  connect?: (output: (message: object) => void) => void;
-  /** edupi: answers the debug_ commands; without it they are unknown, as in pi. */
-  debug?: DebugCommands;
+	/** edupi: gets the protocol line writer, so the tracer can send trace messages on stdout. */
+	connect?: (output: (message: object) => void) => void;
+	/** edupi: answers the debug_ commands; without it they are unknown, as in pi. */
+	debug?: DebugCommands;
 }
 
 export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcModeOptions = {}): Promise<never> {
-  const writeRawStdout = takeOverStdout();
-  let session = runtimeHost.session;
-  let unsubscribe: (() => void) | undefined;
+	const writeRawStdout = takeOverStdout();
+	let session = runtimeHost.session;
+	let unsubscribe: (() => void) | undefined;
 
-  const output = (obj: RpcResponse | object) => writeRawStdout(serializeJsonLine(obj));
-  options.connect?.(output);
+	const output = (obj: RpcResponse | object) => writeRawStdout(serializeJsonLine(obj));
+	options.connect?.(output);
 
-  const success = (id: string | undefined, command: string, data?: object | null): RpcResponse => {
-    if (data === undefined) return { id, type: "response", command, success: true } as RpcResponse;
-    return { id, type: "response", command, success: true, data } as RpcResponse;
-  };
+	const success = (id: string | undefined, command: string, data?: object | null): RpcResponse => {
+		if (data === undefined) return { id, type: "response", command, success: true } as RpcResponse;
+		return { id, type: "response", command, success: true, data } as RpcResponse;
+	};
 
-  const error = (id: string | undefined, command: string, message: string): RpcResponse => {
-    return { id, type: "response", command, success: false, error: message };
-  };
+	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
+		return { id, type: "response", command, success: false, error: message };
+	};
 
-  /** Points the mode at the runtime's current session (it changes on new_session). */
-  const rebindSession = () => {
-    session = runtimeHost.session;
-    unsubscribe?.();
-    unsubscribe = session.subscribe((event) => output(toJsonEvent(event)));
-  };
-  rebindSession();
+	/** Points the mode at the runtime's current session (it changes on new_session). */
+	const rebindSession = () => {
+		session = runtimeHost.session;
+		unsubscribe?.();
+		unsubscribe = session.subscribe((event) => output(toJsonEvent(event)));
+	};
+	rebindSession();
 
-  const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
-    const id = command.id;
-    const unknown = (type: string) => error(id, type, `Unknown command: ${type}`);
+	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
+		const id = command.id;
+		const unknown = (type: string) => error(id, type, `Unknown command: ${type}`);
 
-    switch (command.type) {
-      case "prompt": {
-        // The response is written once the prompt is accepted, before the run's events.
-        // Failures after that are events (an assistant message with stopReason "error").
-        let preflightSucceeded = false;
-        void session
-          .prompt(command.message, {
-            images: command.images,
-            streamingBehavior: command.streamingBehavior,
-            preflightResult: (disposition) => {
-              preflightSucceeded = true;
-              output(success(id, "prompt", { disposition }));
-            },
-          })
-          .catch((e) => {
-            if (!preflightSucceeded) output(error(id, "prompt", e.message));
-          });
-        return undefined;
-      }
+		switch (command.type) {
+			case "prompt": {
+				// The response is written once the prompt is accepted, before the run's events.
+				// Failures after that are events (an assistant message with stopReason "error").
+				let preflightSucceeded = false;
+				void session
+					.prompt(command.message, {
+						images: command.images,
+						streamingBehavior: command.streamingBehavior,
+						preflightResult: (disposition) => {
+							preflightSucceeded = true;
+							output(success(id, "prompt", { disposition }));
+						},
+					})
+					.catch((e) => {
+						if (!preflightSucceeded) output(error(id, "prompt", e.message));
+					});
+				return undefined;
+			}
 
-      // Both queue the message, also when idle (then the next run picks it up). queue_update comes first.
-      case "steer": {
-        const disposition = await session.steer(command.message, command.images);
-        return success(id, "steer", { disposition });
-      }
+			// Both queue the message, also when idle (then the next run picks it up). queue_update comes first.
+			case "steer": {
+				const disposition = await session.steer(command.message, command.images);
+				return success(id, "steer", { disposition });
+			}
 
-      case "follow_up": {
-        const disposition = await session.followUp(command.message, command.images);
-        return success(id, "follow_up", { disposition });
-      }
+			case "follow_up": {
+				const disposition = await session.followUp(command.message, command.images);
+				return success(id, "follow_up", { disposition });
+			}
 
-      // The response comes after the run has settled (after agent_settled).
-      case "abort": {
-        await session.abort();
-        return success(id, "abort");
-      }
+			// The response comes after the run has settled (after agent_settled).
+			case "abort": {
+				await session.abort();
+				return success(id, "abort");
+			}
 
-      // thinking_level_changed (if the clamped level changed) comes before the response.
-      case "set_thinking_level": {
-        session.setThinkingLevel(command.level);
-        return success(id, "set_thinking_level");
-      }
+			// thinking_level_changed (if the clamped level changed) comes before the response.
+			case "set_thinking_level": {
+				session.setThinkingLevel(command.level);
+				return success(id, "set_thinking_level");
+			}
 
-      case "get_state": {
-        const state: RpcSessionState = {
-          model: session.model,
-          thinkingLevel: session.thinkingLevel,
-          isStreaming: session.isStreaming,
-          isCompacting: session.isCompacting,
-          steeringMode: session.steeringMode,
-          followUpMode: session.followUpMode,
-          sessionFile: session.sessionFile,
-          sessionId: session.sessionId,
-          autoCompactionEnabled: session.autoCompactionEnabled,
-          messageCount: session.messages.length,
-          pendingMessageCount: session.pendingMessageCount,
-        };
-        return success(id, "get_state", state);
-      }
+			case "get_state": {
+				const state: RpcSessionState = {
+					model: session.model,
+					thinkingLevel: session.thinkingLevel,
+					isStreaming: session.isStreaming,
+					isCompacting: session.isCompacting,
+					steeringMode: session.steeringMode,
+					followUpMode: session.followUpMode,
+					sessionFile: session.sessionFile,
+					sessionId: session.sessionId,
+					autoCompactionEnabled: session.autoCompactionEnabled,
+					messageCount: session.messages.length,
+					pendingMessageCount: session.pendingMessageCount,
+				};
+				return success(id, "get_state", state);
+			}
 
-      case "new_session": {
-        const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-        const result = await runtimeHost.newSession(options);
-        if (!result.cancelled) rebindSession();
-        return success(id, "new_session", result);
-      }
+			case "new_session": {
+				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
+				const result = await runtimeHost.newSession(options);
+				if (!result.cancelled) rebindSession();
+				return success(id, "new_session", result);
+			}
 
-      case "get_messages": {
-        return success(id, "get_messages", { messages: session.messages });
-      }
+			case "get_messages": {
+				return success(id, "get_messages", { messages: session.messages });
+			}
 
-      case "get_commands": {
-        const commands: RpcSlashCommand[] = session.resourceLoader.getSkills().skills.map((skill) => ({
-          name: `skill:${skill.name}`,
-          description: skill.description,
-          source: "skill",
-          sourceInfo: skill.sourceInfo,
-        }));
-        return success(id, "get_commands", { commands });
-      }
+			case "get_commands": {
+				const commands: RpcSlashCommand[] = session.resourceLoader.getSkills().skills.map((skill) => ({
+					name: `skill:${skill.name}`,
+					description: skill.description,
+					source: "skill",
+					sourceInfo: skill.sourceInfo,
+				}));
+				return success(id, "get_commands", { commands });
+			}
 
-      case "compact": {
-        const result = await session.compact(command.customInstructions);
-        return success(id, "compact", result);
-      }
+			case "compact": {
+				const result = await session.compact(command.customInstructions);
+				return success(id, "compact", result);
+			}
 
-      // edupi's teaching extras (not in pi): step mode and the context inspector.
-      case "debug_set_step_mode": {
-        if (!options.debug) return unknown(command.type);
-        return success(id, "debug_set_step_mode", options.debug.setStepMode(command.enabled, command.breakpoints));
-      }
+			// edupi's teaching extras (not in pi): step mode and the context inspector.
+			case "debug_set_step_mode": {
+				if (!options.debug) return unknown(command.type);
+				return success(id, "debug_set_step_mode", options.debug.setStepMode(command.enabled, command.breakpoints));
+			}
 
-      case "debug_continue": {
-        if (!options.debug) return unknown(command.type);
-        options.debug.continue();
-        return success(id, "debug_continue");
-      }
+			case "debug_continue": {
+				if (!options.debug) return unknown(command.type);
+				options.debug.continue();
+				return success(id, "debug_continue");
+			}
 
-      case "debug_get_context": {
-        if (!options.debug) return unknown(command.type);
-        return success(id, "debug_get_context", await options.debug.getContext(session));
-      }
+			case "debug_get_context": {
+				if (!options.debug) return unknown(command.type);
+				return success(id, "debug_get_context", await options.debug.getContext(session));
+			}
 
-      default: {
-        return unknown((command as { type: string }).type);
-      }
-    }
-  };
+			default: {
+				return unknown((command as { type: string }).type);
+			}
+		}
+	};
 
-  const handleInputLine = async (line: string) => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch (parseError: unknown) {
-      output(error(undefined, "parse", `Failed to parse command: ${parseError instanceof Error ? parseError.message : String(parseError)}`));
-      return;
-    }
-    const command = parsed as RpcCommand;
-    try {
-      const response = await handleCommand(command);
-      if (response) output(response);
-    } catch (commandError: unknown) {
-      output(error(command.id, command.type, commandError instanceof Error ? commandError.message : String(commandError)));
-    }
-  };
+	const handleInputLine = async (line: string) => {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(line);
+		} catch (parseError: unknown) {
+			output(
+				error(
+					undefined,
+					"parse",
+					`Failed to parse command: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				),
+			);
+			return;
+		}
+		const command = parsed as RpcCommand;
+		try {
+			const response = await handleCommand(command);
+			if (response) output(response);
+		} catch (commandError: unknown) {
+			output(
+				error(
+					command.id,
+					command.type,
+					commandError instanceof Error ? commandError.message : String(commandError),
+				),
+			);
+		}
+	};
 
-  // The client closes stdin to end the session. SIGTERM (the launcher) exits with 143, as in pi.
-  process.stdin.on("end", () => writeRawStdout("", () => process.exit(0))); // flush stdout first
-  process.on("SIGTERM", () => process.exit(143));
-  attachJsonlLineReader(process.stdin, (line) => {
-    void handleInputLine(line);
-  });
+	// The client closes stdin to end the session. SIGTERM (the launcher) exits with 143, as in pi.
+	process.stdin.on("end", () => writeRawStdout("", () => process.exit(0))); // flush stdout first
+	process.on("SIGTERM", () => process.exit(143));
+	attachJsonlLineReader(process.stdin, (line) => {
+		void handleInputLine(line);
+	});
 
-  return new Promise(() => {}); // keep the process alive
+	return new Promise(() => {}); // keep the process alive
 }

@@ -36,11 +36,28 @@ def test_phase1_input_filter_and_redaction():
     lines = [
         {"type": "session_meta", "payload": {"id": "t"}},
         {"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"text": "perm"}]}},
-        {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
-            {"type": "input_text", "text": "# AGENTS.md instructions for /x\n\n<INSTRUCTIONS>\nhi\n</INSTRUCTIONS>"},
-            {"type": "input_text", "text": "<environment_context>...</environment_context>"}]}},
-        {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
-            {"type": "input_text", "text": "<skill>\n<name>a</name>\n</skill>"}]}},
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "# AGENTS.md instructions for /x\n\n<INSTRUCTIONS>\nhi\n</INSTRUCTIONS>",
+                    },
+                    {"type": "input_text", "text": "<environment_context>...</environment_context>"},
+                ],
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "<skill>\n<name>a</name>\n</skill>"}],
+            },
+        },
         {"type": "response_item", "payload": {"type": "reasoning", "summary": []}},
         {"type": "response_item", "payload": {"type": "function_call", "name": "exec_command", "arguments": "{}"}},
         {"type": "event_msg", "payload": {"type": "user_message", "message": "x"}},
@@ -49,11 +66,14 @@ def test_phase1_input_filter_and_redaction():
     assert [i["type"] for i in kept] == ["message", "function_call"]
     assert [p["text"][:5] for p in kept[0]["content"]] == ["<envi"]
     assert redact_secrets("key sk-abcdefghijklmnopqrstuvwx and password=hunter22 Bearer abcdefghijklmnopqrst") == (
-        "key [REDACTED_SECRET] and password=[REDACTED_SECRET] Bearer [REDACTED_SECRET]")
+        "key [REDACTED_SECRET] and password=[REDACTED_SECRET] Bearer [REDACTED_SECRET]"
+    )
 
 
 def test_rollout_summary_file_stem():
-    memory = Stage1Output("0f3c5a5e-0000-4000-8000-00000000abcd", 1_760_000_000, "m", "s", "Fix Flaky Test!", "/r", "/c")
+    memory = Stage1Output(
+        "0f3c5a5e-0000-4000-8000-00000000abcd", 1_760_000_000, "m", "s", "Fix Flaky Test!", "/r", "/c"
+    )
     assert rollout_summary_file_stem(memory) == "2025-10-09T08-53-20-0brn-fix_flaky_test"
 
 
@@ -68,10 +88,15 @@ async def test_memory_update_pipeline(make_session, tmp_path):
     await old.run("Always use tabs in this repo.")
     await old.close()
 
-    stage1 = {"raw_memory": "---\ndescription: tabs\n---\n### Task 1\nUser wants tabs.",
-              "rollout_summary": "# User prefers tabs", "rollout_slug": "Tabs preference"}
-    write = ("printf 'v1\\n## User Profile\\nLikes tabs.\\n' > memory_summary.md && "
-             "printf '# Task Group: style\\n- tabs\\n' > MEMORY.md")
+    stage1 = {
+        "raw_memory": "---\ndescription: tabs\n---\n### Task 1\nUser wants tabs.",
+        "rollout_summary": "# User prefers tabs",
+        "rollout_slug": "Tabs preference",
+    }
+    write = (
+        "printf 'v1\\n## User Profile\\nLikes tabs.\\n' > memory_summary.md && "
+        "printf '# Task Group: style\\n- tabs\\n' > MEMORY.md"
+    )
     script = [
         [say(json.dumps(stage1))],  # phase 1: one session log
         [{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": write})}],  # phase 2 agent
@@ -126,11 +151,15 @@ async def test_memory_update_needs_the_feature(make_session):
 def test_memory_citation_is_hidden_and_parsed():
     from educodex.core.memories.citations import parse_memory_citation, strip_citations
 
-    text = ("Use tabs.\n<oai-mem-citation>\n<citation_entries>\nMEMORY.md:3-4|note=[tabs rule]\n</citation_entries>\n"
-            "<rollout_ids>\nabc\n</rollout_ids>\n</oai-mem-citation>")
+    text = (
+        "Use tabs.\n<oai-mem-citation>\n<citation_entries>\nMEMORY.md:3-4|note=[tabs rule]\n</citation_entries>\n"
+        "<rollout_ids>\nabc\n</rollout_ids>\n</oai-mem-citation>"
+    )
     visible, citations = strip_citations(text)
     assert visible == "Use tabs.\n"
     assert parse_memory_citation(citations) == {
-        "entries": [{"path": "MEMORY.md", "lineStart": 3, "lineEnd": 4, "note": "tabs rule"}], "threadIds": ["abc"]}
+        "entries": [{"path": "MEMORY.md", "lineStart": 3, "lineEnd": 4, "note": "tabs rule"}],
+        "threadIds": ["abc"],
+    }
     assert strip_citations("a<oai-mem-citation>unclosed") == ("a", ["unclosed"])
     assert parse_memory_citation([]) is None

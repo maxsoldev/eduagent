@@ -10,26 +10,27 @@ const CORE = ["ai", "agent", "coding-agent/core"];
 const FORBIDDEN = ["observe", "coding-agent/modes", "coding-agent/cli", "coding-agent/main.ts"];
 
 function tsFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true, recursive: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".ts"))
-    .map((e) => join(e.parentPath, e.name));
+	return readdirSync(dir, { withFileTypes: true, recursive: true })
+		.filter((e) => e.isFile() && e.name.endsWith(".ts"))
+		.map((e) => join(e.parentPath, e.name));
 }
 
 /** Relative module specifiers in import/export statements and dynamic imports. */
 function imports(file: string): string[] {
-  const code = readFileSync(file, "utf8");
-  return [...code.matchAll(/(?:from|import)\s*\(?\s*["'](\.[^"']+)["']/g)].map((m) => m[1]);
+	const code = readFileSync(file, "utf8");
+	return [...code.matchAll(/(?:from|import)\s*\(?\s*["'](\.[^"']+)["']/g)].map((m) => m[1]);
 }
 
 test("the core does not import observe or the hosts", () => {
-  const bad: string[] = [];
-  for (const layer of CORE) {
-    for (const file of tsFiles(join(SRC, layer))) {
-      for (const spec of imports(file)) {
-        const target = relative(SRC, resolve(dirname(file), spec));
-        if (FORBIDDEN.some((f) => target === f || target.startsWith(`${f}/`))) bad.push(`${relative(SRC, file)}: ${spec}`);
-      }
-    }
-  }
-  expect(bad).toEqual([]);
+	const bad: string[] = [];
+	for (const layer of CORE) {
+		for (const file of tsFiles(join(SRC, layer))) {
+			for (const spec of imports(file)) {
+				const target = relative(SRC, resolve(dirname(file), spec));
+				if (FORBIDDEN.some((f) => target === f || target.startsWith(`${f}/`)))
+					bad.push(`${relative(SRC, file)}: ${spec}`);
+			}
+		}
+	}
+	expect(bad).toEqual([]);
 });

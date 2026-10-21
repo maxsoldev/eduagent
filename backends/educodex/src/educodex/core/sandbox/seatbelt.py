@@ -44,10 +44,14 @@ def writable_roots(cwd: Path, exclude_tmp: bool = False) -> list[Path]:
     return seen
 
 
-def build(command: list[str], sandbox_mode: str, cwd: Path, network_access: bool,
-          exclude_tmp: bool = False) -> SeatbeltCommand:
+def build(
+    command: list[str], sandbox_mode: str, cwd: Path, network_access: bool, exclude_tmp: bool = False
+) -> SeatbeltCommand:
     params: dict[str, str] = {}
-    sections = [vendor.read("seatbelt/seatbelt_base_policy.sbpl"), "; allow read-only file operations\n(allow file-read*)"]
+    sections = [
+        vendor.read("seatbelt/seatbelt_base_policy.sbpl"),
+        "; allow read-only file operations\n(allow file-read*)",
+    ]
 
     if sandbox_mode == "workspace-write":
         rules = []
@@ -65,7 +69,9 @@ def build(command: list[str], sandbox_mode: str, cwd: Path, network_access: bool
         sections.append("(allow file-write*\n" + "\n".join(rules) + "\n)")
 
     if network_access:
-        sections.append("(allow network-outbound)\n(allow network-inbound)\n" + vendor.read("seatbelt/seatbelt_network_policy.sbpl"))
+        sections.append(
+            "(allow network-outbound)\n(allow network-inbound)\n" + vendor.read("seatbelt/seatbelt_network_policy.sbpl")
+        )
 
     sections.append(vendor.read("seatbelt/seatbelt_preferences_policy.sbpl"))
     policy = "\n".join(sections)

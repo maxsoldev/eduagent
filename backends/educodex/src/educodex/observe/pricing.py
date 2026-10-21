@@ -35,9 +35,12 @@ class Pricing:
 
     def to_json(self) -> dict[str, Any]:
         per_million = lambda r: {k: round(v * 1e6, 6) for k, v in r.__dict__.items()}  # noqa: E731
-        return {"model": self.model, "perMillionTokens": per_million(self.base),
-                "longContext": per_million(self.long_context) if self.long_context else None,
-                "longContextFromTokens": self.long_context_from}
+        return {
+            "model": self.model,
+            "perMillionTokens": per_million(self.base),
+            "longContext": per_million(self.long_context) if self.long_context else None,
+            "longContextFromTokens": self.long_context_from,
+        }
 
 
 def _rates(raw: dict[str, Any], fallback: Rates | None = None) -> Rates:
@@ -46,9 +49,12 @@ def _rates(raw: dict[str, Any], fallback: Rates | None = None) -> Rates:
         return float(value) if value not in (None, "") else default
 
     prompt = get("prompt", fallback.prompt if fallback else 0.0)
-    return Rates(prompt=prompt, completion=get("completion", fallback.completion if fallback else 0.0),
-                 cache_read=get("input_cache_read", fallback.cache_read if fallback else prompt),
-                 cache_write=get("input_cache_write", fallback.cache_write if fallback else prompt))
+    return Rates(
+        prompt=prompt,
+        completion=get("completion", fallback.completion if fallback else 0.0),
+        cache_read=get("input_cache_read", fallback.cache_read if fallback else prompt),
+        cache_write=get("input_cache_write", fallback.cache_write if fallback else prompt),
+    )
 
 
 def parse_pricing(model: str, raw: dict[str, Any]) -> Pricing:
@@ -75,15 +81,25 @@ def cost_breakdown(usage: dict[str, Any], pricing: Pricing | None) -> dict[str, 
     output = usage.get("output_tokens", 0)
     reasoning = (usage.get("output_tokens_details") or {}).get("reasoning_tokens", 0) or 0
     result: dict[str, Any] = {
-        "tokens": {"input": input_tokens, "uncached": uncached, "cached": cached, "cacheWrite": written,
-                   "output": output, "reasoning": reasoning},
+        "tokens": {
+            "input": input_tokens,
+            "uncached": uncached,
+            "cached": cached,
+            "cacheWrite": written,
+            "output": output,
+            "reasoning": reasoning,
+        },
         "cacheHitRate": round(cached / input_tokens, 4) if input_tokens else 0.0,
         "billedUsd": usage.get("cost"),  # what OpenRouter says it charged
     }
     if pricing:
         r = pricing.rates_for(input_tokens)
-        usd = {"uncachedInput": uncached * r.prompt, "cachedInput": cached * r.cache_read,
-               "cacheWrite": written * r.cache_write, "output": output * r.completion}
+        usd = {
+            "uncachedInput": uncached * r.prompt,
+            "cachedInput": cached * r.cache_read,
+            "cacheWrite": written * r.cache_write,
+            "output": output * r.completion,
+        }
         usd["total"] = sum(usd.values())
         usd["withoutCache"] = input_tokens * r.prompt + output * r.completion  # same request, no cache
         usd["savedByCache"] = usd["withoutCache"] - usd["total"]
@@ -94,8 +110,11 @@ def cost_breakdown(usage: dict[str, Any], pricing: Pricing | None) -> dict[str, 
 def add_totals(total: dict[str, Any], last: dict[str, Any]) -> dict[str, Any]:
     """Running sums over a session (tokens, dollars, billed)."""
     tokens = {k: total.get("tokens", {}).get(k, 0) + v for k, v in last["tokens"].items()}
-    out: dict[str, Any] = {"tokens": tokens, "requests": total.get("requests", 0) + 1,
-                           "cacheHitRate": round(tokens["cached"] / tokens["input"], 4) if tokens["input"] else 0.0}
+    out: dict[str, Any] = {
+        "tokens": tokens,
+        "requests": total.get("requests", 0) + 1,
+        "cacheHitRate": round(tokens["cached"] / tokens["input"], 4) if tokens["input"] else 0.0,
+    }
     if last.get("usd"):
         out["usd"] = {k: total.get("usd", {}).get(k, 0.0) + v for k, v in last["usd"].items()}
     if last.get("billedUsd") is not None:

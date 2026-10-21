@@ -6,9 +6,9 @@ import { NativeEntry } from "./components";
 import { PROTOCOL } from "./mapping";
 
 export const piAdapter: AdapterModule = {
-  protocol: PROTOCOL,
-  create: createPiAdapter,
-  defaults: {},
-  NativeEntry,
-  ApprovalCard: () => null, // pi has no approvals
+	protocol: PROTOCOL,
+	create: createPiAdapter,
+	defaults: {},
+	NativeEntry,
+	ApprovalCard: () => null, // pi has no approvals
 };

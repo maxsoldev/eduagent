@@ -7,16 +7,31 @@ import pytest
 from educodex.observe.pricing import add_totals, cost_breakdown, parse_pricing
 from tests.conftest import find
 
-LUNA = {"prompt": "0.0000001", "completion": "0.0000005", "input_cache_read": "0.00000001",
-        "input_cache_write": "0.000000125",
-        "overrides": [{"min_prompt_tokens": 272000, "prompt": "0.0000002", "completion": "0.00000075",
-                       "input_cache_read": "0.00000002", "input_cache_write": "0.00000025"}]}
+LUNA = {
+    "prompt": "0.0000001",
+    "completion": "0.0000005",
+    "input_cache_read": "0.00000001",
+    "input_cache_write": "0.000000125",
+    "overrides": [
+        {
+            "min_prompt_tokens": 272000,
+            "prompt": "0.0000002",
+            "completion": "0.00000075",
+            "input_cache_read": "0.00000002",
+            "input_cache_write": "0.00000025",
+        }
+    ],
+}
 
 
 def test_matches_openrouter_bill():
     """A real gpt-6-luna request: OpenRouter billed $0.000112985."""
-    usage = {"input_tokens": 5615, "input_tokens_details": {"cached_tokens": 5581, "cache_write_tokens": 31},
-             "output_tokens": 106, "cost": 0.000112985}
+    usage = {
+        "input_tokens": 5615,
+        "input_tokens_details": {"cached_tokens": 5581, "cache_write_tokens": 31},
+        "output_tokens": 106,
+        "cost": 0.000112985,
+    }
     c = cost_breakdown(usage, parse_pricing("openai/gpt-6-luna", LUNA))
     assert c["tokens"]["uncached"] == 3
     assert c["usd"]["total"] == pytest.approx(0.000112985)

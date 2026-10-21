@@ -31,10 +31,21 @@ async def _run(ctx: "TurnContext", event: str, payload: dict[str, Any]) -> list[
     results = []
     for command in ctx.config.hooks.get(event, []):
         proc = await asyncio.create_subprocess_shell(
-            command, cwd=str(ctx.config.cwd), stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        body = json.dumps({"hook_event_name": event, "session_id": ctx.thread_id, "turn_id": ctx.turn_id,
-                           "cwd": str(ctx.config.cwd), **payload})
+            command,
+            cwd=str(ctx.config.cwd),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        body = json.dumps(
+            {
+                "hook_event_name": event,
+                "session_id": ctx.thread_id,
+                "turn_id": ctx.turn_id,
+                "cwd": str(ctx.config.cwd),
+                **payload,
+            }
+        )
         try:
             out_b, err_b = await asyncio.wait_for(proc.communicate(body.encode()), timeout=HOOK_TIMEOUT_SECONDS)
             code = proc.returncode or 0
@@ -85,8 +96,9 @@ async def run_pre_tool_use(ctx: "TurnContext", call: "ToolCall") -> str | None:
 async def run_post_tool_use(ctx: "TurnContext", call: "ToolCall", output: str) -> str:
     """Returns the output the model will see (a blocking PostToolUse hook replaces it)."""
     name, tool_input = _hook_view(call)
-    reason = _blocking_reason(await _run(ctx, "PostToolUse", {"tool_name": name, "tool_input": tool_input,
-                                                               "tool_response": output}))
+    reason = _blocking_reason(
+        await _run(ctx, "PostToolUse", {"tool_name": name, "tool_input": tool_input, "tool_response": output})
+    )
     return reason if reason is not None else output
 
 

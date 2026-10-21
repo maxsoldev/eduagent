@@ -115,9 +115,24 @@ def app_server(workspace: Path, tmp_path: Path):
         path = tmp_path / f"script{len(procs)}.json"
         path.write_text(json.dumps(script))
         env = {**os.environ, "EDUCODEX_HOME": str(tmp_path / "home"), "OPENROUTER_API_KEY": "test"}
-        proc = subprocess.Popen([sys.executable, "-m", "educodex.cli", "app-server", "--listen", "stdio://",
-                                 "--fake-model", str(path), *flags], cwd=workspace, env=env, text=True,
-                                stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "educodex.cli",
+                "app-server",
+                "--listen",
+                "stdio://",
+                "--fake-model",
+                str(path),
+                *flags,
+            ],
+            cwd=workspace,
+            env=env,
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
         procs.append(proc)
         return StdioClient(proc)
 

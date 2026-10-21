@@ -41,7 +41,9 @@ def is_real_user_message(item: ResponseItem) -> bool:
     return not text.startswith(CONTEXT_PREFIXES + ("<turn_aborted>",)) and not text.startswith(f"{summary_prefix()}\n")
 
 
-def build_compacted_history(history: list[ResponseItem], summary: str, context: list[ResponseItem]) -> list[ResponseItem]:
+def build_compacted_history(
+    history: list[ResponseItem], summary: str, context: list[ResponseItem]
+) -> list[ResponseItem]:
     users = [i for i in history if is_real_user_message(i)]
     kept, remaining = [], COMPACT_USER_MESSAGE_MAX_TOKENS
     for item in reversed(users):  # newest first, until the budget runs out
@@ -65,8 +67,12 @@ async def run_compact(ctx: "TurnContext", reason: str = "manual") -> str:
     item = {"type": "contextCompaction", "id": f"compact-{ctx.turn_id}-{ctx.iteration}"}
     await ctx.item_started(item)
 
-    prompt = Prompt(input=[*session.history.for_prompt(), user_message(summary_prompt())], tools=[],
-                    base_instructions=session.base_instructions, parallel_tool_calls=False)
+    prompt = Prompt(
+        input=[*session.history.for_prompt(), user_message(summary_prompt())],
+        tools=[],
+        base_instructions=session.base_instructions,
+        parallel_tool_calls=False,
+    )
     body = session.client.build_request(prompt)
     await ctx.probe.compaction_requested(ctx, reason, body, before_tokens)
     summary = ""

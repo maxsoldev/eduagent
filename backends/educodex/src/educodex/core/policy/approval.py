@@ -56,13 +56,16 @@ def decide_exec(
     if requires_escalation and approval_policy == "never":  # checked before any rule (exec_policy.rs)
         return ExecDecision("forbidden", False, "escalation requested but approval_policy is never", [])
     if cmd in approved_for_session:
-        return ExecDecision("allow", restricted and not requires_escalation,
-                            "approved earlier in this session (acceptForSession)", [])
+        return ExecDecision(
+            "allow", restricted and not requires_escalation, "approved earlier in this session (acceptForSession)", []
+        )
 
     segments = plain_segments(cmd)
     if segments is None:  # opaque script: no rule can match it
         decision, reason = _heuristic(is_dangerous_command(cmd), approval_policy, restricted, requires_escalation)
-        return ExecDecision(decision, restricted and not requires_escalation, f"complex shell syntax, no rules apply; {reason}", [])
+        return ExecDecision(
+            decision, restricted and not requires_escalation, f"complex shell syntax, no rules apply; {reason}", []
+        )
 
     decisions, reasons, matched = [], [], []
     for segment in segments:
@@ -105,5 +108,12 @@ def decide_patch(
     if sandbox_mode == "workspace-write" and all(is_writable(p, writable_roots) for p in paths):
         return ExecDecision("allow", False, "all paths are inside the writable roots", [])
     if approval_policy == "never":
-        return ExecDecision("forbidden", False, "patch writes outside the writable roots and approval_policy is never", [])
-    return ExecDecision("prompt", False, "patch writes outside the writable roots, into a protected folder, or the sandbox is read-only", [])
+        return ExecDecision(
+            "forbidden", False, "patch writes outside the writable roots and approval_policy is never", []
+        )
+    return ExecDecision(
+        "prompt",
+        False,
+        "patch writes outside the writable roots, into a protected folder, or the sandbox is read-only",
+        [],
+    )

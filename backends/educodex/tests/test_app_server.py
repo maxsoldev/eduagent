@@ -5,8 +5,12 @@ import json
 
 def test_full_turn_with_approval(app_server, workspace):
     (workspace / "f.txt").write_text("x")
-    server = app_server([[{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "rm -f f.txt"})}],
-                         [{"type": "message", "text": "deleted"}]])
+    server = app_server(
+        [
+            [{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "rm -f f.txt"})}],
+            [{"type": "message", "text": "deleted"}],
+        ]
+    )
     assert server.request("thread/list")["error"]["code"] == -32600  # must initialize first
     init = server.request("initialize", {"clientInfo": {"name": "test", "version": "1"}})["result"]
     assert init["userAgent"].startswith("educodex/")
@@ -21,8 +25,15 @@ def test_full_turn_with_approval(app_server, workspace):
     server.until("turn/completed")
     assert not (workspace / "f.txt").exists()
     methods = [m.get("method") for m in server.seen]
-    for expected in ["thread/started", "turn/started", "item/started", "trace/modelRequest",
-                     "trace/policyDecision", "item/completed", "turn/completed"]:
+    for expected in [
+        "thread/started",
+        "turn/started",
+        "item/started",
+        "trace/modelRequest",
+        "trace/policyDecision",
+        "item/completed",
+        "turn/completed",
+    ]:
         assert expected in methods, expected
     assert all("jsonrpc" not in m for m in server.seen)  # JSON-RPC lite
 
@@ -70,10 +81,17 @@ def test_skills_list_skill_input_and_memory_methods(app_server, workspace, tmp_p
     thread = server.request("thread/start", {"cwd": str(workspace)})["result"]["thread"]
     listed = server.request("skills/list", {"cwds": [str(workspace)]})["result"]["data"][0]
     assert listed["cwd"] == str(workspace) and listed["errors"] == []
-    assert {"name": "deploy", "scope": "repo", "path": str(skill), "enabled": True}.items() <= listed["skills"][0].items()
+    assert {"name": "deploy", "scope": "repo", "path": str(skill), "enabled": True}.items() <= listed["skills"][
+        0
+    ].items()
     # A skill picked from the `$` list arrives as a UserInput skill item; the text has no $deploy.
-    server.request("turn/start", {"threadId": thread["id"], "input": [
-        {"type": "text", "text": "ship it"}, {"type": "skill", "name": "deploy", "path": str(skill)}]})
+    server.request(
+        "turn/start",
+        {
+            "threadId": thread["id"],
+            "input": [{"type": "text", "text": "ship it"}, {"type": "skill", "name": "deploy", "path": str(skill)}],
+        },
+    )
     body = server.until("trace/modelRequest")["params"]["body"]  # the exact body sent to the model
     assert body["input"][-1]["content"][0]["text"].startswith("<skill>\n<name>deploy</name>")
     server.until("turn/completed")
@@ -91,9 +109,15 @@ def _start(workspace, tmp_path, *flags):
     import sys
 
     env = {**os.environ, "EDUCODEX_HOME": str(tmp_path / "home"), "OPENROUTER_API_KEY": "test"}
-    return subprocess.run([sys.executable, "-m", "educodex.cli", "app-server", *flags], cwd=workspace, env=env,
-                          input=json.dumps({"id": 1, "method": "initialize", "params": {}}) + "\n",
-                          capture_output=True, text=True, timeout=15)
+    return subprocess.run(
+        [sys.executable, "-m", "educodex.cli", "app-server", *flags],
+        cwd=workspace,
+        env=env,
+        input=json.dumps({"id": 1, "method": "initialize", "params": {}}) + "\n",
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
 
 
 def test_stdio_is_the_default_transport(workspace, tmp_path):

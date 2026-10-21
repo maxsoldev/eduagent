@@ -24,7 +24,9 @@ def test_add_update_delete(tmp_path):
 
 def test_move_file(tmp_path):
     (tmp_path / "a.txt").write_text("x\ny\n")
-    out = run("*** Begin Patch\n*** Update File: a.txt\n*** Move to: sub/b.txt\n@@\n x\n-y\n+z\n*** End Patch", tmp_path)
+    out = run(
+        "*** Begin Patch\n*** Update File: a.txt\n*** Move to: sub/b.txt\n@@\n x\n-y\n+z\n*** End Patch", tmp_path
+    )
     assert out.splitlines()[1] == "M a.txt"  # Codex lists the source path
     assert (tmp_path / "sub/b.txt").read_text() == "x\nz\n"
     assert not (tmp_path / "a.txt").exists()

@@ -15,41 +15,47 @@ export const COMPACTION_SUMMARY_SUFFIX = `
 
 /** Stands for the compacted part of the conversation. Built from a compaction entry, never saved as a message. */
 export interface CompactionSummaryMessage {
-  role: "compactionSummary";
-  summary: string;
-  tokensBefore: number;
-  timestamp: number;
+	role: "compactionSummary";
+	summary: string;
+	tokensBefore: number;
+	timestamp: number;
 }
 
 declare module "../../agent/types.ts" {
-  interface CustomAgentMessages {
-    compactionSummary: CompactionSummaryMessage;
-  }
+	interface CustomAgentMessages {
+		compactionSummary: CompactionSummaryMessage;
+	}
 }
 
-export function createCompactionSummaryMessage(summary: string, tokensBefore: number, timestamp: string): CompactionSummaryMessage {
-  return { role: "compactionSummary", summary, tokensBefore, timestamp: new Date(timestamp).getTime() };
+export function createCompactionSummaryMessage(
+	summary: string,
+	tokensBefore: number,
+	timestamp: string,
+): CompactionSummaryMessage {
+	return { role: "compactionSummary", summary, tokensBefore, timestamp: new Date(timestamp).getTime() };
 }
 
 export function convertToLlm(messages: AgentMessage[]): Message[] {
-  return messages
-    .map((m): Message | undefined => {
-      switch (m.role) {
-        case "compactionSummary":
-          // The model gets the summary as a user message.
-          return {
-            role: "user",
-            content: [{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX }],
-            timestamp: m.timestamp,
-          };
-        case "system":
-        case "user":
-        case "assistant":
-        case "toolResult":
-          return m;
-        default:
-          return undefined;
-      }
-    })
-    .filter((m) => m !== undefined);
+	return messages
+		.map((m): Message | undefined => {
+			switch (m.role) {
+				case "compactionSummary":
+					// The model gets the summary as a user message.
+					return {
+						role: "user",
+						content: [
+							{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
+						],
+						timestamp: m.timestamp,
+					};
+				case "system":
+				case "user":
+				case "assistant":
+				case "toolResult":
+					return m;
+				default:
+					return undefined;
+			}
+		})
+		.filter((m) => m !== undefined);
 }

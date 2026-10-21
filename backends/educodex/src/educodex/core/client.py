@@ -87,8 +87,15 @@ class ModelClient:
         if self.info.support_verbosity and self.info.default_verbosity:
             body["text"] = {"verbosity": self.info.default_verbosity}
         if prompt.output_schema:  # codex-api/src/common.rs `create_text_param_for_request`
-            body["text"] = {**body.get("text", {}), "format": {
-                "type": "json_schema", "strict": True, "schema": prompt.output_schema, "name": "codex_output_schema"}}
+            body["text"] = {
+                **body.get("text", {}),
+                "format": {
+                    "type": "json_schema",
+                    "strict": True,
+                    "schema": prompt.output_schema,
+                    "name": "codex_output_schema",
+                },
+            }
         return body
 
     async def stream(self, body: dict[str, Any]) -> AsyncIterator[ResponseEvent]:
@@ -100,7 +107,9 @@ class ModelClient:
         yielded = False
         for attempt in range(3):
             try:
-                async with self._http.stream("POST", "/responses", json=body, headers={"Accept": "text/event-stream"}) as r:
+                async with self._http.stream(
+                    "POST", "/responses", json=body, headers={"Accept": "text/event-stream"}
+                ) as r:
                     if r.status_code >= 400:
                         detail = (await r.aread()).decode(errors="replace")[:2000]
                         if (r.status_code >= 500 or r.status_code == 429) and attempt < 2:

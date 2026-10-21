@@ -8,29 +8,35 @@ import { SessionManager } from "./session-manager.ts";
 export type CreateRuntime = (sessionManager: SessionManager) => AgentSession;
 
 export class AgentSessionRuntime {
-  private _session: AgentSession;
+	private _session: AgentSession;
 
-  constructor(session: AgentSession, private readonly cwd: string, private readonly createRuntime: CreateRuntime) {
-    this._session = session;
-  }
+	constructor(
+		session: AgentSession,
+		private readonly cwd: string,
+		private readonly createRuntime: CreateRuntime,
+	) {
+		this._session = session;
+	}
 
-  get session(): AgentSession {
-    return this._session;
-  }
+	get session(): AgentSession {
+		return this._session;
+	}
 
-  /** A fresh session in the same session dir (in memory if the old one was not saved). */
-  async newSession(options?: { parentSession?: string }): Promise<{ cancelled: boolean }> {
-    const old = this._session.sessionManager;
-    const sessionManager = old.isPersisted() ? SessionManager.create(this.cwd, old.getSessionDir()) : SessionManager.inMemory(this.cwd);
-    if (options?.parentSession) sessionManager.newSession({ parentSession: options.parentSession });
-    await this.teardownCurrent();
-    this._session = this.createRuntime(sessionManager);
-    return { cancelled: false };
-  }
+	/** A fresh session in the same session dir (in memory if the old one was not saved). */
+	async newSession(options?: { parentSession?: string }): Promise<{ cancelled: boolean }> {
+		const old = this._session.sessionManager;
+		const sessionManager = old.isPersisted()
+			? SessionManager.create(this.cwd, old.getSessionDir())
+			: SessionManager.inMemory(this.cwd);
+		if (options?.parentSession) sessionManager.newSession({ parentSession: options.parentSession });
+		await this.teardownCurrent();
+		this._session = this.createRuntime(sessionManager);
+		return { cancelled: false };
+	}
 
-  /** Aborts the active run first, so it ends (and is saved) in the old file. */
-  private async teardownCurrent(): Promise<void> {
-    await this._session.abort();
-    this._session.dispose();
-  }
+	/** Aborts the active run first, so it ends (and is saved) in the old file. */
+	private async teardownCurrent(): Promise<void> {
+		await this._session.abort();
+		this._session.dispose();
+	}
 }

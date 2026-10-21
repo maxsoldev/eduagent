@@ -10,35 +10,68 @@ import { join } from "node:path";
 
 const repo = new URL("../..", import.meta.url).pathname;
 const tmp = mkdtempSync(join(tmpdir(), "educodex-record-"));
-const p = spawn("uv", ["run", "-q", "--project", `${repo}/backends/educodex`, "educodex", "app-server", "--listen", "stdio://",
-  "--fake-model", `${repo}/backends/educodex/examples/fake/demo.json`],
-  { cwd: tmp, env: { ...process.env, EDUCODEX_HOME: join(tmp, ".home"), OPENROUTER_API_KEY: "test" }, stdio: ["pipe", "pipe", "inherit"] });
+const p = spawn(
+	"uv",
+	[
+		"run",
+		"-q",
+		"--project",
+		`${repo}/backends/educodex`,
+		"educodex",
+		"app-server",
+		"--listen",
+		"stdio://",
+		"--fake-model",
+		`${repo}/backends/educodex/examples/fake/demo.json`,
+	],
+	{
+		cwd: tmp,
+		env: { ...process.env, EDUCODEX_HOME: join(tmp, ".home"), OPENROUTER_API_KEY: "test" },
+		stdio: ["pipe", "pipe", "inherit"],
+	},
+);
 
 const lines = [];
 const waiting = new Map();
-let nextId = 0, buffer = "", turnDone;
+let nextId = 0,
+	buffer = "",
+	turnDone;
 const finished = new Promise((resolve) => (turnDone = resolve));
-const send = (m) => p.stdin.write(JSON.stringify(m) + "\n");
-const request = (method, params = {}) => new Promise((resolve) => { waiting.set(++nextId, resolve); send({ id: nextId, method, params }); });
+const send = (m) => p.stdin.write(`${JSON.stringify(m)}\n`);
+const request = (method, params = {}) =>
+	new Promise((resolve) => {
+		waiting.set(++nextId, resolve);
+		send({ id: nextId, method, params });
+	});
 
 p.stdout.on("data", (chunk) => {
-  buffer += chunk;
-  for (let k; (k = buffer.indexOf("\n")) >= 0; buffer = buffer.slice(k + 1)) {
-    const line = buffer.slice(0, k);
-    lines.push(line);
-    const m = JSON.parse(line);
-    if (m.method && m.id !== undefined) send({ id: m.id, result: { decision: "decline" } }); // the rm -rf approval
-    else if (!m.method && waiting.has(m.id)) { waiting.get(m.id)(m.result); waiting.delete(m.id); }
-    if (m.method === "turn/completed") turnDone();
-  }
+	buffer += chunk;
+	while (true) {
+		const k = buffer.indexOf("\n");
+		if (k < 0) break;
+		const line = buffer.slice(0, k);
+		buffer = buffer.slice(k + 1);
+		lines.push(line);
+		const m = JSON.parse(line);
+		if (m.method && m.id !== undefined)
+			send({ id: m.id, result: { decision: "decline" } }); // the rm -rf approval
+		else if (!m.method && waiting.has(m.id)) {
+			waiting.get(m.id)(m.result);
+			waiting.delete(m.id);
+		}
+		if (m.method === "turn/completed") turnDone();
+	}
 });
 
 await request("initialize", { clientInfo: { name: "record", title: "record", version: "0" }, capabilities: {} });
 send({ method: "initialized" });
 const { thread } = await request("thread/start", { approvalPolicy: "on-request", sandbox: "workspace-write" });
-await request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "Create hello.py that prints a greeting, then run it." }] });
+await request("turn/start", {
+	threadId: thread.id,
+	input: [{ type: "text", text: "Create hello.py that prints a greeting, then run it." }],
+});
 await finished;
 p.stdin.end();
 await new Promise((resolve) => p.on("close", resolve));
-writeFileSync(new URL("fixtures/educodex-demo.out.jsonl", import.meta.url), lines.join("\n") + "\n");
+writeFileSync(new URL("fixtures/educodex-demo.out.jsonl", import.meta.url), `${lines.join("\n")}\n`);
 console.log(`${lines.length} lines`);

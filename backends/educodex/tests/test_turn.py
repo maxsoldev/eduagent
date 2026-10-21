@@ -57,13 +57,19 @@ async def test_tool_loop_and_prefix_stability(make_session, workspace):
     # Every request is an exact prefix of the next one (prompt caching depends on this).
     assert third[: len(second)] == second
     types = [i["type"] for i in third[4:]]
-    assert types == ["reasoning", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output"]
+    assert types == [
+        "reasoning",
+        "function_call",
+        "function_call_output",
+        "custom_tool_call",
+        "custom_tool_call_output",
+    ]
     assert "Process exited with code 0" in third[6]["output"] and third[6]["output"].endswith("hi\n")
     assert third[8]["output"].endswith("Success. Updated the following files:\nA a.txt\n")
     assert (workspace / "a.txt").read_text() == "hello\n"
     assert third[4]["encrypted_content"]  # reasoning is sent back as-is
     loops = find(events, "trace/loopIteration")
-    assert [l["decision"] for l in loops] == ["continue", "continue", "stop"]
+    assert [loop["decision"] for loop in loops] == ["continue", "continue", "stop"]
 
 
 async def test_second_turn_appends_only_changed_context(make_session, workspace):
@@ -80,8 +86,9 @@ async def test_second_turn_appends_only_changed_context(make_session, workspace)
 
 async def test_dangerous_command_asks_and_decline_is_reported(make_session, workspace):
     (workspace / "keep.txt").write_text("x")
-    session, fake, events = await make_session([[call("exec_command", cmd="rm -rf keep.txt")], [say("ok")]],
-                                               decisions=["decline"])
+    session, fake, events = await make_session(
+        [[call("exec_command", cmd="rm -rf keep.txt")], [say("ok")]], decisions=["decline"]
+    )
     await session.run("delete it")
     assert session.asked[0][0] == "item/commandExecution/requestApproval"
     assert (workspace / "keep.txt").exists()
@@ -130,7 +137,9 @@ async def test_update_plan_emits_plan_event(make_session):
 
 async def test_compaction_replaces_history(make_session):
     big = {"input_tokens": 300_000, "output_tokens": 10, "total_tokens": 300_010}
-    session, fake, events = await make_session([[call("exec_command", cmd="echo a")], [say("SUMMARY TEXT")], [say("final")]])
+    session, fake, events = await make_session(
+        [[call("exec_command", cmd="echo a")], [say("SUMMARY TEXT")], [say("final")]]
+    )
     fake.usage = [big]
     await session.run("long task")
     compact_req = fake.requests[1]
@@ -138,7 +147,9 @@ async def test_compaction_replaces_history(make_session):
     assert message_text(compact_req["input"][-1]).startswith("You are performing a CONTEXT CHECKPOINT COMPACTION")
     after = fake.requests[2]["input"]
     texts = [message_text(i) for i in after if i.get("type") == "message"]
-    assert texts[-1].startswith("Another language model started to solve this problem") and texts[-1].endswith("SUMMARY TEXT")
+    assert texts[-1].startswith("Another language model started to solve this problem") and texts[-1].endswith(
+        "SUMMARY TEXT"
+    )
     assert "long task" in texts
     assert "item/completed" in methods(events) and find(events, "trace/compacted")
 
@@ -148,7 +159,7 @@ async def test_rollout_replays_history(make_session):
     await session.run("go")
     lines = read_rollout(session.rollout.path)
     assert lines[0]["type"] == "session_meta"
-    assert {"turn_context", "response_item", "event_msg"} <= {l["type"] for l in lines}
+    assert {"turn_context", "response_item", "event_msg"} <= {line["type"] for line in lines}
     assert history_from_rollout(lines) == session.history.items
 
 

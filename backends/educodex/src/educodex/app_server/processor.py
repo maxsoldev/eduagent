@@ -42,7 +42,9 @@ class ThreadState:
 
 
 class MessageProcessor:
-    def __init__(self, defaults: Config, transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None) -> None:
+    def __init__(
+        self, defaults: Config, transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None
+    ) -> None:
         self.defaults = defaults
         self.transport_factory = transport_factory
         self.threads: dict[str, ThreadState] = {}
@@ -80,7 +82,9 @@ class MessageProcessor:
         except (KeyError, TypeError, ValueError) as err:
             await conn.send({"id": request_id, "error": {"code": INVALID_PARAMS, "message": f"invalid params: {err}"}})
         except Exception as err:  # every request gets an answer, or the client would wait forever
-            await conn.send({"id": request_id, "error": {"code": INTERNAL_ERROR, "message": f"{type(err).__name__}: {err}"}})
+            await conn.send(
+                {"id": request_id, "error": {"code": INTERNAL_ERROR, "message": f"{type(err).__name__}: {err}"}}
+            )
 
     # --- events -> notifications ------------------------------------------------------------
     async def _broadcast(self, event: Event) -> None:
@@ -115,20 +119,30 @@ class MessageProcessor:
             raise RpcError(-32600, "Already initialized")
         conn.initialized = True
         conn.opt_out = set((params.get("capabilities") or {}).get("optOutNotificationMethods") or [])
-        return {"userAgent": f"educodex/{__version__}", "codexHome": str(self.defaults.home),
-                "platformFamily": "unix" if sys.platform != "win32" else "windows", "platformOs": platform.system().lower()}
+        return {
+            "userAgent": f"educodex/{__version__}",
+            "codexHome": str(self.defaults.home),
+            "platformFamily": "unix" if sys.platform != "win32" else "windows",
+            "platformOs": platform.system().lower(),
+        }
 
     async def thread_start(self, conn: Connection, params: dict) -> dict:
         cwd = Path(params.get("cwd") or self.defaults.cwd)
         config = Config(
-            cwd=cwd, model=params.get("model") or self.defaults.model, base_url=self.defaults.base_url,
+            cwd=cwd,
+            model=params.get("model") or self.defaults.model,
+            base_url=self.defaults.base_url,
             api_key=self.defaults.api_key or load_api_key(cwd),
             approval_policy=params.get("approvalPolicy") or self.defaults.approval_policy,
             sandbox_mode=params.get("sandbox") or self.defaults.sandbox_mode,
             network_access=self.defaults.network_access,
             developer_instructions=params.get("developerInstructions") or self.defaults.developer_instructions,
-            base_instructions=params.get("baseInstructions"), reasoning_effort=params.get("effort") or self.defaults.reasoning_effort,
-            home=self.defaults.home, mcp_servers=self.defaults.mcp_servers, rules=self.defaults.rules, hooks=self.defaults.hooks,
+            base_instructions=params.get("baseInstructions"),
+            reasoning_effort=params.get("effort") or self.defaults.reasoning_effort,
+            home=self.defaults.home,
+            mcp_servers=self.defaults.mcp_servers,
+            rules=self.defaults.rules,
+            hooks=self.defaults.hooks,
             memories=self.defaults.memories,
         )
         bus = EventBus()
@@ -139,14 +153,25 @@ class MessageProcessor:
             return await state.owner.request(method, request)
 
         tracer = Tracer(trace_sse=bool(params.get("traceSse")))
-        session = Session(config, bus, ask_client, transport=self.transport_factory() if self.transport_factory else None,
-                          probe=tracer)
+        session = Session(
+            config,
+            bus,
+            ask_client,
+            transport=self.transport_factory() if self.transport_factory else None,
+            probe=tracer,
+        )
         state = ThreadState(session, tracer, conn)
         self.threads[session.thread_id] = state
         thread = await session.start()
-        return {"thread": thread, "model": config.model, "modelProvider": "openrouter", "cwd": str(config.cwd),
-                "approvalPolicy": config.approval_policy, "sandbox": {"type": SANDBOX_POLICY_TAGS[config.sandbox_mode]},
-                "reasoningEffort": session.client.reasoning_effort}
+        return {
+            "thread": thread,
+            "model": config.model,
+            "modelProvider": "openrouter",
+            "cwd": str(config.cwd),
+            "approvalPolicy": config.approval_policy,
+            "sandbox": {"type": SANDBOX_POLICY_TAGS[config.sandbox_mode]},
+            "reasoningEffort": session.client.reasoning_effort,
+        }
 
     def _state(self, params: dict) -> ThreadState:
         state = self.threads.get(params["threadId"])
@@ -171,16 +196,21 @@ class MessageProcessor:
         state.subscribers.add(conn)
         inputs = params.get("input", [])
         text = "\n".join(i.get("text", "") for i in inputs if i.get("type") == "text")
-        skill_inputs = [{"type": "skill", "name": i["name"], "path": i["path"]} for i in inputs if i.get("type") == "skill"]
+        skill_inputs = [
+            {"type": "skill", "name": i["name"], "path": i["path"]} for i in inputs if i.get("type") == "skill"
+        ]
         if not text.strip():
             raise RpcError(INVALID_PARAMS, "input must contain at least one text item")
         if state.session.turn_running:  # reject before touching the running turn's settings
             raise RpcError(-32600, "a turn is already running")
         sandbox = params.get("sandboxPolicy")
         state.session.apply_overrides(
-            cwd=Path(params["cwd"]) if params.get("cwd") else None, approval_policy=params.get("approvalPolicy"),
-            sandbox_mode=sandbox_mode_from_policy(sandbox) if sandbox else None, model=params.get("model"),
-            reasoning_effort=params.get("effort"))
+            cwd=Path(params["cwd"]) if params.get("cwd") else None,
+            approval_policy=params.get("approvalPolicy"),
+            sandbox_mode=sandbox_mode_from_policy(sandbox) if sandbox else None,
+            model=params.get("model"),
+            reasoning_effort=params.get("effort"),
+        )
         try:
             turn = state.session.start_turn(text, skill_inputs)
         except RuntimeError as err:
@@ -216,17 +246,35 @@ class MessageProcessor:
         data = []
         for cwd in params.get("cwds") or [str(self.defaults.cwd)]:
             outcome = load_skills(replace(self.defaults, cwd=Path(cwd)))
-            skills = [{"name": s.name, "description": s.description, "shortDescription": s.short_description,
-                       "path": str(s.path), "scope": s.scope, "enabled": True, "pluginId": None} for s in outcome.skills]
+            skills = [
+                {
+                    "name": s.name,
+                    "description": s.description,
+                    "shortDescription": s.short_description,
+                    "path": str(s.path),
+                    "scope": s.scope,
+                    "enabled": True,
+                    "pluginId": None,
+                }
+                for s in outcome.skills
+            ]
             errors = [{"path": str(e.path), "message": e.message} for e in outcome.errors]
             data.append({"cwd": str(Path(cwd).resolve()), "skills": skills, "errors": errors})
         return {"data": data}
 
     async def model_list(self, conn: Connection, params: dict) -> dict:
-        data = [{"id": f"openai/{slug}", "model": slug, "displayName": m.get("display_name", slug),
-                 "description": m.get("description", ""), "isDefault": f"openai/{slug}" == self.defaults.model,
-                 "defaultReasoningEffort": m.get("default_reasoning_level")}
-                for slug, m in catalog().items() if m.get("visibility") == "list"]
+        data = [
+            {
+                "id": f"openai/{slug}",
+                "model": slug,
+                "displayName": m.get("display_name", slug),
+                "description": m.get("description", ""),
+                "isDefault": f"openai/{slug}" == self.defaults.model,
+                "defaultReasoningEffort": m.get("default_reasoning_level"),
+            }
+            for slug, m in catalog().items()
+            if m.get("visibility") == "list"
+        ]
         return {"data": data, "nextCursor": None}
 
     async def debug_step_mode_set(self, conn: Connection, params: dict) -> dict:
@@ -242,16 +290,28 @@ class MessageProcessor:
         """Exactly what the next request would contain."""
         session = self._state(params).session
         body = session.client.build_request(_prompt_for(session))
-        return {"request": body, "historyItems": len(session.history.items), "tokens": session.history.token_count(),
-                "contextWindow": session.model_info.context_window,
-                "autoCompactLimit": session.model_info.effective_auto_compact_limit()}
+        return {
+            "request": body,
+            "historyItems": len(session.history.items),
+            "tokens": session.history.token_count(),
+            "contextWindow": session.model_info.context_window,
+            "autoCompactLimit": session.model_info.effective_auto_compact_limit(),
+        }
 
     METHODS = {
-        "initialize": initialize, "thread/start": thread_start, "thread/list": thread_list,
-        "thread/read": thread_read, "turn/start": turn_start, "turn/interrupt": turn_interrupt,
-        "thread/compact/start": thread_compact_start, "model/list": model_list, "skills/list": skills_list,
-        "memory/reset": memory_reset, "memory/update/start": memory_update_start,
-        "debug/stepMode/set": debug_step_mode_set, "debug/continue": debug_continue,
+        "initialize": initialize,
+        "thread/start": thread_start,
+        "thread/list": thread_list,
+        "thread/read": thread_read,
+        "turn/start": turn_start,
+        "turn/interrupt": turn_interrupt,
+        "thread/compact/start": thread_compact_start,
+        "model/list": model_list,
+        "skills/list": skills_list,
+        "memory/reset": memory_reset,
+        "memory/update/start": memory_update_start,
+        "debug/stepMode/set": debug_step_mode_set,
+        "debug/continue": debug_continue,
         "debug/context/get": debug_context_get,
     }
 
@@ -263,13 +323,20 @@ class MessageProcessor:
 def _prompt_for(session: Session):
     from educodex.core.client import Prompt
 
-    return Prompt(input=session.history.for_prompt(), tools=session.router.specs(),
-                  base_instructions=session.base_instructions,
-                  parallel_tool_calls=session.model_info.supports_parallel_tool_calls)
+    return Prompt(
+        input=session.history.for_prompt(),
+        tools=session.router.specs(),
+        base_instructions=session.base_instructions,
+        parallel_tool_calls=session.model_info.supports_parallel_tool_calls,
+    )
 
 
 # SandboxPolicy in app-server v2 uses camelCase tags (v2/permissions.rs); config uses kebab-case modes.
-SANDBOX_POLICY_TAGS = {"read-only": "readOnly", "workspace-write": "workspaceWrite", "danger-full-access": "dangerFullAccess"}
+SANDBOX_POLICY_TAGS = {
+    "read-only": "readOnly",
+    "workspace-write": "workspaceWrite",
+    "danger-full-access": "dangerFullAccess",
+}
 
 
 def sandbox_mode_from_policy(policy: Any) -> str:

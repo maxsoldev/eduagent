@@ -5,8 +5,8 @@ import { codexComponents } from "./components";
 import { PROTOCOL } from "./mapping";
 
 export const codexAdapter: AdapterModule = {
-  protocol: PROTOCOL,
-  create: createCodexAdapter,
-  defaults: { approvalPolicy: "on-request", sandbox: "workspace-write" },
-  ...codexComponents,
+	protocol: PROTOCOL,
+	create: createCodexAdapter,
+	defaults: { approvalPolicy: "on-request", sandbox: "workspace-write" },
+	...codexComponents,
 };

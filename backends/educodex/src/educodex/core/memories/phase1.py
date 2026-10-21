@@ -51,10 +51,19 @@ SECRET_PATTERNS = [
     (re.compile(r"(?i:\bBearer)[ \t]+[A-Za-z0-9._~+/-]{16,}=*"), "Bearer [REDACTED_SECRET]"),
     (re.compile(r"sk-[A-Za-z0-9]{20,}"), "[REDACTED_SECRET]"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED_SECRET]"),
-    (re.compile(r"""(?i)\b(api[_-]?key|token|secret|password)\b(\s*[:=]\s*)(["']?)[^\s"']{8,}"""), r"\1\2\3[REDACTED_SECRET]"),
+    (
+        re.compile(r"""(?i)\b(api[_-]?key|token|secret|password)\b(\s*[:=]\s*)(["']?)[^\s"']{8,}"""),
+        r"\1\2\3[REDACTED_SECRET]",
+    ),
 ]
-KEPT_ITEM_TYPES = ("message", "function_call", "function_call_output", "custom_tool_call",
-                   "custom_tool_call_output", "web_search_call")
+KEPT_ITEM_TYPES = (
+    "message",
+    "function_call",
+    "function_call_output",
+    "custom_tool_call",
+    "custom_tool_call_output",
+    "web_search_call",
+)
 
 
 def redact_secrets(text: str) -> str:
@@ -66,8 +75,9 @@ def redact_secrets(text: str) -> str:
 def _excluded_part(part: dict) -> bool:
     """AGENTS.md and injected skills are not the user's words (rollout_input.rs)."""
     text = part.get("text", "").strip()
-    return ((text.startswith("# AGENTS.md instructions") and text.endswith("</INSTRUCTIONS>"))
-            or (text.startswith("<skill>") and text.endswith("</skill>")))
+    return (text.startswith("# AGENTS.md instructions") and text.endswith("</INSTRUCTIONS>")) or (
+        text.startswith("<skill>") and text.endswith("</skill>")
+    )
 
 
 def filter_items(lines: list[dict]) -> list[dict]:
@@ -102,8 +112,9 @@ def find_candidates(home: Path, current_thread_id: str, store: MemoryStore, now:
         previous = store.outputs.get(meta["id"])
         if previous and previous.source_updated_at >= updated_at:
             continue
-        candidates.append({"threadId": meta["id"], "path": path, "cwd": meta.get("cwd", ""), "updatedAt": updated_at,
-                           "lines": lines})
+        candidates.append(
+            {"threadId": meta["id"], "path": path, "cwd": meta.get("cwd", ""), "updatedAt": updated_at, "lines": lines}
+        )
     candidates.sort(key=lambda c: c["updatedAt"], reverse=True)
     return candidates[:MAX_ROLLOUTS_PER_RUN]
 
@@ -111,15 +122,23 @@ def find_candidates(home: Path, current_thread_id: str, store: MemoryStore, now:
 def build_stage_one_input(rollout_path: Path, cwd: str, contents: str) -> str:
     info = model_info(EXTRACT_MODEL)
     limit = info.context_window * info.effective_context_window_percent // 100 * CONTEXT_WINDOW_PERCENT // 100
-    return vendor.render("templates/memories/stage_one_input.md", rollout_path=str(rollout_path), rollout_cwd=cwd,
-                         rollout_contents=truncate_middle(contents, limit)[0])
+    return vendor.render(
+        "templates/memories/stage_one_input.md",
+        rollout_path=str(rollout_path),
+        rollout_cwd=cwd,
+        rollout_contents=truncate_middle(contents, limit)[0],
+    )
 
 
 async def extract(ctx: "TurnContext", client: ModelClient, candidate: dict) -> Stage1Output:
     contents = redact_secrets(json.dumps(filter_items(candidate["lines"]), ensure_ascii=False))
-    prompt = Prompt(input=[user_message(build_stage_one_input(candidate["path"], candidate["cwd"], contents))], tools=[],
-                    base_instructions=vendor.read("templates/memories/stage_one_system.md"),
-                    parallel_tool_calls=False, output_schema=OUTPUT_SCHEMA)
+    prompt = Prompt(
+        input=[user_message(build_stage_one_input(candidate["path"], candidate["cwd"], contents))],
+        tools=[],
+        base_instructions=vendor.read("templates/memories/stage_one_system.md"),
+        parallel_tool_calls=False,
+        output_schema=OUTPUT_SCHEMA,
+    )
     body = client.build_request(prompt)
     await ctx.probe.memory_extraction_requested(ctx, candidate["threadId"], str(candidate["path"]), body)
     text = ""
@@ -132,10 +151,14 @@ async def extract(ctx: "TurnContext", client: ModelClient, candidate: dict) -> S
     if set(output) != set(OUTPUT_SCHEMA["properties"]):
         raise ValueError(f"unexpected fields in stage-1 output: {sorted(output)}")
     return Stage1Output(
-        thread_id=candidate["threadId"], source_updated_at=candidate["updatedAt"],
-        raw_memory=redact_secrets(output["raw_memory"]), rollout_summary=redact_secrets(output["rollout_summary"]),
+        thread_id=candidate["threadId"],
+        source_updated_at=candidate["updatedAt"],
+        raw_memory=redact_secrets(output["raw_memory"]),
+        rollout_summary=redact_secrets(output["rollout_summary"]),
         rollout_slug=redact_secrets(output["rollout_slug"]) if output["rollout_slug"] else None,
-        rollout_path=str(candidate["path"]), cwd=candidate["cwd"])
+        rollout_path=str(candidate["path"]),
+        cwd=candidate["cwd"],
+    )
 
 
 async def run(ctx: "TurnContext", store: MemoryStore) -> list[dict]:
@@ -144,8 +167,16 @@ async def run(ctx: "TurnContext", store: MemoryStore) -> list[dict]:
     candidates = find_candidates(session.config.home, session.thread_id, store, time.time())
     await ctx.probe.memory_candidates(ctx, [{"threadId": c["threadId"], "path": str(c["path"])} for c in candidates])
     results = []
-    client = ModelClient(EXTRACT_MODEL, model_info(EXTRACT_MODEL), session.config.api_key, session.config.base_url,
-                         session.thread_id, REASONING_EFFORT, "none", session.transport)
+    client = ModelClient(
+        EXTRACT_MODEL,
+        model_info(EXTRACT_MODEL),
+        session.config.api_key,
+        session.config.base_url,
+        session.thread_id,
+        REASONING_EFFORT,
+        "none",
+        session.transport,
+    )
     try:
         for candidate in candidates:
             try:
@@ -158,8 +189,13 @@ async def run(ctx: "TurnContext", store: MemoryStore) -> list[dict]:
                 store.outputs[output.thread_id] = output
                 store.save()
                 status = "succeededWithOutput" if output.raw_memory else "succeededNoOutput"
-                result = {"threadId": output.thread_id, "status": status, "slug": output.rollout_slug,
-                          "rawMemory": output.raw_memory, "rolloutSummary": output.rollout_summary}
+                result = {
+                    "threadId": output.thread_id,
+                    "status": status,
+                    "slug": output.rollout_slug,
+                    "rawMemory": output.raw_memory,
+                    "rolloutSummary": output.rollout_summary,
+                }
             await ctx.probe.memory_extracted(ctx, result)
             results.append(result)
     finally:

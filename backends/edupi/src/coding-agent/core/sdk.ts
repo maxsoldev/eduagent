@@ -19,63 +19,77 @@ import type { SettingsManager } from "./settings-manager.ts";
 import { createCodingTools } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
-  sessionManager: SessionManager;
-  /** The model from --model. Without it: the session's model, else edupi's default. */
-  model?: Model;
-  /** Where the session's model is looked up (its context window and prices). */
-  modelRegistry: ModelRegistry;
-  streamFn: StreamFn;
-  getApiKey: (provider: string) => string | undefined;
-  settingsManager: SettingsManager;
-  /** Where the tools work. Default: the session's cwd. */
-  cwd?: string;
-  /** edupi: the teaching extras' hooks. */
-  probe?: Probe;
-  /** May files from <cwd>/.pi be loaded? Resolved by main.ts (pi: SettingsManager projectTrusted). Default: no. */
-  projectTrusted?: boolean;
+	sessionManager: SessionManager;
+	/** The model from --model. Without it: the session's model, else edupi's default. */
+	model?: Model;
+	/** Where the session's model is looked up (its context window and prices). */
+	modelRegistry: ModelRegistry;
+	streamFn: StreamFn;
+	getApiKey: (provider: string) => string | undefined;
+	settingsManager: SettingsManager;
+	/** Where the tools work. Default: the session's cwd. */
+	cwd?: string;
+	/** edupi: the teaching extras' hooks. */
+	probe?: Probe;
+	/** May files from <cwd>/.pi be loaded? Resolved by main.ts (pi: SettingsManager projectTrusted). Default: no. */
+	projectTrusted?: boolean;
 }
 
 export function createAgentSession(options: CreateAgentSessionOptions): AgentSession {
-  const { sessionManager } = options;
-  const existingSession = sessionManager.buildSessionContext();
-  const hasExistingSession = existingSession.messages.length > 0;
-  const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
+	const { sessionManager } = options;
+	const existingSession = sessionManager.buildSessionContext();
+	const hasExistingSession = existingSession.messages.length > 0;
+	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
-  // pi looks the session's model up in its model registry. edupi knows only OpenRouter models.
-  let model = options.model;
-  if (!model && hasExistingSession && existingSession.model) {
-    model = options.modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
-  }
-  model ??= options.modelRegistry.find("openrouter", DEFAULT_MODEL_ID)!;
+	// pi looks the session's model up in its model registry. edupi knows only OpenRouter models.
+	let model = options.model;
+	if (!model && hasExistingSession && existingSession.model) {
+		model = options.modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
+	}
+	model ??= options.modelRegistry.find("openrouter", DEFAULT_MODEL_ID)!;
 
-  // The session's level, else pi's default; then clamped to what the model supports.
-  let thinkingLevel: ThinkingLevel = hasExistingSession && hasThinkingEntry ? (existingSession.thinkingLevel as ThinkingLevel) : DEFAULT_THINKING_LEVEL;
-  thinkingLevel = clampThinkingLevel(model, thinkingLevel);
+	// The session's level, else pi's default; then clamped to what the model supports.
+	let thinkingLevel: ThinkingLevel =
+		hasExistingSession && hasThinkingEntry
+			? (existingSession.thinkingLevel as ThinkingLevel)
+			: DEFAULT_THINKING_LEVEL;
+	thinkingLevel = clampThinkingLevel(model, thinkingLevel);
 
-  // pi's default coding tools, working in the session's directory.
-  const cwd = options.cwd ?? sessionManager.getCwd();
-  const tools = createCodingTools(cwd);
+	// pi's default coding tools, working in the session's directory.
+	const cwd = options.cwd ?? sessionManager.getCwd();
+	const tools = createCodingTools(cwd);
 
-  // AGENTS.md files, skills and SYSTEM.md, read once per session.
-  const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir(), projectTrusted: options.projectTrusted ?? false });
-  resourceLoader.reload();
+	// AGENTS.md files, skills and SYSTEM.md, read once per session.
+	const resourceLoader = new DefaultResourceLoader({
+		cwd,
+		agentDir: getAgentDir(),
+		projectTrusted: options.projectTrusted ?? false,
+	});
+	resourceLoader.reload();
 
-  const agent = new Agent({
-    initialState: { model, thinkingLevel, tools, messages: existingSession.messages },
-    convertToLlm,
-    streamFn: options.streamFn,
-    getApiKey: options.getApiKey,
-    sessionId: sessionManager.getSessionId(),
-    probe: options.probe,
-  });
+	const agent = new Agent({
+		initialState: { model, thinkingLevel, tools, messages: existingSession.messages },
+		convertToLlm,
+		streamFn: options.streamFn,
+		getApiKey: options.getApiKey,
+		sessionId: sessionManager.getSessionId(),
+		probe: options.probe,
+	});
 
-  // Record the settings, so a reopened session restores them.
-  if (hasExistingSession) {
-    if (!hasThinkingEntry) sessionManager.appendThinkingLevelChange(thinkingLevel);
-  } else {
-    sessionManager.appendModelChange(model.provider, model.id);
-    sessionManager.appendThinkingLevelChange(thinkingLevel);
-  }
+	// Record the settings, so a reopened session restores them.
+	if (hasExistingSession) {
+		if (!hasThinkingEntry) sessionManager.appendThinkingLevelChange(thinkingLevel);
+	} else {
+		sessionManager.appendModelChange(model.provider, model.id);
+		sessionManager.appendThinkingLevelChange(thinkingLevel);
+	}
 
-  return new AgentSession({ agent, sessionManager, settingsManager: options.settingsManager, getApiKey: options.getApiKey, resourceLoader, probe: options.probe });
+	return new AgentSession({
+		agent,
+		sessionManager,
+		settingsManager: options.settingsManager,
+		getApiKey: options.getApiKey,
+		resourceLoader,
+		probe: options.probe,
+	});
 }

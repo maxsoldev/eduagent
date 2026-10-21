@@ -4,7 +4,12 @@
   "scripts": {
     "eduagent": "pnpm --silent --filter @eduagent/launcher exec tsx src/main.ts",
     "build": "pnpm --filter @eduagent/visualiser build",
-    "test:e2e": "pnpm --filter @eduagent/visualiser test:e2e",
-    "test": "pnpm --filter @eduagent/visualiser --filter @eduagent/edupi --filter @eduagent/launcher test"
+    "lint": "biome check",
+    "format": "biome check --write",
+    "test": "biome check && pnpm --filter @eduagent/visualiser --filter @eduagent/edupi --filter @eduagent/launcher test",
+    "test:e2e": "pnpm --filter @eduagent/visualiser test:e2e"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2"
   }
 }

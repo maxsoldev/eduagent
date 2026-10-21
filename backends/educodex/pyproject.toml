@@ -15,7 +15,7 @@ dependencies = [
 educodex = "educodex.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "textual>=0.80"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff==0.17.1", "textual>=0.80"]
 
 [project.optional-dependencies]
 tui = ["textual>=0.80"]
@@ -31,3 +31,16 @@ packages = ["src/educodex"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["src/educodex/vendor"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify: a common baseline.
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tool descriptions copied verbatim from Codex; keep each one on one line, as in Codex.
+"src/educodex/core/tools/specs.py" = ["E501"]
+"spikes/probe_openrouter.py" = ["E501"]

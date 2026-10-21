@@ -21,8 +21,15 @@ from educodex.core.tools.registry import ToolCall, ToolError, TurnAborted
 if TYPE_CHECKING:
     from educodex.core.turn import TurnContext
 
-SANDBOX_DENIAL_HINTS = ("operation not permitted", "permission denied", "read-only file system", "seccomp",
-                        "sandbox", "landlock", "failed to write file")
+SANDBOX_DENIAL_HINTS = (
+    "operation not permitted",
+    "permission denied",
+    "read-only file system",
+    "seccomp",
+    "sandbox",
+    "landlock",
+    "failed to write file",
+)
 
 
 def _is_likely_sandbox_denied(output: str, exit_code: int | None) -> bool:
@@ -32,7 +39,9 @@ def _is_likely_sandbox_denied(output: str, exit_code: int | None) -> bool:
 
 async def _approve(ctx: "TurnContext", method: str, item_id: str, params: dict[str, Any]) -> tuple[str, Any]:
     """Ask the client. Returns (accept | acceptForSession | acceptWithExecpolicyAmendment | decline, raw)."""
-    decision, raw = await ctx.request_approval(method, {"threadId": ctx.thread_id, "turnId": ctx.turn_id, "itemId": item_id, **params})
+    decision, raw = await ctx.request_approval(
+        method, {"threadId": ctx.thread_id, "turnId": ctx.turn_id, "itemId": item_id, **params}
+    )
     if decision == "cancel":
         raise TurnAborted("cancelled at approval prompt")
     return decision, raw
@@ -56,14 +65,36 @@ class ExecCommandHandler:
 
         # Session approvals remember the command *and* where/how it runs (Codex keys on more than the text).
         approval_key = f"{workdir}\0{escalate}\0{resolve_shell(args.get('shell'))}\0{cmd}"
-        decision = decide_exec(cmd, config.approval_policy, config.sandbox_mode, ctx.rules, escalate,
-                               {cmd} if approval_key in ctx.approved_commands else set())
-        await ctx.probe.policy_decision(ctx, tool="exec_command", decision=decision.decision, sandboxed=decision.sandboxed,
-                                        reason=decision.reason, matched_rules=decision.matched_rules, command=cmd)
+        decision = decide_exec(
+            cmd,
+            config.approval_policy,
+            config.sandbox_mode,
+            ctx.rules,
+            escalate,
+            {cmd} if approval_key in ctx.approved_commands else set(),
+        )
+        await ctx.probe.policy_decision(
+            ctx,
+            tool="exec_command",
+            decision=decision.decision,
+            sandboxed=decision.sandboxed,
+            reason=decision.reason,
+            matched_rules=decision.matched_rules,
+            command=cmd,
+        )
 
-        item = {"type": "commandExecution", "id": call.call_id, "command": cmd, "cwd": str(workdir),
-                "processId": None, "status": "inProgress", "commandActions": [], "aggregatedOutput": "",
-                "exitCode": None, "durationMs": None}
+        item = {
+            "type": "commandExecution",
+            "id": call.call_id,
+            "command": cmd,
+            "cwd": str(workdir),
+            "processId": None,
+            "status": "inProgress",
+            "commandActions": [],
+            "aggregatedOutput": "",
+            "exitCode": None,
+            "durationMs": None,
+        }
         await ctx.item_started(item)
 
         sandboxed = decision.sandboxed
@@ -75,11 +106,25 @@ class ExecCommandHandler:
             return await self._finish(ctx, item, "declined", f"exec command rejected: {decision.reason}")
         if needs_prompt:
             proposed = valid_prefix_rule(args.get("prefix_rule"), cmd) if escalate else None
-            choices = ["accept", "acceptForSession", *(["acceptWithExecpolicyAmendment"] if proposed else []), "decline", "cancel"]
-            answer, raw = await _approve(ctx, "item/commandExecution/requestApproval", call.call_id, {
-                "command": cmd, "cwd": str(workdir), "reason": args.get("justification") or decision.reason,
-                "proposedExecpolicyAmendment": proposed, "availableDecisions": choices,
-            })
+            choices = [
+                "accept",
+                "acceptForSession",
+                *(["acceptWithExecpolicyAmendment"] if proposed else []),
+                "decline",
+                "cancel",
+            ]
+            answer, raw = await _approve(
+                ctx,
+                "item/commandExecution/requestApproval",
+                call.call_id,
+                {
+                    "command": cmd,
+                    "cwd": str(workdir),
+                    "reason": args.get("justification") or decision.reason,
+                    "proposedExecpolicyAmendment": proposed,
+                    "availableDecisions": choices,
+                },
+            )
             if answer not in ("accept", "acceptForSession", "acceptWithExecpolicyAmendment"):
                 return await self._finish(ctx, item, "declined", "exec command rejected by user")
             if answer == "acceptForSession":
@@ -95,12 +140,15 @@ class ExecCommandHandler:
         argv = [shell, "-lc" if args.get("login", True) else "-c", cmd]
         env = None
         if sandboxed and seatbelt.available():
-            sb = seatbelt.build(argv, config.sandbox_mode, config.cwd, config.network_access,
-                               config.exclude_tmp_writable_roots)
+            sb = seatbelt.build(
+                argv, config.sandbox_mode, config.cwd, config.network_access, config.exclude_tmp_writable_roots
+            )
             await ctx.probe.sandbox_command(ctx, sb.argv, sb.policy, sb.params)
             argv, env = sb.argv, seatbelt.sandbox_env(config.network_access)
         elif sandboxed:
-            await ctx.probe.sandbox_command(ctx, argv, None, {}, warning="no OS sandbox on this platform; running unsandboxed")
+            await ctx.probe.sandbox_command(
+                ctx, argv, None, {}, warning="no OS sandbox on this platform; running unsandboxed"
+            )
 
         async def stream(delta: str) -> None:
             await ctx.emit("item/commandExecution/outputDelta", itemId=call.call_id, delta=delta)
@@ -112,7 +160,9 @@ class ExecCommandHandler:
         item.update(processId=result.session_id, exitCode=result.exit_code, aggregatedOutput=result.output)
         if sandboxed and _is_likely_sandbox_denied(result.output, result.exit_code):
             await ctx.probe.sandbox_denied(ctx, cmd, result.exit_code)
-        text = format_exec_output(result.output, result.wall_time, result.exit_code, _max_tokens(args, ctx), result.session_id)
+        text = format_exec_output(
+            result.output, result.wall_time, result.exit_code, _max_tokens(args, ctx), result.session_id
+        )
         if result.session_id is not None:
             # Still running: the item completes later, when write_stdin sees the process exit.
             ctx.session.running_items[result.session_id] = item
@@ -141,15 +191,21 @@ class WriteStdinHandler:
         except (KeyError, ValueError, TypeError, BrokenPipeError, ConnectionResetError) as err:
             raise ToolError(f"write_stdin failed: {err}") from err
         item = ctx.session.running_items.get(session_id)
-        await ctx.emit("item/commandExecution/terminalInteraction", itemId=item["id"] if item else call.call_id,
-                       processId=session_id, stdin=args.get("chars") or "")
+        await ctx.emit(
+            "item/commandExecution/terminalInteraction",
+            itemId=item["id"] if item else call.call_id,
+            processId=session_id,
+            stdin=args.get("chars") or "",
+        )
         if item is not None:
             item["aggregatedOutput"] += result.output
             if result.exit_code is not None:  # the original exec_command item is finished now
                 del ctx.session.running_items[session_id]
                 item.update(exitCode=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
                 await ctx.item_completed(item)
-        return format_exec_output(result.output, result.wall_time, result.exit_code, _max_tokens(args, ctx), result.session_id)
+        return format_exec_output(
+            result.output, result.wall_time, result.exit_code, _max_tokens(args, ctx), result.session_id
+        )
 
 
 class ApplyPatchHandler:
@@ -166,20 +222,37 @@ class ApplyPatchHandler:
             planned = plan_changes(patch, ctx.config.cwd)
         except PatchError as err:  # Codex returns the bare error text here
             return f"apply_patch verification failed: {err}"
-        changes = [{"path": c.path, "kind": {"type": c.kind, **({"move_path": c.move_path} if c.move_path else {})},
-                    "diff": c.diff} for c, _ in planned]
+        changes = [
+            {
+                "path": c.path,
+                "kind": {"type": c.kind, **({"move_path": c.move_path} if c.move_path else {})},
+                "diff": c.diff,
+            }
+            for c, _ in planned
+        ]
         item = {"type": "fileChange", "id": call.call_id, "changes": changes, "status": "inProgress"}
         await ctx.item_started(item)
 
         paths = [w.path for _, writes in planned for w in writes]
-        roots = [Path(r).resolve() for r in seatbelt.writable_roots(ctx.config.cwd, ctx.config.exclude_tmp_writable_roots)]
+        roots = [
+            Path(r).resolve() for r in seatbelt.writable_roots(ctx.config.cwd, ctx.config.exclude_tmp_writable_roots)
+        ]
         decision = decide_patch(paths, ctx.config.approval_policy, ctx.config.sandbox_mode, roots)
-        await ctx.probe.policy_decision(ctx, tool="apply_patch", decision=decision.decision, sandboxed=False,
-                                        reason=decision.reason, matched_rules=[], paths=[str(p) for p in paths])
+        await ctx.probe.policy_decision(
+            ctx,
+            tool="apply_patch",
+            decision=decision.decision,
+            sandboxed=False,
+            reason=decision.reason,
+            matched_rules=[],
+            paths=[str(p) for p in paths],
+        )
         if decision.decision == "forbidden":
             return await self._done(ctx, item, "declined", f"patch rejected: {decision.reason}", started, 1)
         if decision.decision == "prompt" and not ctx.patch_paths_approved_for_session(paths):
-            answer, _ = await _approve(ctx, "item/fileChange/requestApproval", call.call_id, {"reason": decision.reason})
+            answer, _ = await _approve(
+                ctx, "item/fileChange/requestApproval", call.call_id, {"reason": decision.reason}
+            )
             if answer not in ("accept", "acceptForSession"):
                 return await self._done(ctx, item, "declined", "patch rejected by user", started, 1)
             if answer == "acceptForSession":
@@ -257,4 +330,3 @@ def builtin_handlers(include_plan_tool: bool, apply_patch_tool_type: str | None 
     if apply_patch_tool_type:
         handlers.append(ApplyPatchHandler())
     return handlers
-

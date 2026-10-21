@@ -29,7 +29,9 @@ class Config:
     developer_instructions: str | None = None
     base_instructions: str | None = None  # overrides the model catalog prompt
     include_plan_tool: bool = True  # off by default in Codex ([tools.update_plan] enabled = true)
-    home: Path = field(default_factory=lambda: Path(os.environ.get("EDUCODEX_HOME", Path.home() / ".eduagent" / ".educodex")))
+    home: Path = field(
+        default_factory=lambda: Path(os.environ.get("EDUCODEX_HOME", Path.home() / ".eduagent" / ".educodex"))
+    )
     mcp_servers: dict[str, dict] = field(default_factory=dict)  # name -> {"command": ..., "args": [...]}
     rules: list[dict] = field(default_factory=list)  # exec policy prefix rules
     hooks: dict[str, list[str]] = field(default_factory=dict)  # event -> shell commands

@@ -18,7 +18,13 @@ def test_exec_output_format():
     text = format_exec_output("5\n", 0.0982, 0, 10_000)
     lines = text.splitlines()
     assert lines[0].startswith("Chunk ID: ")
-    assert lines[1:] == ["Wall time: 0.0982 seconds", "Process exited with code 0", "Original token count: 1", "Output:", "5"]
+    assert lines[1:] == [
+        "Wall time: 0.0982 seconds",
+        "Process exited with code 0",
+        "Original token count: 1",
+        "Output:",
+        "5",
+    ]
     running = format_exec_output("", 10.0, None, 10_000, session_id=1001)
     assert "Process running with session ID 1001" in running
 
