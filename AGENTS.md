@@ -8,10 +8,11 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 |---|---|
 | `backends/educodex/` | educodex, the Codex backend (Python): `src/educodex/`, `tests/`, `scripts/`, `examples/`, `spikes/`, `pyproject.toml`, `uv.lock` |
 | `visualiser/` | The shared web UI (React, Vite, Playwright tests in `e2e/`) |
+| `launcher/` | Serves the visualiser and starts one stdio backend per viewer (TypeScript, tsx). Backend list in `backends.json`; `backends.local.json` is git-ignored; `backends.test.json` is for Playwright |
 | `docs/guide/<backend>/` | The guide, one section per backend (`docs/guide/educodex/` now) |
 | `docs/design.md` | educodex design |
 | `docs/adr/`, `GLOSSARY.md` | Architecture decisions and domain terms for the suite |
-| `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`) |
+| `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`, `launcher`) |
 
 ## Harness sources
 
@@ -42,7 +43,8 @@ Guide links use the pinned commit.
 ```bash
 cd backends/educodex && uv run --group dev pytest   # educodex Python tests
 pnpm install && pnpm build                          # at the repo root: build the visualiser
-pnpm test:e2e                                       # at the repo root: Playwright tests for the visualiser
+pnpm test:e2e                                       # at the repo root: Playwright tests (starts the launcher with backends.test.json)
+pnpm eduagent                                       # at the repo root: start the launcher on http://127.0.0.1:8765
 ```
 
 ## Agent skills

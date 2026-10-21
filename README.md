@@ -2,6 +2,20 @@
 
 Readable re-implementations of real coding-agent harnesses, with one web UI (the visualiser) that shows every hidden step. The first backend is **educodex**, below. The repo layout is in [`AGENTS.md`](AGENTS.md#repo-layout).
 
+## Start the launcher
+
+The launcher serves the visualiser and starts one backend process for each viewer (browser tab). It needs Node 22.19 or newer, pnpm and [uv](https://docs.astral.sh/uv/).
+
+```bash
+echo 'OPENROUTER_API_KEY=sk-or-...' > .env   # at the repo root; the launcher passes it to every backend
+pnpm install && pnpm build                    # build the visualiser once
+pnpm eduagent                                 # open http://127.0.0.1:8765
+```
+
+Pick a backend and a working directory (prefilled with the directory where you ran `pnpm eduagent`), then click **Open**. To compare backends, open a second tab and pick another one. Each tab gets its own process; closing the tab stops it. Options: `--port 8765`, `--cwd DIR` (the prefilled directory), `--config FILE` (relative to `launcher/`).
+
+The backends are listed in [`launcher/backends.json`](launcher/backends.json). Each entry has a `name`, the `harness` it re-implements, the `protocol` it speaks, the `command` to run (an argv list, no shell, `${REPO}` and `${ENV_VAR}` are replaced), an optional `env`, and `capabilities`. For machine-specific entries, create `launcher/backends.local.json` in the same format. It is git-ignored, and an entry there replaces the shared entry with the same name. For the visualiser's hot reload, run `pnpm --filter @eduagent/visualiser dev` next to the launcher; Vite forwards `/backends` and `/guide` to it.
+
 ## educodex
 
 **An educational Python re-implementation of the [OpenAI Codex](https://github.com/openai/codex) harness, in which every hidden step is visible.**
@@ -31,12 +45,14 @@ uv sync --group dev
 # One task in the terminal, printing every step (-v adds raw JSON)
 uv run educodex exec --cwd /path/to/project "Fix the failing test"
 
-# The web UI
-(cd ../.. && pnpm install && pnpm build)
-uv run educodex app-server --cwd /path/to/project     # open http://127.0.0.1:8765
+# The web UI: start the launcher at the repo root (see above) and pick educodex
+(cd ../.. && pnpm install && pnpm build && pnpm eduagent --cwd /path/to/project)
 
-# Offline demo: a scripted fake model, no API key needed
-uv run educodex app-server --cwd /tmp/demo --fake-model examples/fake/demo.json
+# The app server alone, speaking JSONL on stdin/stdout (what the launcher runs)
+uv run educodex app-server --listen stdio://
+
+# Offline: a scripted fake model, no API key needed
+uv run educodex exec --cwd /tmp/demo --fake-model examples/fake/demo.json "go"
 
 # The terminal UI (it uses the same protocol as the web UI, over stdio)
 uv run --group dev educodex tui --cwd /path/to/project
@@ -69,7 +85,7 @@ Turn on **step mode** to pause before every model request and tool call.
 
 ```bash
 cd backends/educodex && uv run --group dev pytest   # core, policy, sandbox, MCP, app server, TUI
-pnpm test:e2e                                       # at the repo root. Playwright: drives the web UI against the fake model
+pnpm test:e2e                                       # at the repo root. Playwright: the launcher with launcher/backends.test.json (fake model)
 ```
 
 ## Layout
