@@ -30,6 +30,15 @@
       "capabilities": ["trace"]
     },
     {
+      "name": "edupi-tools",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi with a faux script that calls pi's tools (backends/edupi/examples/faux/tools.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/tools.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
+      "capabilities": ["trace"]
+    },
+    {
       "name": "pi-replay",
       "harness": "pi",
       "protocol": "pi-rpc",

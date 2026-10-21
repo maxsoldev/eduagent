@@ -2,6 +2,7 @@
 // model and stream event types that every layer above the provider uses.
 // edupi keeps one API ("openai-completions") and one provider ("openrouter"), so Api and
 // ProviderId are plain strings and Model has no per-API compat generics.
+import type { TSchema } from "typebox";
 
 export type Api = string; // edupi: always "openai-completions"
 export type ProviderId = string; // edupi: always "openrouter"
@@ -48,11 +49,16 @@ export interface Usage {
 
 export type StopReason = "pending" | "stop" | "length" | "toolUse" | "error" | "aborted";
 
-/** A tool as the model sees it: name, description and a JSON schema for the arguments. */
+/** A tool as the model sees it: name, description and a typebox schema (plain JSON Schema) for the arguments. */
 export interface Tool {
   name: string;
   description: string;
-  parameters: JsonObject;
+  parameters: TSchema;
+}
+
+/** A tool named in toolsRemoved. */
+export interface ToolReference {
+  name: string;
 }
 
 /**
@@ -64,6 +70,7 @@ export interface SystemMessage {
   content: string | TextContent[];
   sections?: Record<string, string | null>;
   toolsAdded?: Tool[];
+  toolsRemoved?: ToolReference[];
   timestamp: number;
 }
 
@@ -151,7 +158,8 @@ export interface SimpleStreamOptions {
  * the provider works the same without them.
  */
 export interface ProviderProbe {
-  modelRequest?(request: { api: Api; url: string; body: unknown }): void | Promise<void>;
+  /** sessionId: the session the request belongs to (not part of the body). */
+  modelRequest?(request: { api: Api; url: string; body: unknown }, sessionId?: string): void | Promise<void>;
   streamEvent?(event: unknown): void | Promise<void>;
   modelResponse?(message: AssistantMessage): void | Promise<void>;
 }

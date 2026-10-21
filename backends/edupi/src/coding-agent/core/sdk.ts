@@ -8,7 +8,9 @@ import { openRouterModel } from "../../ai/providers/openrouter.ts";
 import type { Model } from "../../ai/types.ts";
 import { AgentSession } from "./agent-session.ts";
 import { convertToLlm } from "./messages.ts";
+import type { Probe } from "./probe.ts";
 import type { SessionManager } from "./session-manager.ts";
+import { createCodingTools } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
   sessionManager: SessionManager;
@@ -16,6 +18,10 @@ export interface CreateAgentSessionOptions {
   model?: Model;
   streamFn: StreamFn;
   getApiKey: (provider: string) => string | undefined;
+  /** Where the tools work. Default: the session's cwd. */
+  cwd?: string;
+  /** edupi: the teaching extras' hooks. */
+  probe?: Probe;
 }
 
 export function createAgentSession(options: CreateAgentSessionOptions): AgentSession {
@@ -34,12 +40,16 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
   let thinkingLevel: ThinkingLevel = hasExistingSession && hasThinkingEntry ? (existingSession.thinkingLevel as ThinkingLevel) : "off";
   if (!model.reasoning) thinkingLevel = "off"; // pi clamps the level to what the model supports
 
+  // pi's default coding tools, working in the session's directory.
+  const tools = createCodingTools(options.cwd ?? sessionManager.getCwd());
+
   const agent = new Agent({
-    initialState: { model, thinkingLevel, messages: existingSession.messages },
+    initialState: { model, thinkingLevel, tools, messages: existingSession.messages },
     convertToLlm,
     streamFn: options.streamFn,
     getApiKey: options.getApiKey,
     sessionId: sessionManager.getSessionId(),
+    probe: options.probe,
   });
 
   // Record the settings, so a reopened session restores them.

@@ -62,6 +62,12 @@ A `NativePart` is `{protocol, type, data}`. `data` has the native shape, and onl
 | `tool` | `fileChange` | file list with diffs |
 | `assistant` | `agentMessage` | the message and its memory citation (only when `memoryCitation` is set) |
 
+pi uses one part:
+
+| Entry | `part.type` | Drawn as |
+|---|---|---|
+| `tool` | `editDiff` | the edit tool's diff (`data: {path, diff, firstChangedLine}`; `diff` is pi's display diff from `result.details.diff` of `tool_execution_end`: `+NN`, `-NN`, ` NN` lines) |
+
 An `Approval` is `{id, part}`: the native request id and the native request as a part. The adapter's `ApprovalCard` draws it and passes the native answer to `adapter.respond`.
 
 ### Timeline events
@@ -167,18 +173,20 @@ Events that mean the same thing have the same name and the same **shared fields*
 | `modelRequest` | just before the HTTP request to the model | `api` (string: `openai-responses` or `openai-completions`), `url` (string), `body` (object: the exact request body) | `inputTokensEstimate` | |
 | `streamEvent` | for each streamed chunk, raw | `event` (object: one Responses SSE event, or one `chat.completion.chunk`) | (only with `thread/start` `traceSse: true`) | |
 | `modelResponse` | when the stream ended | `usage` (object: the harness's usage record), `seconds` (number) | `eventCounts`, `outputItems`, `cost` (the Codex usage is the Responses `usage`) | `stopReason`, `errorMessage` (on errors), `responseId`, `content` (the assistant content blocks); `usage` is pi's `Usage` |
+| `toolDispatch` | a tool call starts | `tool` (string: the tool name), `callId` (string), `parallel` (boolean: the calls of this reply run at the same time) | `kind` (the Responses item type), `arguments` or `input` (custom tools) | `arguments` (object); sent right after pi's `tool_execution_start` |
+| `toolOutput` | a tool call ended | `tool`, `callId`, `output` (string: the text the model reads), `tokens` (number: bytes / 4, rounded up) | | `isError` (boolean), `durationMs` (absent if the call failed before it ran); sent right after pi's `tool_execution_end` |
 
 - `api` picks the request view in the Requests tab: **Chat Completions** messages (`body.messages`: role and content) or **Responses** input items (`body.input`: typed items). A `modelRequest` without `api` is read as `openai-responses`.
 - edupi sends a `modelResponse` for failed requests too (`stopReason: "error"`), but only after a `modelRequest`.
 
-Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `toolDispatch`, `toolOutput`, `loopIteration`, `compactionRequest`, `compacted`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
+Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `loopIteration`, `compactionRequest`, `compacted`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
 
 ### Backend-only events
 
 - educodex: `toolsRegistered` (`tools`), `historyChanged`, `pricing` (`pricing.perMillionTokens`), `cost` (`last`, `total`, `inputItems`), `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `hook`, `mcpToolsListed`, `mcpToolExposed`, `mcpServerFailed`, `skillInjected`, and the memory events.
-- edupi: none yet.
+- edupi: `toolsRegistered` (`tools`: the Chat Completions tool specs of the request, as sent). Same name and field as educodex's, so the Tools tab reads both; edupi sends it just before a `modelRequest` whose tools are new for the session.
 
-The visualiser reacts to `pricing`, `cost`, `paused` and `resumed` (view reducer) and reads `modelRequest`, `modelResponse` (Requests tab) and `toolsRegistered` (Tools tab).
+The visualiser reacts to `pricing`, `cost`, `paused` and `resumed` (view reducer) and reads `modelRequest`, `modelResponse` (Requests tab), `toolsRegistered`, `toolDispatch` and `toolOutput` (Tools tab).
 
 ### Fixtures
 

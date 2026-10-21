@@ -1,0 +1,10 @@
+{
+  "type": "trace",
+  "name": "toolOutput",
+  "tool": "bash",
+  "callId": "call_1",
+  "output": "hi\n",
+  "isError": false,
+  "durationMs": 7,
+  "tokens": 1
+}

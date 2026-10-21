@@ -32,7 +32,9 @@ test("each request is a stateless Chat Completions body on OpenRouter with the w
     stream_options: { include_usage: true },
     store: false,
     max_completion_tokens: 16384,
+    tools: expect.any(Array), // the tools are declared in the transcript; rpc-tools.test.ts checks them
   });
+  expect(first.body.tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(["read", "bash", "edit", "write"]);
   expect(second.body.messages).toEqual([
     { role: "user", content: [{ type: "text", text: "First question?" }] },
     { role: "assistant", content: "First answer." },
