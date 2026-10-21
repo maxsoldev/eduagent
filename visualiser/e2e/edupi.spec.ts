@@ -93,6 +93,46 @@ test("the Requests tab shows an edupi request as Chat Completions messages", asy
   await expect(page.locator('.t-row[data-event="modelResponse"]').first()).toContainText("Model response");
 });
 
+// The test entry "edupi-tools" runs backends/edupi/examples/faux/tools.json: write and bash in
+// parallel, then an edit, then a text reply. The tools run for real in the viewer's directory.
+test("edupi's tool calls show their output and the edit's diff, in the chat and in the Tools tab", async ({ page }) => {
+  await page.goto("/?backend=edupi-tools");
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  await send(page, "Write a greeting script, run a command, then change the greeting.");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(1);
+  await expect(page.getByTestId("agent-message").last()).toHaveText(/changed the greeting/);
+
+  // bash is a shell card with its output; write a generic tool card; edit a diff card.
+  const command = page.getByTestId("command");
+  await expect(command).toContainText("echo start; sleep 0.3; echo end");
+  await expect(command.locator("pre.out")).toHaveText("start\nend\n");
+  await expect(command).toContainText("completed");
+  await expect(page.getByTestId("tool-call").filter({ has: page.locator(".badge", { hasText: "write" }) })).toContainText("Successfully wrote to edupi_greet.py");
+  const edit = page.getByTestId("edit-diff");
+  await expect(edit).toContainText("edupi_greet.py");
+  await expect(edit).toContainText("Successfully replaced 1 block(s) in edupi_greet.py.");
+  await expect(edit.locator(".diff .del")).toHaveText(["-2     print('hi')"]);
+  await expect(edit.locator(".diff .add")).toHaveText(["+2     print('hello from edupi')"]);
+
+  // The Tools tab: the specs the model got, then each call with its output.
+  await page.getByTestId("tab-Tools").click();
+  const tools = page.getByTestId("tools-view");
+  for (const name of ["read", "bash", "edit", "write"]) await expect(tools.locator(".tool-spec summary").getByText(name, { exact: true })).toBeVisible();
+  const calls = tools.getByTestId("tool-dispatch");
+  await expect(calls).toHaveCount(3);
+  await expect(calls.nth(0)).toContainText("write");
+  await expect(calls.nth(0)).toContainText("parallel");
+  await expect(calls.nth(1)).toContainText("bash");
+  await expect(calls.nth(1)).toContainText("start\nend");
+  await expect(calls.nth(2)).toContainText("edit");
+  await expect(calls.nth(2)).toContainText("Successfully replaced 1 block(s)");
+
+  // The timeline explains edupi's tool trace events.
+  await page.getByTestId("tab-Timeline").click();
+  await expect(page.locator('.t-row[data-event="toolDispatch"]').first()).toContainText("Tool call");
+  await expect(page.locator('.t-row[data-event="toolOutput"]').first()).toContainText("Tool output");
+});
+
 test("a manual compaction with custom instructions shows in the chat and the timeline", async ({ page }) => {
   // pi keeps the last 20000 tokens by default, so this short chat would have nothing to compact.
   const home = join(E2E_DIR, "home-edupi-compact", "agent");

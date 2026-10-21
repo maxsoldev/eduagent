@@ -1,0 +1,14 @@
+{
+  "method": "trace/toolOutput",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "tool": "exec_command",
+    "callId": "call_9676d5426b16",
+    "output": "Chunk ID: 3de7d7\nWall time: 0.0212 seconds\nProcess exited with code 0\nOriginal token count: 1\nOutput:\nhi\n",
+    "tokens": 27,
+    "_seq": 26,
+    "_ts": 1792596370.21
+  }
+}

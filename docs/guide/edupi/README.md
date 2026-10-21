@@ -26,7 +26,7 @@ edupi's folders mirror pi's packages. File names follow pi's wherever a file sur
 |---|---|---|
 | `src/ai/` | `packages/ai/src/` | Provider layer: message types, the Chat Completions API, the OpenRouter and faux providers |
 | `src/agent/` | `packages/agent/src/` | Agent layer: the agent loop, the `Agent` class, event types |
-| `src/coding-agent/core/` | `packages/coding-agent/src/core/` | Coding-agent core: `AgentSession`, the session manager and session files, compaction, settings, the model registry |
+| `src/coding-agent/core/` | `packages/coding-agent/src/core/` | Coding-agent core: `AgentSession`, the session manager and session files, the tools (`core/tools/`: read, bash, edit, write), compaction, settings, the model registry |
 | `src/coding-agent/config.ts` | `packages/coding-agent/src/config.ts` | edupi's home: `~/.eduagent/.edupi/agent` (laid out as `~/.pi/agent`), or `$EDUPI_CODING_AGENT_DIR` |
 | `src/coding-agent/modes/` | `packages/coding-agent/src/modes/` | RPC mode over stdio |
 | `src/coding-agent/main.ts` | `packages/coding-agent/src/main.ts` | Arguments and wiring |
@@ -57,6 +57,8 @@ The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-ro
 ] }
 ```
 
+`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/compact.json` has replies for a manual compaction (chapter 07).
+
 List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `compaction` the compact button and `/compact`.
 
 For another model, add `"--model", "<any OpenRouter model id>"` to `command`.
@@ -76,8 +78,9 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json
 | # | Chapter | You will learn | educodex chapter |
 |---|---|---|---|
 | 01 | [The provider API](01-provider-api.md) | Chat Completions vs Responses; OpenRouter as an OpenAI-compatible endpoint; pi's provider layer and its faux provider | [02](../educodex/02-talking-to-a-model.md) |
+| 04 | [Tools](04-tools.md) | pi's read, bash, edit and write; what the model reads vs what the user sees (the edit diff); tool calls run in parallel by default; tools declared in the transcript; how this differs from Codex's tools | [03](../educodex/03-tool-calling.md), [07](../educodex/07-built-in-tools.md) |
 | 06 | [Sessions](06-sessions.md) | pi's session file: a tree of entries with `id` and `parentId`; the context rebuilt from the entries; `new_session` and `get_messages`; how it differs from Codex's rollout files | [16](../educodex/16-session-logs.md) |
 | 07 | [Compaction](07-compaction.md) | pi's three triggers (manual, threshold, overflow); the cut point and split turns; the checkpoint and update prompts; the compaction entry and the request rebuilt from it | [15](../educodex/15-compaction.md) |
 | 08 | [The RPC protocol](08-rpc-protocol.md) | `pi --mode rpc`: commands, responses and events as JSON lines; how they differ from Codex's App Server | [18](../educodex/18-app-server.md) |
 
-Planned chapters, written with their features: 02 the loop and the queues, 03 prompt assembly, 04 tools, 05 skills.
+Planned chapters, written with their features: 02 the loop and the queues, 03 prompt assembly, 05 skills.

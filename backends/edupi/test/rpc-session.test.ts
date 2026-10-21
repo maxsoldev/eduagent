@@ -51,7 +51,7 @@ test("a prompt writes pi's session file: header, model and thinking level, then 
 
   const entries = readEntries(before.sessionFile);
   expect(entries.map((e) => (e.type === "message" ? `message ${e.message.role}` : e.type))).toEqual([
-    "session", "model_change", "thinking_level_change", "message user", "message assistant",
+    "session", "model_change", "thinking_level_change", "message system", "message user", "message assistant",
   ]);
   expect(entries[0]).toEqual({ type: "session", version: 3, id: before.sessionId, timestamp: expect.stringMatching(ISO), cwd: edupi.dir });
   expect(entries[1]).toMatchObject({ type: "model_change", parentId: null, provider: "openrouter", modelId: "openai/gpt-6-luna" });
@@ -61,8 +61,9 @@ test("a prompt writes pi's session file: header, model and thinking level, then 
     expect(entry.timestamp).toMatch(ISO);
     expect(entry.parentId).toBe(i === 0 ? null : entries[i].id); // one linear branch: each entry's parent is the one before
   }
-  expect(entries[3].message).toEqual({ role: "user", content: [{ type: "text", text: "Hello?" }], timestamp: expect.any(Number) });
-  expect(entries[4].message).toMatchObject({ role: "assistant", content: [{ type: "text", text: "Hello back." }], stopReason: "stop" });
+  expect(entries[3].message).toMatchObject({ role: "system", content: "", toolsAdded: expect.any(Array) });
+  expect(entries[4].message).toEqual({ role: "user", content: [{ type: "text", text: "Hello?" }], timestamp: expect.any(Number) });
+  expect(entries[5].message).toMatchObject({ role: "assistant", content: [{ type: "text", text: "Hello back." }], stopReason: "stop" });
 });
 
 test("get_messages returns the session's messages, as get_state counts them", async () => {
@@ -73,10 +74,11 @@ test("get_messages returns the session's messages, as get_state counts them", as
   await prompt("Two?");
 
   const { data } = await edupi.command("get_messages");
-  expect(data.messages.map((m: Message) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
-  expect(data.messages[2]).toEqual({ role: "user", content: [{ type: "text", text: "Two?" }], timestamp: expect.any(Number) });
-  expect(data.messages[3]).toMatchObject({ role: "assistant", content: [{ type: "text", text: "Second answer." }] });
-  expect((await edupi.command("get_state")).data.messageCount).toBe(4);
+  // The tools are declared once, in a system message before the first prompt.
+  expect(data.messages.map((m: Message) => m.role)).toEqual(["system", "user", "assistant", "user", "assistant"]);
+  expect(data.messages[3]).toEqual({ role: "user", content: [{ type: "text", text: "Two?" }], timestamp: expect.any(Number) });
+  expect(data.messages[4]).toMatchObject({ role: "assistant", content: [{ type: "text", text: "Second answer." }] });
+  expect((await edupi.command("get_state")).data.messageCount).toBe(5);
 });
 
 test("new_session starts a fresh session in a new file; the old file stays as it was", async () => {
@@ -103,7 +105,8 @@ test("new_session starts a fresh session in a new file; the old file stays as it
   expect(readFileSync(old.sessionFile, "utf8")).toBe(oldFile);
   const entries = readEntries(fresh.sessionFile);
   expect(entries[0]).toMatchObject({ type: "session", id: fresh.sessionId });
-  expect(entries.filter((e) => e.type === "message").map((e) => e.message.content[0].text)).toEqual(["New question?", "New answer."]);
+  expect(entries.filter((e) => e.type === "message").map((e) => e.message.content[0]?.text ?? e.message.role))
+    .toEqual(["system", "New question?", "New answer."]); // the new session declares the tools again
   expect(readdirSync(join(old.sessionFile, ".."))).toHaveLength(2);
 });
 
@@ -181,7 +184,7 @@ test("--continue reopens the newest session of the working directory", async () 
 
   edupi = startEdupi({ responses: ["Yes."] }, ["--continue"], { dir: edupi.dir });
   const state = (await edupi.command("get_state")).data;
-  expect(state).toMatchObject({ sessionId: first.sessionId, sessionFile: first.sessionFile, messageCount: 2 });
+  expect(state).toMatchObject({ sessionId: first.sessionId, sessionFile: first.sessionFile, messageCount: 3 });
   await prompt("Do you remember?");
   expect(edupi.requests().at(-1)!.body.messages.map((m: Message) => m.role)).toEqual(["user", "assistant", "user"]);
 });
@@ -191,6 +194,6 @@ test("--no-session keeps the session in memory and writes no file", async () => 
   await prompt("Hello?");
   const state = (await edupi.command("get_state")).data;
   expect(state.sessionFile).toBeUndefined();
-  expect(state.messageCount).toBe(2);
+  expect(state.messageCount).toBe(3); // system (tools), user, assistant
   expect(existsSync(join(edupi.dir, "home", "agent", "sessions"))).toBe(false);
 });

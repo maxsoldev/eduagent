@@ -12,6 +12,7 @@ import type { ModelRegistry } from "./model-registry.ts";
 import type { Probe } from "./probe.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
+import { createCodingTools } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
   sessionManager: SessionManager;
@@ -22,6 +23,9 @@ export interface CreateAgentSessionOptions {
   streamFn: StreamFn;
   getApiKey: (provider: string) => string | undefined;
   settingsManager: SettingsManager;
+  /** Where the tools work. Default: the session's cwd. */
+  cwd?: string;
+  /** edupi: the teaching extras' hooks. */
   probe?: Probe;
 }
 
@@ -41,12 +45,16 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
   let thinkingLevel: ThinkingLevel = hasExistingSession && hasThinkingEntry ? (existingSession.thinkingLevel as ThinkingLevel) : "off";
   if (!model.reasoning) thinkingLevel = "off"; // pi clamps the level to what the model supports
 
+  // pi's default coding tools, working in the session's directory.
+  const tools = createCodingTools(options.cwd ?? sessionManager.getCwd());
+
   const agent = new Agent({
-    initialState: { model, thinkingLevel, messages: existingSession.messages },
+    initialState: { model, thinkingLevel, tools, messages: existingSession.messages },
     convertToLlm,
     streamFn: options.streamFn,
     getApiKey: options.getApiKey,
     sessionId: sessionManager.getSessionId(),
+    probe: options.probe,
   });
 
   // Record the settings, so a reopened session restores them.

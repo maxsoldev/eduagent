@@ -16,8 +16,9 @@ afterEach(async () => {
   await edupi?.close();
 });
 
-test("edupi's model trace events match the protocol fixtures", async () => {
-  edupi = startEdupi({ responses: ["Hello there."] });
+test("edupi's model and tool trace events match the protocol fixtures", async () => {
+  const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "echo hi" } };
+  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] });
   edupi.sendLine(JSON.stringify({ type: "prompt", message: "Hi?" }));
   await edupi.until("agent_settled");
 
@@ -25,9 +26,13 @@ test("edupi's model trace events match the protocol fixtures", async () => {
     edupi.seen.find((m) => m.type === "trace" && m.name === name && where(m));
   const actual: Record<string, Message | undefined> = { // the compaction events are in the next test
     modelRequest: first("modelRequest"),
+    toolDispatch: first("toolDispatch"),
+    toolOutput: first("toolOutput"),
     streamEvent: first("streamEvent", (m) => Boolean(m.event.choices[0]?.delta?.content)), // a text chunk, as in the fixture
     modelResponse: first("modelResponse"),
   };
+  // Every shared event is checked: the compaction events in the next test.
+  expect([...Object.keys(actual), "compactionRequest", "compacted"].sort()).toEqual(Object.keys(shared).sort());
   for (const [name, message] of Object.entries(actual)) {
     expect(message, name).toBeDefined();
     expect(shapeErrors(fixture(name), message), name).toEqual([]);

@@ -21,5 +21,16 @@
     "summary": "string",
     "tokensBefore": "number",
     "tokensAfter": "number"
+  },
+  "toolDispatch": {
+    "tool": "string",
+    "callId": "string",
+    "parallel": "boolean"
+  },
+  "toolOutput": {
+    "tool": "string",
+    "callId": "string",
+    "output": "string",
+    "tokens": "number"
   }
 }

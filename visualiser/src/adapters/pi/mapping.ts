@@ -81,12 +81,15 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
     return out;
   };
 
-  // pi's tools: bash is a shell tool; read, edit and write work on one path.
+  // pi's tools: bash is a shell tool; read, edit and write work on one path. A finished edit
+  // carries its diff in result.details (for the user, not the model): it becomes a pi part.
   function toolEntry(m: Json, output: string, status: ToolStatus): ViewAction {
     const args = (tools[m.toolCallId] ??= m.args ?? {});
+    const diff = m.toolName === "edit" ? m.result?.details?.diff : undefined;
     const entry: Entry = { kind: "tool", id: m.toolCallId, name: m.toolName, toolKind: m.toolName === "bash" ? "shell" : "other",
       title: args.command ?? args.path ?? m.toolName, arguments: args, output, status, streaming: status === "running",
-      exitCode: m.result?.structuredContent?.exit_code };
+      exitCode: m.result?.structuredContent?.exit_code,
+      ...(typeof diff === "string" ? { part: { protocol: PROTOCOL, type: "editDiff", data: { path: args.path, diff, firstChangedLine: m.result.details.firstChangedLine } } } : {}) };
     batch = [...batch.filter((t) => t.id !== entry.id), entry];
     return { type: "entry", entry };
   }

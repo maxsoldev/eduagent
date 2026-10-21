@@ -318,6 +318,8 @@ function Tools({ events, ex, links, mcp }: { events: TimelineEvent[]; ex: Explai
   const reg = traced(events, "toolsRegistered").at(-1);
   const listed = mcp ? traced(events, "mcpToolsListed") : [];
   const exposed = traced(events, "mcpToolExposed");
+  const dispatched = traced(events, "toolDispatch");
+  const outputs = traced(events, "toolOutput");
   if (!reg) return <p className="muted">No tools yet.</p>;
   return (
     <div data-testid="tools-view">
@@ -329,6 +331,22 @@ function Tools({ events, ex, links, mcp }: { events: TimelineEvent[]; ex: Explai
             <summary><code>{name}</code> <span className="muted">{t.type}{t.type === "namespace" ? ` · ${t.tools.length} tools` : ""}</span></summary>
             <JsonView value={t} open={2} />
           </details>
+        );
+      })}
+      {dispatched.length > 0 && <>
+        <h4>Tool calls: what the harness ran and what the model read back</h4>
+        <p className="explain"><Links ex={ex} links={links} name="toolDispatch" /></p>
+      </>}
+      {dispatched.map((d) => {
+        const out = outputs.find((o) => o.data.callId === d.data.callId);
+        return (
+          <div key={d.seq} className="tool-dispatch" data-testid="tool-dispatch">
+            <div className="t-head"><code>{d.data.tool}</code> <span className="muted small">{d.data.callId}</span>
+              <span className="badge">{d.data.parallel ? "parallel" : "sequential"}</span>
+              {out && <span className="muted small">{out.data.isError ? "error · " : ""}{out.data.tokens} tok{out.data.durationMs !== undefined ? ` · ${out.data.durationMs} ms` : ""}</span>}</div>
+            <JsonView value={d.data.arguments ?? d.data.input} open={1} />
+            {out ? <pre className={`out small${out.data.isError ? " err" : ""}`}>{out.data.output}</pre> : <div className="muted small">running…</div>}
+          </div>
         );
       })}
       {listed.map((l) => {

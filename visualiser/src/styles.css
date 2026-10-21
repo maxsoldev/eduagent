@@ -141,6 +141,7 @@ pre.diff .add { color: var(--ok); } pre.diff .del { color: var(--bad); } pre.dif
 .tool-spec { border-bottom: 1px solid #1a2430; padding: 4px 0; } .tool-spec summary { cursor: pointer; }
 .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .guard-row { padding: 4px 0 6px; border-bottom: 1px solid #1a2430; }
+.tool-dispatch { padding: 4px 0 6px; border-bottom: 1px solid #1a2430; } .tool-dispatch .t-head { display: flex; gap: 8px; align-items: center; }
 .guard-row.prompt .t-sum { color: var(--warn); } .guard-row.forbidden .t-sum { color: var(--bad); } .guard-row.allow .t-sum { color: var(--ok); }
 .dir { width: 14px; font-weight: 700; } .dir.out { color: var(--accent); } .dir.in { color: var(--ok); }
 .filter { width: 100%; margin-bottom: 6px; }

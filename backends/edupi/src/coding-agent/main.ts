@@ -39,9 +39,10 @@ export async function main(argv: string[]): Promise<void> {
 
   const settingsManager = SettingsManager.create();
   const cwd = process.cwd();
-  const createRuntime = (sessionManager: SessionManager) => createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, probe: tracer });
+  const createRuntime = (sessionManager: SessionManager) =>
+    createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, cwd, probe: tracer });
   const session = createRuntime(createSessionManager(parsed, cwd));
-  // The tracer lives in streamFn, which every session from createRuntime shares, so it survives new_session.
+  // Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
   await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), { connect: (output) => tracer.connect(output) });
 }
 

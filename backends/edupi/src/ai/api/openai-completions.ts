@@ -4,22 +4,30 @@
 // build the request body, stream the chunks and turn them into AssistantMessageEvents.
 import OpenAI from "openai";
 import type {
+  ChatCompletionAssistantMessageParam,
   ChatCompletionChunk,
   ChatCompletionContentPart,
   ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
+  ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type {
   AssistantMessage,
+  Message,
   Model,
   SimpleStreamOptions,
   StopReason,
   SystemMessage,
   TextContent,
+  Tool,
+  ToolCall,
+  ToolResultMessage,
   TranscriptContext,
   Usage,
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
+import { getCurrentTools } from "../utils/transcript.ts";
 
 /** pi's resolved OpenRouter compat values (detectCompat); edupi has no other provider. */
 interface Compat {
@@ -38,6 +46,14 @@ function getClientApiKey(provider: string, apiKey: string | undefined): string {
   if (apiKey) return apiKey;
   throw new Error(`No API key for provider: ${provider}`);
 }
+
+/** If the history has tool calls but no tools are offered now, pi still sends `tools: []`. */
+function hasToolHistory(messages: Message[]): boolean {
+  return messages.some((msg) => msg.role === "toolResult" || (msg.role === "assistant" && msg.content.some((b) => b.type === "toolCall")));
+}
+
+/** A tool call block while it streams: the raw arguments text and the stream index ride along until the end. */
+type StreamingToolCall = ToolCall & { partialArgs?: string; streamIndex?: number };
 
 function emptyUsage(): Usage {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -68,7 +84,7 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       const nextParams = await options?.onPayload?.(params, model);
       if (nextParams !== undefined) params = nextParams as ChatCompletionCreateParamsStreaming;
       requested = true;
-      await options?.probe?.modelRequest?.({ api: model.api, url: `${model.baseUrl}/chat/completions`, body: params });
+      await options?.probe?.modelRequest?.({ api: model.api, url: `${model.baseUrl}/chat/completions`, body: params }, options?.sessionId);
       const openaiStream = await client.chat.completions.create(params, {
         ...(options?.signal ? { signal: options.signal } : {}),
         maxRetries: 0,
@@ -78,7 +94,8 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       let textBlock: TextContent | null = null;
       let hasFinishReason = false;
       const blocks = output.content;
-      const getContentIndex = (block: TextContent) => blocks.indexOf(block);
+      const toolCallBlocksByIndex = new Map<number, StreamingToolCall>();
+      const getContentIndex = (block: (typeof blocks)[number]) => blocks.indexOf(block);
       const ensureTextBlock = () => {
         if (!textBlock) {
           textBlock = { type: "text", text: "" };
@@ -87,9 +104,26 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
         }
         return textBlock;
       };
+      // Tool calls are keyed by the stream's index: the first delta has the id and the name, later ones only argument text.
+      const ensureToolCallBlock = (delta: { index?: number; id?: string; function?: { name?: string } }) => {
+        let block = delta.index !== undefined ? toolCallBlocksByIndex.get(delta.index) : undefined;
+        if (!block) {
+          block = { type: "toolCall", id: delta.id || "", name: delta.function?.name ?? "", arguments: {}, partialArgs: "", streamIndex: delta.index };
+          if (delta.index !== undefined) toolCallBlocksByIndex.set(delta.index, block);
+          blocks.push(block);
+          stream.push({ type: "toolcall_start", contentIndex: getContentIndex(block), partial: output });
+        }
+        return block;
+      };
       const finishBlock = (block: (typeof blocks)[number]) => {
         if (block.type === "text") {
           stream.push({ type: "text_end", contentIndex: blocks.indexOf(block), content: block.text, partial: output });
+        } else if (block.type === "toolCall") {
+          const toolCall = block as StreamingToolCall;
+          Object.assign(toolCall, parseToolCallArguments(toolCall.partialArgs));
+          delete toolCall.partialArgs; // only the parsed arguments are kept
+          delete toolCall.streamIndex;
+          stream.push({ type: "toolcall_end", contentIndex: blocks.indexOf(block), toolCall, partial: output });
         }
       };
 
@@ -117,6 +151,18 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
           const block = ensureTextBlock();
           block.text += choice.delta.content;
           stream.push({ type: "text_delta", contentIndex: getContentIndex(block), delta: choice.delta.content, partial: output });
+        }
+
+        for (const toolCall of choice.delta?.tool_calls ?? []) {
+          const block = ensureToolCallBlock(toolCall);
+          if (!block.id && toolCall.id) block.id = toolCall.id;
+          if (!block.name && toolCall.function?.name) block.name = toolCall.function.name;
+          const delta = toolCall.function?.arguments ?? "";
+          if (delta) {
+            block.partialArgs = (block.partialArgs ?? "") + delta;
+            block.arguments = parseStreamingJson(block.partialArgs, block.arguments);
+          }
+          stream.push({ type: "toolcall_delta", contentIndex: getContentIndex(block), delta, partial: output });
         }
       }
 
@@ -168,6 +214,10 @@ export function buildParams(model: Model, context: TranscriptContext, options: S
   if (compat.supportsStore) params.store = false;
   if (options?.maxTokens) params.max_completion_tokens = options.maxTokens;
   if (options?.temperature !== undefined) params.temperature = options.temperature;
+  // The tools come from the transcript: the system messages declare them.
+  const tools = getCurrentTools(context.messages);
+  if (tools.length > 0) params.tools = convertTools(tools);
+  else if (hasToolHistory(context.messages)) params.tools = [];
   return params;
 }
 
@@ -199,13 +249,41 @@ export function convertMessages(model: Model, context: TranscriptContext, compat
           : { type: "image_url", image_url: { url: `data:${item.mimeType};base64,${item.data}` } });
       if (content.length > 0) params.push({ role: "user", content });
     } else if (msg.role === "assistant") {
+      const assistantMsg: ChatCompletionAssistantMessageParam = { role: "assistant", content: null };
       // Assistant text goes back as one plain string, the Chat Completions standard.
       const text = msg.content.filter((b): b is TextContent => b.type === "text" && b.text.trim().length > 0)
         .map((b) => b.text).join("");
-      if (text.length > 0) params.push({ role: "assistant", content: text });
+      if (text.length > 0) assistantMsg.content = text;
+      const toolCalls = msg.content.filter((b): b is ToolCall => b.type === "toolCall");
+      if (toolCalls.length > 0) {
+        assistantMsg.tool_calls = toolCalls.map((tc) => ({
+          id: tc.id, type: "function" as const, function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+        }));
+      }
+      // Providers refuse an assistant message with neither content nor tool calls (an aborted reply).
+      if (assistantMsg.content === null && !assistantMsg.tool_calls) continue;
+      params.push(assistantMsg);
+    } else if (msg.role === "toolResult") {
+      params.push(convertToolResult(msg));
     }
   }
   return params;
+}
+
+/** One "tool" message per result, answering the call with the same id. Its content is plain text. */
+function convertToolResult(msg: ToolResultMessage): ChatCompletionMessageParam {
+  const text = msg.content.filter((c): c is TextContent => c.type === "text").map((c) => c.text).join("\n");
+  const hasImages = msg.content.some((c) => c.type === "image");
+  const content = text.trim().length > 0 ? text : hasImages ? "(see attached image)" : "(no tool output)";
+  return { role: "tool", content, tool_call_id: msg.toolCallId };
+}
+
+/** Tools as Chat Completions function specs. OpenRouter gets no `strict` field (pi's compat: supportsStrictMode false). */
+function convertTools(tools: Tool[]): ChatCompletionTool[] {
+  return tools.map((tool) => ({
+    type: "function",
+    function: { name: tool.name, description: tool.description, parameters: tool.parameters as Record<string, unknown> },
+  }));
 }
 
 function parseChunkUsage(rawUsage: NonNullable<ChatCompletionChunk["usage"]>, model: Model): Usage {

@@ -3,7 +3,18 @@
 // events, then passes each event to its listeners and awaits them in order.
 import type { ImageContent, Message, Model, TextContent } from "../ai/types.ts";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
-import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentState, StreamFn, ThinkingLevel } from "./types.ts";
+import type {
+  AgentContext,
+  AgentEvent,
+  AgentLoopConfig,
+  AgentMessage,
+  AgentProbe,
+  AgentState,
+  AgentTool,
+  StreamFn,
+  ThinkingLevel,
+  ToolExecutionMode,
+} from "./types.ts";
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
   return messages.filter((m) => m.role === "system" || m.role === "user" || m.role === "assistant" || m.role === "toolResult");
@@ -12,16 +23,19 @@ function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
 const EMPTY_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 export interface AgentOptions {
-  initialState: { model: Model; thinkingLevel?: ThinkingLevel; messages?: AgentMessage[] };
+  initialState: { model: Model; thinkingLevel?: ThinkingLevel; tools?: AgentTool<any>[]; messages?: AgentMessage[] };
   convertToLlm?: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
   streamFn: StreamFn;
   getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
   sessionId?: string;
+  /** Default "parallel", as in pi. */
+  toolExecution?: ToolExecutionMode;
+  probe?: AgentProbe; // edupi: the teaching extras' hooks
 }
 
 type ActiveRun = { promise: Promise<void>; resolve: () => void; abortController: AbortController };
 
-type MutableAgentState = { -readonly [K in keyof AgentState]: AgentState[K] };
+type MutableAgentState = { -readonly [K in keyof AgentState]: AgentState[K] } & { pendingToolCalls: Set<string> };
 
 export class Agent {
   private _state: MutableAgentState;
@@ -33,20 +47,26 @@ export class Agent {
   public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
   /** Session id, forwarded to the provider (OpenRouter session affinity). */
   public sessionId?: string;
+  public toolExecution: ToolExecutionMode;
+  public probe?: AgentProbe;
 
   constructor(options: AgentOptions) {
     this._state = {
       model: options.initialState.model,
       thinkingLevel: options.initialState.thinkingLevel ?? "off",
+      tools: options.initialState.tools?.slice() ?? [],
       messages: options.initialState.messages?.slice() ?? [],
       isStreaming: false,
       streamingMessage: undefined,
+      pendingToolCalls: new Set<string>(),
       errorMessage: undefined,
     };
     this.convertToLlm = options.convertToLlm ?? defaultConvertToLlm;
     this.streamFunction = options.streamFn;
     this.getApiKey = options.getApiKey;
     this.sessionId = options.sessionId;
+    this.toolExecution = options.toolExecution ?? "parallel";
+    this.probe = options.probe;
   }
 
   /** Listeners are awaited in order; the run is idle only after the agent_end listeners finish. */
@@ -104,7 +124,7 @@ export class Agent {
   }
 
   private createContextSnapshot(): AgentContext {
-    return { messages: this._state.messages.slice() };
+    return { messages: this._state.messages.slice(), tools: this._state.tools.slice() };
   }
 
   private createLoopConfig(): AgentLoopConfig {
@@ -114,6 +134,8 @@ export class Agent {
       sessionId: this.sessionId,
       convertToLlm: this.convertToLlm,
       getApiKey: this.getApiKey,
+      toolExecution: this.toolExecution,
+      probe: this.probe,
     };
   }
 
@@ -160,6 +182,7 @@ export class Agent {
   private finishRun(): void {
     this._state.isStreaming = false;
     this._state.streamingMessage = undefined;
+    this._state.pendingToolCalls = new Set<string>();
     this.activeRun?.resolve();
     this.activeRun = undefined;
   }
@@ -174,6 +197,12 @@ export class Agent {
       case "message_end":
         this._state.streamingMessage = undefined;
         this._state.messages.push(event.message);
+        break;
+      case "tool_execution_start":
+        this._state.pendingToolCalls.add(event.toolCallId);
+        break;
+      case "tool_execution_end":
+        this._state.pendingToolCalls.delete(event.toolCallId);
         break;
       case "turn_end":
         if (event.message.role === "assistant" && event.message.errorMessage) this._state.errorMessage = event.message.errorMessage;

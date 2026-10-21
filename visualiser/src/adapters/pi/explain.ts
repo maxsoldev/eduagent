@@ -20,10 +20,10 @@ const EXPLAIN: Record<string, Info> = {
     text: "A message enters the context: the system prompt (first prompt only), your message, the model's reply or a tool result." },
   message_update: { title: "message_update", category: "model", source: LOOP, text: "One streamed piece of the model's reply (text, thinking or tool-call arguments)." },
   message_end: { title: "message_end", category: "model", source: LOOP, text: "The message is complete. This is its final form, as pi stores it in the session file." },
-  tool_execution_start: { title: "Tool call", category: "tools", source: LOOP,
+  tool_execution_start: { title: "Tool call", category: "tools", chapter: "04", source: LOOP,
     text: "pi runs the tool. By default all tool calls of one reply run in parallel." },
-  tool_execution_update: { title: "Tool output so far", category: "tools", source: LOOP, text: "Partial output of a running tool." },
-  tool_execution_end: { title: "Tool result", category: "tools", source: LOOP,
+  tool_execution_update: { title: "Tool output so far", category: "tools", chapter: "04", source: LOOP, text: "Partial output of a running tool." },
+  tool_execution_end: { title: "Tool result", category: "tools", chapter: "04", source: LOOP,
     text: "The tool finished. Ends come in completion order; the tool-result messages then follow in call order." },
   queue_update: { title: "Queue update", category: "loop", source: SESSION,
     text: "The steering and follow-up queues changed. Steering is delivered after the current tools; follow-ups when the agent would stop." },
@@ -38,6 +38,7 @@ const EXPLAIN: Record<string, Info> = {
 
 const PROVIDER = "packages/ai/src/api/openai-completions.ts";
 const COMPACTION = "packages/coding-agent/src/core/compaction/compaction.ts";
+const TOOLS = "packages/coding-agent/src/core/tools/index.ts";
 
 // edupi's trace events (protocol/README.md section 6). Chapter 01 of the edupi guide is the provider API.
 const TRACE: Record<string, Info> = {
@@ -51,6 +52,12 @@ const TRACE: Record<string, Info> = {
     text: "The summary request: pi's summarizer system prompt and one user message, the older conversation as text plus the checkpoint prompt (or the update prompt with the previous summary). A split turn makes a second request for the turn's first part." },
   compacted: { title: "Context compacted", category: "memory", chapter: "07", source: COMPACTION,
     text: "The summary is saved as a compaction entry. messages is the context rebuilt from it: the summary, then the kept messages from firstKeptEntryId on." },
+  toolsRegistered: { title: "Tools registered", category: "tools", chapter: "04", source: TOOLS,
+    text: "The tool specs in this request: pi's read, bash, edit and write as Chat Completions functions. pi declares them in the transcript (a system message's toolsAdded)." },
+  toolDispatch: { title: "Tool call", category: "tools", chapter: "04", source: LOOP,
+    text: "pi starts a tool call. All calls of one reply start first, then run at the same time (parallel is pi's default)." },
+  toolOutput: { title: "Tool output", category: "tools", chapter: "04", source: LOOP,
+    text: "The text the model reads back as a role \"tool\" message. Details such as the edit's diff stay in the user interface." },
 };
 
 function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
@@ -74,6 +81,9 @@ function summary(e: TimelineEvent): string {
     case "thinking_level_changed": return p.level;
     case "compactionRequest": return e.trace ? `${p.reason} · ${p.tokensBefore} tokens before` : "";
     case "compacted": return e.trace ? `${p.reason} · ${p.tokensBefore} → ${p.tokensAfter} tokens · ${p.messages.length} messages` : "";
+    case "toolsRegistered": return e.trace ? p.tools.map((t: Json) => t.function?.name).join(", ") : "";
+    case "toolDispatch": return e.trace ? `${p.tool} ${JSON.stringify(p.arguments).slice(0, 80)}${p.parallel ? " · parallel" : ""}` : "";
+    case "toolOutput": return e.trace ? `${p.tool}${p.isError ? " · error" : ""} → ${p.tokens} tok` : "";
     case "modelRequest": return e.trace ? `${p.body.messages.length} messages · ${p.body.model}` : "";
     case "modelResponse": return e.trace ? `${p.stopReason} · ${p.usage.input} in / ${p.usage.output} out · ${p.seconds}s` : "";
     default: return "";

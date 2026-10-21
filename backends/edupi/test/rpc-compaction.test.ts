@@ -84,6 +84,8 @@ test("manual compaction with custom instructions: pi's events, prompt and compac
     type: "compaction", id: expect.any(String), parentId: file.at(-2)!.id, timestamp: expect.any(String),
     summary: "## Goal\nFIRST SUMMARY", firstKeptEntryId: q2.id, tokensBefore: lastUsage.totalTokens,
     details: { readFiles: [], modifiedFiles: [] }, usage: expect.any(Object),
+    // The current system message: here only pi's tools (edupi has no system prompt yet).
+    systemMessage: { role: "system", content: "", toolsAdded: expect.any(Array), timestamp: Date.parse(compaction.timestamp) },
   });
   expect(response.data.firstKeptEntryId).toBe(q2.id);
 
@@ -96,7 +98,7 @@ test("manual compaction with custom instructions: pi's events, prompt and compac
     user("q3"),
   ]);
   const { messages } = (await edupi.command("get_messages")).data;
-  expect(messages.map((m: Message) => m.role)).toEqual(["compactionSummary", "user", "assistant", "user", "assistant"]);
+  expect(messages.map((m: Message) => m.role)).toEqual(["system", "compactionSummary", "user", "assistant", "user", "assistant"]);
 });
 
 test("compaction follows real pi: a split turn, then the update prompt with the previous summary", async () => {
@@ -220,7 +222,7 @@ test("overflow: the provider refuses the context; edupi drops the failed reply, 
   expect(events.find((m) => m.type === "entry_appended")!.entry).toEqual(edit);
   expect(file.map((e) => e.type).slice(-3)).toEqual(["context_edit", "compaction", "message"]);
   const { messages } = (await edupi.command("get_messages")).data;
-  expect(messages.map((m: Message) => m.role)).toEqual(["compactionSummary", "user", "assistant"]);
+  expect(messages.map((m: Message) => m.role)).toEqual(["system", "compactionSummary", "user", "assistant"]);
 });
 
 test("overflow: a second overflow after the retry gives up with pi's error", async () => {
