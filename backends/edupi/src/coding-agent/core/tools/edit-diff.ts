@@ -1,25 +1,11 @@
 // Mirrors pi packages/coding-agent/src/core/tools/edit-diff.ts (pinned 16f5f0af4): applies the
 // edit tool's replacements and makes the diff the user sees. Every oldText is matched against the
 // original file, so edits cannot depend on each other; they must be unique and must not overlap.
-// edupi leaves out pi's fuzzy match (trailing spaces, smart quotes, Unicode dashes): only exact text matches.
+// edupi leaves out pi's fuzzy match (trailing spaces, smart quotes, Unicode dashes) and its CRLF
+// normalisation: only exact text matches.
 import * as Diff from "diff";
 
-export function detectLineEnding(content: string): "\r\n" | "\n" {
-	const crlfIdx = content.indexOf("\r\n");
-	const lfIdx = content.indexOf("\n");
-	if (lfIdx === -1 || crlfIdx === -1) return "\n";
-	return crlfIdx < lfIdx ? "\r\n" : "\n";
-}
-
-export function normalizeToLF(text: string): string {
-	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string {
-	return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
-}
-
-export interface Edit {
+interface Edit {
 	oldText: string;
 	newText: string;
 }
@@ -29,10 +15,6 @@ interface MatchedEdit {
 	matchIndex: number;
 	matchLength: number;
 	newText: string;
-}
-
-function countOccurrences(content: string, oldText: string): number {
-	return content.split(oldText).length - 1;
 }
 
 /** Replaces from the end, so the offsets of the earlier matches stay valid. */
@@ -45,64 +27,33 @@ function applyReplacements(content: string, replacements: MatchedEdit[]): string
 	return result;
 }
 
-function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
-		);
-	}
-	return new Error(
-		`Could not find edits[${editIndex}] in ${path}. The oldText must match exactly including all whitespace and newlines.`,
-	);
-}
-
-function getDuplicateError(path: string, editIndex: number, totalEdits: number, occurrences: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
-		);
-	}
-	return new Error(
-		`Found ${occurrences} occurrences of edits[${editIndex}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`,
-	);
-}
-
-function getEmptyOldTextError(path: string, editIndex: number, totalEdits: number): Error {
-	return new Error(
-		totalEdits === 1
-			? `oldText must not be empty in ${path}.`
-			: `edits[${editIndex}].oldText must not be empty in ${path}.`,
-	);
-}
-
-function getNoChangeError(path: string, totalEdits: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`,
-		);
-	}
-	return new Error(`No changes made to ${path}. The replacements produced identical content.`);
-}
-
-/** Finds every oldText in the LF-normalized content, checks the rules, then applies all replacements. */
+/**
+ * Finds every oldText in the content, checks pi's rules, then applies all replacements. pi's name:
+ * pi first normalises the line endings to LF. The error texts are pi's (one wording for a single edit).
+ */
 export function applyEditsToNormalizedContent(
-	normalizedContent: string,
+	content: string,
 	edits: Edit[],
 	path: string,
 ): { baseContent: string; newContent: string } {
-	const normalizedEdits = edits.map((edit) => ({
-		oldText: normalizeToLF(edit.oldText),
-		newText: normalizeToLF(edit.newText),
-	}));
-	normalizedEdits.forEach((edit, i) => {
-		if (edit.oldText.length === 0) throw getEmptyOldTextError(path, i, normalizedEdits.length);
-	});
-
-	const matchedEdits: MatchedEdit[] = normalizedEdits.map((edit, i) => {
-		const matchIndex = normalizedContent.indexOf(edit.oldText);
-		if (matchIndex === -1) throw getNotFoundError(path, i, normalizedEdits.length);
-		const occurrences = countOccurrences(normalizedContent, edit.oldText);
-		if (occurrences > 1) throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
+	const single = edits.length === 1;
+	const matchedEdits: MatchedEdit[] = edits.map((edit, i) => {
+		const matchIndex = content.indexOf(edit.oldText);
+		if (matchIndex === -1) {
+			throw new Error(
+				single
+					? `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`
+					: `Could not find edits[${i}] in ${path}. The oldText must match exactly including all whitespace and newlines.`,
+			);
+		}
+		const occurrences = content.split(edit.oldText).length - 1;
+		if (occurrences > 1) {
+			throw new Error(
+				single
+					? `Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`
+					: `Found ${occurrences} occurrences of edits[${i}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`,
+			);
+		}
 		return { editIndex: i, matchIndex, matchLength: edit.oldText.length, newText: edit.newText };
 	});
 
@@ -117,9 +68,15 @@ export function applyEditsToNormalizedContent(
 		}
 	}
 
-	const newContent = applyReplacements(normalizedContent, matchedEdits);
-	if (newContent === normalizedContent) throw getNoChangeError(path, normalizedEdits.length);
-	return { baseContent: normalizedContent, newContent };
+	const newContent = applyReplacements(content, matchedEdits);
+	if (newContent === content) {
+		throw new Error(
+			single
+				? `No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`
+				: `No changes made to ${path}. The replacements produced identical content.`,
+		);
+	}
+	return { baseContent: content, newContent };
 }
 
 /** A standard unified patch (for tools and humans who read patches). */
