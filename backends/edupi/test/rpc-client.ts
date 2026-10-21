@@ -2,7 +2,7 @@
 // protocol to it over stdin/stdout: one JSON object per line. The model is the faux provider,
 // scripted by a JSON file; it records every request body it receives.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,11 +78,20 @@ export class RpcClient {
   }
 }
 
-/** Starts edupi with a faux script, in a fresh temporary directory (also its cwd). */
-export function startEdupi(script: unknown, ...args: string[]): RpcClient {
-  const dir = mkdtempSync(join(tmpdir(), "edupi-test-"));
+export interface StartOptions {
+  /** Directory to run in and to keep faux.json, the request log and the home. Default: a fresh one. */
+  dir?: string;
+}
+
+/**
+ * Starts edupi with a faux script, in a temporary directory (also its cwd). Its home is
+ * <dir>/home/agent, set with EDUPI_CODING_AGENT_DIR, so tests never touch ~/.eduagent.
+ */
+export function startEdupi(script: unknown, args: string[] = [], options: StartOptions = {}): RpcClient {
+  const dir = options.dir ?? realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
   writeFileSync(join(dir, "faux.json"), JSON.stringify(script));
+  const env = { ...process.env, OPENROUTER_API_KEY: "", EDUPI_CODING_AGENT_DIR: join(dir, "home", "agent") };
   const proc = spawn(process.execPath, [BIN, "--mode", "rpc", "--faux", join(dir, "faux.json"),
-    "--faux-log", join(dir, "faux-requests.jsonl"), ...args], { cwd: dir, env: { ...process.env, OPENROUTER_API_KEY: "" } });
+    "--faux-log", join(dir, "faux-requests.jsonl"), ...args], { cwd: dir, env });
   return new RpcClient(proc, dir);
 }

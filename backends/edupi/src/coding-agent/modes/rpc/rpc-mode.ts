@@ -3,7 +3,7 @@
 // optional `id`. Each command gets one {type: "response", command, id, success} line. Every
 // session event goes out as its own line. Lines are handled concurrently, so a slow command does
 // not block a later one, and clients match responses by id.
-import type { AgentSession } from "../../core/agent-session.ts";
+import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { toJsonEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.ts";
@@ -20,8 +20,10 @@ function takeOverStdout(): (line: string, done?: () => void) => void {
   };
 }
 
-export async function runRpcMode(session: AgentSession): Promise<never> {
+export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
   const writeRawStdout = takeOverStdout();
+  let session = runtimeHost.session;
+  let unsubscribe: (() => void) | undefined;
 
   const output = (obj: RpcResponse | object) => writeRawStdout(serializeJsonLine(obj));
 
@@ -34,7 +36,13 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
     return { id, type: "response", command, success: false, error: message };
   };
 
-  session.subscribe((event) => output(toJsonEvent(event)));
+  /** Points the mode at the runtime's current session (it changes on new_session). */
+  const rebindSession = () => {
+    session = runtimeHost.session;
+    unsubscribe?.();
+    unsubscribe = session.subscribe((event) => output(toJsonEvent(event)));
+  };
+  rebindSession();
 
   const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
     const id = command.id;
@@ -67,12 +75,24 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
           isCompacting: session.isCompacting,
           steeringMode: session.steeringMode,
           followUpMode: session.followUpMode,
+          sessionFile: session.sessionFile,
           sessionId: session.sessionId,
           autoCompactionEnabled: session.autoCompactionEnabled,
           messageCount: session.messages.length,
           pendingMessageCount: session.pendingMessageCount,
         };
         return success(id, "get_state", state);
+      }
+
+      case "new_session": {
+        const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
+        const result = await runtimeHost.newSession(options);
+        if (!result.cancelled) rebindSession();
+        return success(id, "new_session", result);
+      }
+
+      case "get_messages": {
+        return success(id, "get_messages", { messages: session.messages });
       }
 
       default: {

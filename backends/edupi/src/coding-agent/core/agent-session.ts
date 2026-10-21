@@ -1,10 +1,12 @@
 // Mirrors pi packages/coding-agent/src/core/agent-session.ts (pinned 16f5f0af4): the coding
 // agent's session around the Agent. Every mode (pi's TUI, print, JSON, RPC) drives an
 // AgentSession. It turns a prompt into a run, forwards the Agent's events with the session's
-// own events added (agent_settled), and answers the state questions of get_state.
+// own events added (agent_settled), saves each finished message to the session file, and
+// answers the state questions of get_state.
 import type { Agent } from "../../agent/agent.ts";
 import type { AgentEvent, AgentMessage } from "../../agent/types.ts";
 import type { ImageContent, Model, ThinkingLevel } from "../../ai/types.ts";
+import type { SessionManager } from "./session-manager.ts";
 
 /** The Agent's events, with willRetry on agent_end, plus the session's own events. */
 export type AgentSessionEvent =
@@ -26,23 +28,30 @@ export interface PromptOptions {
 
 export interface AgentSessionConfig {
   agent: Agent;
-  sessionId: string;
+  sessionManager: SessionManager;
   /** The key for a provider, or undefined if none is configured. */
   getApiKey: (provider: string) => string | undefined;
 }
 
 export class AgentSession {
   readonly agent: Agent;
-  private readonly _sessionId: string;
+  readonly sessionManager: SessionManager;
   private readonly _getApiKey: (provider: string) => string | undefined;
   private _eventListeners: AgentSessionEventListener[] = [];
   private _isAgentRunActive = false; // from _startRun until agent_settled
+  private _unsubscribeAgent: () => void;
 
   constructor(config: AgentSessionConfig) {
     this.agent = config.agent;
-    this._sessionId = config.sessionId;
+    this.sessionManager = config.sessionManager;
     this._getApiKey = config.getApiKey;
-    this.agent.subscribe(this._handleAgentEvent);
+    this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+  }
+
+  /** Stops listening to the Agent and drops the listeners (the session is being replaced). */
+  dispose(): void {
+    this._unsubscribeAgent();
+    this._eventListeners = [];
   }
 
   subscribe(listener: AgentSessionEventListener): () => void {
@@ -58,6 +67,14 @@ export class AgentSession {
 
   private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
     this._emit(event.type === "agent_end" ? { ...event, willRetry: false } : event); // edupi has no auto-retry
+
+    // Each finished message becomes a "message" entry, child of the last entry.
+    if (event.type === "message_end") {
+      const role = event.message.role;
+      if (role === "system" || role === "user" || role === "assistant" || role === "toolResult") {
+        this.sessionManager.appendMessage(event.message);
+      }
+    }
   };
 
   get model(): Model {
@@ -84,8 +101,13 @@ export class AgentSession {
     return "one-at-a-time";
   }
 
+  /** The session file, or undefined with --no-session. It exists once the first message is saved. */
+  get sessionFile(): string | undefined {
+    return this.sessionManager.getSessionFile();
+  }
+
   get sessionId(): string {
-    return this._sessionId;
+    return this.sessionManager.getSessionId();
   }
 
   get messages(): AgentMessage[] {

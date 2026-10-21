@@ -1,4 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { join } from "node:path";
+import { E2E_DIR } from "./env";
 
 // An edupi viewer through the launcher. The test entry "edupi" runs edupi with the faux provider
 // (backends/edupi/examples/faux/demo.json), so no model is called. edupi speaks pi's RPC protocol,
@@ -33,4 +36,29 @@ test("pick edupi in the picker and chat: the reply streams in over pi's RPC prot
     await expect(wire.locator(".t-title").getByText(title, { exact: true }).first()).toBeVisible();
   await wire.getByPlaceholder("filter…").fill("text_delta");
   expect(await wire.locator(".t-title").getByText("message_update", { exact: true }).count()).toBeGreaterThan(2);
+});
+
+test("new thread starts a new edupi session; each session is a pi session file in edupi's home", async ({ page }) => {
+  await page.goto("/?backend=edupi");
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  await send(page, "Session one, please.");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(1);
+
+  await page.getByTestId("new-thread").click();
+  await send(page, "Session two, please.");
+  await expect(page.getByTestId("agent-message").last()).toHaveText(/This is the second reply\./);
+
+  await page.getByTestId("tab-Protocol").click();
+  await expect(page.getByTestId("protocol-view").locator(".t-title").getByText("response new_session", { exact: true })).toBeVisible();
+
+  // The launcher set EDUPI_CODING_AGENT_DIR, so the files are in the test home, laid out as ~/.pi/agent.
+  const ws = realpathSync(join(E2E_DIR, "ws")); // /tmp is /private/tmp on macOS
+  const dir = join(E2E_DIR, "home-edupi", "agent", "sessions", `--${ws.slice(1).replaceAll("/", "-")}--`);
+  const files = readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8"));
+  const one = files.filter((f) => f.includes("Session one, please."));
+  const two = files.filter((f) => f.includes("Session two, please."));
+  expect(one).toHaveLength(1);
+  expect(two).toHaveLength(1);
+  expect(one[0]).not.toContain("Session two, please.");
+  expect(JSON.parse(two[0].split("\n")[0])).toMatchObject({ type: "session", version: 3, cwd: ws });
 });
