@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:e2e": "playwright test",
-    "test": "vitest run"
+    "test": "tsc --noEmit -p tsconfig.test.json && vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "react": "^19.0.0",

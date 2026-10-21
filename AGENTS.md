@@ -52,7 +52,7 @@ Guide links use the pinned commit.
 ```bash
 cd backends/educodex && uv run --group dev pytest   # educodex Python tests
 pnpm install && pnpm build                          # at the repo root: build the visualiser
-pnpm test                                           # at the repo root: vitest for the visualiser and edupi (edupi also typechecks)
+pnpm test                                           # at the repo root: typecheck (visualiser incl. tests, edupi, launcher), then vitest
 pnpm test:e2e                                       # at the repo root: Playwright tests (starts the launcher with backends.test.json)
 pnpm eduagent                                       # at the repo root: start the launcher on http://127.0.0.1:8765
 ```
