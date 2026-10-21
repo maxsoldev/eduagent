@@ -57,7 +57,18 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 
 	// pi's default coding tools, working in the session's directory.
 	const cwd = options.cwd ?? sessionManager.getCwd();
-	const tools = createCodingTools(cwd);
+	// bash reads the session's PI_* variables when a command runs (pi takes them from the tool call's context).
+	const tools = createCodingTools(cwd, {
+		bash: {
+			getSessionEnvironment: () => ({
+				sessionId: sessionManager.getSessionId(),
+				sessionFile: sessionManager.getSessionFile(),
+				provider: agent.state.model.provider,
+				model: agent.state.model.id,
+				thinkingLevel: agent.state.thinkingLevel,
+			}),
+		},
+	});
 
 	// AGENTS.md files, skills and SYSTEM.md, read once per session.
 	const resourceLoader = new DefaultResourceLoader({

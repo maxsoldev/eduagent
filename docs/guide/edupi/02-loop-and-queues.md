@@ -194,12 +194,11 @@ The Codex side: the [loop](https://github.com/openai/codex/blob/1c7c43cd856a1ef4
 ## Where edupi is simpler
 
 - **No `clear_queue`, no queue mode commands.** The modes stay at pi's default `one-at-a-time` (no `set_steering_mode`, `set_follow_up_mode`, no settings for them).
-- **No input handlers or prompt templates.** pi runs extension input handlers and expands `/skill:` and prompt templates on queued text too; edupi queues the text as it is, so the disposition is always `queued`, never `handled`.
+- **No input handlers or prompt templates.** pi runs extension input handlers and expands prompt templates on queued text too; edupi expands only `/skill:` commands (as for `prompt`), so the disposition is always `queued`, never `handled`.
 - **No thinking level map.** pi's OpenRouter catalog has a per-model map from OpenRouter's supported efforts (for example `xhigh`, or no `off`). edupi has none, so every reasoning model supports `off` to `high`, and `off` always sends `{"effort": "none"}`. No thinking budgets, no `cycle_thinking_level`, no saved default level.
 - **No `reasoning_details`.** OpenRouter can also stream structured, sometimes encrypted, reasoning details; pi keeps and replays them. edupi keeps the reasoning text only.
 - **No `prepareRequest` / `finishTurn` hooks** and no explicit continuation. pi's session uses them for its per-request projection, virtual models and extension `turn_end` handlers.
 - **No extension hooks in the loop.** No `transformContext`, `beforeToolCall` / `afterToolCall` (pi's extension `tool_call` / `tool_result` events and image resizing), no `terminate` on tool results (a batch where every result says `terminate` ends the run).
-- **A level change waits for the next run.** edupi's session hook returns only the context, so `set_thinking_level` during a run changes the requests of the next run only.
 - **No model runtime.** The stream function calls the provider directly. pi's goes through `ModelRuntime.streamSimple`, which resolves auth first; so after an abort during a tool, pi's next reply is an `error` and edupi's an `aborted`.
 - **A shorter `transformMessages`.** edupi's copy has pi's two passes (thinking from another model, then dropped replies and synthetic tool results), but no image downgrade and no tool call id normalization: OpenRouter's ids and edupi's text-only models need neither.
 
