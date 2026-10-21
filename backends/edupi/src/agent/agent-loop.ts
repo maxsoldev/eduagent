@@ -12,6 +12,7 @@ import type {
 	AgentMessage,
 	AgentTool,
 	AgentToolCall,
+	AgentToolCallOutcome,
 	AgentToolResult,
 	PrepareNextTurnContext,
 	StreamFn,
@@ -295,10 +296,7 @@ async function streamAssistantResponse(
 	return finalMessage;
 }
 
-type ToolCallOutcome = { toolCall: AgentToolCall; result: AgentToolResult<any>; isError: boolean; durationMs?: number };
-type PreparedToolCall = { kind: "prepared"; toolCall: AgentToolCall; tool: AgentTool<any>; args: unknown };
-type ImmediateToolCallOutcome = { kind: "immediate"; result: AgentToolResult<any>; isError: boolean };
-
+/** Reports every call of a reply cut off by the output token limit as an error, without running it. */
 async function failToolCallsFromTruncatedMessage(
 	toolCalls: AgentToolCall[],
 	emit: AgentEventSink,
@@ -311,7 +309,7 @@ async function failToolCallsFromTruncatedMessage(
 			toolName: toolCall.name,
 			args: toolCall.arguments,
 		});
-		const finalized: ToolCallOutcome = {
+		const finalized: FinalizedToolCallOutcome = {
 			toolCall,
 			result: createErrorToolResult(
 				`Tool call "${toolCall.name}" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`,
@@ -360,13 +358,17 @@ async function executeToolCallsSequential(
 			toolName: toolCall.name,
 			args: toolCall.arguments,
 		});
+		// edupi: the teaching extras see the call, and step mode may pause before it runs.
 		await config.probe?.toolDispatch?.({ toolCall, parallel: false });
 		await config.probe?.checkpoint?.("beforeToolCall", { tool: toolCall.name, callId: toolCall.id }, signal);
 		const preparation = prepareToolCall(currentContext, toolCall, signal);
-		const finalized: ToolCallOutcome =
-			preparation.kind === "immediate"
-				? { toolCall, result: preparation.result, isError: preparation.isError }
-				: { toolCall, ...(await executePreparedToolCall(preparation, signal, emit)) };
+		let finalized: FinalizedToolCallOutcome;
+		if (preparation.kind === "immediate") {
+			finalized = { toolCall, result: preparation.result, isError: preparation.isError };
+		} else {
+			const executed = await executePreparedToolCall(preparation, signal, emitToolExecutionUpdate(toolCall, emit));
+			finalized = { toolCall, ...executed };
+		}
 		await emitToolExecutionEnd(finalized, emit, config, signal);
 		const toolResultMessage = createToolResultMessage(finalized);
 		await emitToolResultMessage(toolResultMessage, emit);
@@ -387,7 +389,8 @@ async function executeToolCallsParallel(
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 ): Promise<ToolResultMessage[]> {
-	const finalizedCalls: (ToolCallOutcome | (() => Promise<ToolCallOutcome>))[] = [];
+	// A call that failed in preparation is already finalized; the others run when Promise.all starts them.
+	const finalizedCalls: FinalizedToolCallEntry[] = [];
 
 	for (const toolCall of toolCalls) {
 		await emit({
@@ -396,6 +399,7 @@ async function executeToolCallsParallel(
 			toolName: toolCall.name,
 			args: toolCall.arguments,
 		});
+		// edupi: the teaching extras see the call, and step mode may pause before it runs.
 		await config.probe?.toolDispatch?.({ toolCall, parallel: true });
 		await config.probe?.checkpoint?.("beforeToolCall", { tool: toolCall.name, callId: toolCall.id }, signal);
 		const preparation = prepareToolCall(currentContext, toolCall, signal);
@@ -412,7 +416,8 @@ async function executeToolCallsParallel(
 				await emitToolExecutionEnd(finalized, emit, config, signal);
 				return finalized;
 			}
-			const finalized = { toolCall, ...(await executePreparedToolCall(preparation, signal, emit)) };
+			const executed = await executePreparedToolCall(preparation, signal, emitToolExecutionUpdate(toolCall, emit));
+			const finalized = { toolCall, ...executed };
 			await emitToolExecutionEnd(finalized, emit, config, signal);
 			return finalized;
 		});
@@ -431,6 +436,21 @@ async function executeToolCallsParallel(
 	return messages;
 }
 
+type PreparedToolCall = { kind: "prepared"; toolCall: AgentToolCall; tool: AgentTool<any>; args: unknown };
+type ImmediateToolCallOutcome = { kind: "immediate"; result: AgentToolResult<any>; isError: boolean };
+type ExecutedToolCallOutcome = { result: AgentToolResult<any>; isError: boolean; durationMs: number };
+type FinalizedToolCallOutcome = AgentToolCallOutcome;
+type ToolUpdateSink = (partialResult: AgentToolResult<any>) => Promise<void> | void;
+type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);
+
+/** Lets the tool repair its arguments (prepareArguments) before they are validated. */
+function prepareToolCallArguments(tool: AgentTool<any>, toolCall: AgentToolCall): AgentToolCall {
+	if (!tool.prepareArguments) return toolCall;
+	const preparedArguments = tool.prepareArguments(toolCall.arguments);
+	if (preparedArguments === toolCall.arguments) return toolCall;
+	return { ...toolCall, arguments: preparedArguments as AgentToolCall["arguments"] };
+}
+
 /** Finds the tool and checks the arguments against its schema. A failure is an error result, not an exception. */
 function prepareToolCall(
 	currentContext: AgentContext,
@@ -441,10 +461,7 @@ function prepareToolCall(
 	if (!tool)
 		return { kind: "immediate", result: createErrorToolResult(`Tool ${toolCall.name} not found`), isError: true };
 	try {
-		const prepared = tool.prepareArguments
-			? { ...toolCall, arguments: tool.prepareArguments(toolCall.arguments) as AgentToolCall["arguments"] }
-			: toolCall;
-		const args = validateToolArguments(tool, prepared);
+		const args = validateToolArguments(tool, prepareToolCallArguments(tool, toolCall));
 		if (signal?.aborted)
 			return { kind: "immediate", result: createErrorToolResult("Operation aborted"), isError: true };
 		return { kind: "prepared", toolCall, tool, args };
@@ -457,31 +474,35 @@ function prepareToolCall(
 	}
 }
 
-/** Runs the tool. Its partial results become tool_execution_update events; a thrown error becomes an error result. */
+/** The callback a running tool reports partial results to: each becomes a tool_execution_update. */
+function emitToolExecutionUpdate(toolCall: AgentToolCall, emit: AgentEventSink): ToolUpdateSink {
+	return (partialResult) =>
+		emit({
+			type: "tool_execution_update",
+			toolCallId: toolCall.id,
+			toolName: toolCall.name,
+			args: toolCall.arguments,
+			partialResult,
+		});
+}
+
+/**
+ * Runs the tool; a thrown error becomes an error result. Updates sent after execute() settles
+ * are dropped, and the result waits until the updates already sent are delivered.
+ */
 async function executePreparedToolCall(
 	prepared: PreparedToolCall,
 	signal: AbortSignal | undefined,
-	emit: AgentEventSink,
-) {
-	const { toolCall } = prepared;
+	onUpdate: ToolUpdateSink,
+): Promise<ExecutedToolCallOutcome> {
 	const updateEvents: Promise<void>[] = [];
 	let acceptingUpdates = true;
 	const startedAt = performance.now();
 	const elapsed = () => Math.round(performance.now() - startedAt);
 	try {
-		const result = await prepared.tool.execute(toolCall.id, prepared.args, signal, (partialResult) => {
+		const result = await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal, (partialResult) => {
 			if (!acceptingUpdates) return;
-			updateEvents.push(
-				Promise.resolve(
-					emit({
-						type: "tool_execution_update",
-						toolCallId: toolCall.id,
-						toolName: toolCall.name,
-						args: toolCall.arguments,
-						partialResult,
-					}),
-				),
-			);
+			updateEvents.push(Promise.resolve(onUpdate(partialResult)));
 		});
 		const durationMs = elapsed();
 		acceptingUpdates = false;
@@ -503,8 +524,9 @@ function createErrorToolResult(message: string): AgentToolResult<any> {
 	return { content: [{ type: "text", text: message }], details: {} };
 }
 
+/** edupi: config and signal are for the probe hooks; the truncated-reply path passes neither. */
 async function emitToolExecutionEnd(
-	finalized: ToolCallOutcome,
+	finalized: FinalizedToolCallOutcome,
 	emit: AgentEventSink,
 	config?: AgentLoopConfig,
 	signal?: AbortSignal,
@@ -526,7 +548,7 @@ async function emitToolExecutionEnd(
 }
 
 /** The message the model reads: content and isError. details stay for the user interface. */
-function createToolResultMessage(finalized: ToolCallOutcome): ToolResultMessage {
+function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResultMessage {
 	return {
 		role: "toolResult",
 		toolCallId: finalized.toolCall.id,
