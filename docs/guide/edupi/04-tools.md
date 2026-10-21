@@ -120,7 +120,8 @@ This is the request the real pi sent (`test/fixtures/pi/tools-request.json`). An
 |---|---|---|
 | [`src/coding-agent/core/tools/index.ts`](../../../backends/edupi/src/coding-agent/core/tools/index.ts) | `coding-agent/src/core/tools/index.ts` | `createCodingTools(cwd)`: read, bash, edit, write |
 | [`src/coding-agent/core/tools/read.ts`](../../../backends/edupi/src/coding-agent/core/tools/read.ts) | `tools/read.ts` | The read tool, offset and limit, the continuation hints |
-| [`src/coding-agent/core/tools/bash.ts`](../../../backends/edupi/src/coding-agent/core/tools/bash.ts) | `tools/bash.ts` | The bash tool: spawn, kill the process group on abort or timeout, partial output, the temp file |
+| [`src/coding-agent/core/tools/bash.ts`](../../../backends/edupi/src/coding-agent/core/tools/bash.ts) | `tools/bash.ts` | The bash tool: spawn, kill the process group on abort or timeout, partial output |
+| [`src/coding-agent/core/tools/output-accumulator.ts`](../../../backends/edupi/src/coding-agent/core/tools/output-accumulator.ts) | `tools/output-accumulator.ts` | `OutputAccumulator`: bash's output so far, its tail, and the temp file with all of it |
 | [`src/coding-agent/core/tools/edit.ts`](../../../backends/edupi/src/coding-agent/core/tools/edit.ts), [`edit-diff.ts`](../../../backends/edupi/src/coding-agent/core/tools/edit-diff.ts) | `tools/edit.ts`, `tools/edit-diff.ts` | The edit tool, `prepareArguments`, the match rules and pi's diff |
 | [`src/coding-agent/core/tools/write.ts`](../../../backends/edupi/src/coding-agent/core/tools/write.ts) | `tools/write.ts` | The write tool |
 | [`src/coding-agent/core/tools/file-mutation-queue.ts`](../../../backends/edupi/src/coding-agent/core/tools/file-mutation-queue.ts) | `tools/file-mutation-queue.ts` | `withFileMutationQueue`: one `edit` or `write` per file at a time |
