@@ -54,7 +54,12 @@ export interface Tool {
 	name: string;
 	description: string;
 	parameters: TSchema;
+	/** Ask for strict JSON-schema sampling where the API has it. OpenRouter's Chat Completions has none, so edupi sends no `strict`. */
+	constrainedSampling?: false | ConstrainedSamplingConfig;
 }
+
+/** pi also has `{type: "grammar"}` (Lark or regex tools); edupi has only JSON-schema tools. */
+export type ConstrainedSamplingConfig = { type: "json_schema"; strict: "prefer" | "require" };
 
 /** A tool named in toolsRemoved. */
 export interface ToolReference {

@@ -263,6 +263,22 @@ test("conversation requests carry the session id for OpenRouter's cache affinity
 	expect(edupi.requests().map((r) => r.headers?.["x-session-id"])).toEqual([sessionId, sessionId, undefined]);
 });
 
+test("the declared tools keep pi's constrainedSampling; OpenRouter's request gets no strict field", async () => {
+	const piSystem = readFileSync(new URL("./fixtures/pi/session-prompt-and-tools.jsonl", import.meta.url), "utf8")
+		.trim()
+		.split("\n")
+		.map((l) => JSON.parse(l).message)
+		.find((m) => m?.role === "system" && m.toolsAdded);
+	edupi = startEdupi({ responses: ["Hi."] });
+	await prompt("Hi?");
+	const system = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "system")!.message;
+	const sampling = (tools: Message[]) => tools.map((t) => [t.name, t.constrainedSampling]);
+	expect(sampling(system.toolsAdded)).toEqual(sampling(piSystem.toolsAdded));
+	expect(edupi.requests()[0].body.tools.map((t: Message) => Object.keys(t.function))).toEqual(
+		Array(4).fill(["name", "description", "parameters"]),
+	);
+});
+
 test("a tool call without a result gets pi's synthetic error result before the next user message", async () => {
 	// A real pi session that stopped while its two tool calls ran: the file ends at the tool-call reply.
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
