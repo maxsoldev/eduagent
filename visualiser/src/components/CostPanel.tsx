@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Json } from "../rpc";
+import type { Json } from "../view/model";
 import { pct, usd } from "../cost";
 
 // The prompt cache, made visible: KPI tiles, the last request as two part-to-whole bars

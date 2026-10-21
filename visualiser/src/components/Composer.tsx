@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { matchCommands, matchSkills, type Command, type SkillInfo } from "../commands";
+import { matchCommands, matchSkills } from "../commands";
+import type { Command, SkillInfo } from "../adapters/types";
 
 // The message box. Typing "/" lists slash commands; typing "$" lists skills (as Codex's TUI does).
 // A skill picked from the list is sent as a {type: "skill", name, path} input item next to the text.
@@ -7,9 +8,10 @@ type Popup =
   | { kind: "command"; items: Command[] }
   | { kind: "skill"; items: SkillInfo[]; start: number; end: number };
 
-export function Composer({ disabled, turnRunning, placeholder, loadSkills, onSend, onCommand, onInterrupt }: {
-  disabled: boolean; turnRunning: boolean; placeholder: string;
-  loadSkills: () => Promise<SkillInfo[]>;
+// commands: only those the backend's capabilities allow. loadSkills: null without the skills capability.
+export function Composer({ disabled, turnRunning, placeholder, commands, loadSkills, onSend, onCommand, onInterrupt }: {
+  disabled: boolean; turnRunning: boolean; placeholder: string; commands: Command[];
+  loadSkills: (() => Promise<SkillInfo[]>) | null;
   onSend: (text: string, skills: { type: "skill"; name: string; path: string }[]) => void;
   onCommand: (name: string) => void; onInterrupt: () => void;
 }) {
@@ -21,16 +23,16 @@ export function Composer({ disabled, turnRunning, placeholder, loadSkills, onSen
   const picked = useRef(new Map<string, string>()); // skill name -> SKILL.md path
   const box = useRef<HTMLTextAreaElement>(null);
 
-  const mention = /(^|\s)\$([A-Za-z0-9_:-]*)$/.exec(text.slice(0, caret));
+  const mention = loadSkills && /(^|\s)\$([A-Za-z0-9_:-]*)$/.exec(text.slice(0, caret));
   const popup: Popup | null = dismissed ? null
-    : /^\/\S*$/.test(text) ? { kind: "command", items: matchCommands(text.slice(1)) }
+    : /^\/\S*$/.test(text) ? { kind: "command", items: matchCommands(commands, text.slice(1)) }
     : mention ? { kind: "skill", items: matchSkills(skills, mention[2]), start: caret - mention[2].length - 1, end: caret }
     : null;
   const open = popup && popup.items.length > 0 ? popup : null;
 
   // Scan the skills again each time a "$" mention starts, so new SKILL.md files show up.
   const mentionActive = Boolean(mention);
-  useEffect(() => { if (mentionActive) loadSkills().then(setSkills).catch(() => setSkills([])); }, [mentionActive, loadSkills]);
+  useEffect(() => { if (mentionActive && loadSkills) loadSkills().then(setSkills).catch(() => setSkills([])); }, [mentionActive, loadSkills]);
   useEffect(() => setSelected(0), [open?.kind, open?.items.length]);
 
   const edit = (value: string, at: number) => { setText(value); setCaret(at); setDismissed(false); };
@@ -47,7 +49,7 @@ export function Composer({ disabled, turnRunning, placeholder, loadSkills, onSen
   const runCommand = (name: string) => { edit("", 0); onCommand(name); };
   const send = () => {
     const command = /^\/(\S+)$/.exec(text.trim());
-    if (command && matchCommands(command[1])[0]?.name === command[1]) { runCommand(command[1]); return; }
+    if (command && matchCommands(commands, command[1])[0]?.name === command[1]) { runCommand(command[1]); return; }
     if (!text.trim() || disabled || turnRunning) return;
     // Only skills whose $name is still in the text; Codex drops mention bindings the same way.
     const skillItems = [...picked.current].filter(([name]) => text.includes(`$${name}`))

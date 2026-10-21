@@ -1,13 +1,12 @@
 // A JSON-RPC "lite" client (Codex app-server style): like JSON-RPC 2.0 but without "jsonrpc": "2.0".
 // The server can also send *requests* to us (approvals); we answer them with respond().
+// This is the Codex adapter's transport (adapters/codex/client.ts).
+import type { Direction, Json } from "../../view/model";
 
-export type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 export type WireMessage = { id?: string | number; method?: string; params?: Json; result?: Json; error?: Json };
-export type Direction = "in" | "out";
 
 type Handlers = {
-  onNotification: (method: string, params: Json) => void;
-  onServerRequest: (id: string | number, method: string, params: Json) => void;
+  onMessage: (message: WireMessage) => void; // notifications and server -> client requests
   onWire: (direction: Direction, message: WireMessage) => void;
   onStatus: (status: "connecting" | "open" | "closed", reason?: string) => void;
 };
@@ -45,10 +44,8 @@ export class RpcClient {
 
   private receive(message: WireMessage) {
     this.h.onWire("in", message);
-    if (message.method && message.id !== undefined) {
-      this.h.onServerRequest(message.id, message.method, message.params);
-    } else if (message.method) {
-      this.h.onNotification(message.method, message.params);
+    if (message.method) {
+      this.h.onMessage(message);
     } else if (typeof message.id === "number") {
       const p = this.pending.get(message.id);
       this.pending.delete(message.id);
