@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { PROJECT_CONFIG_DIR_NAME } from "../config.ts";
+import { stripBom } from "../utils/frontmatter.ts";
 
 /** The entries of <cwd>/.pi that make pi ask for trust. */
 const TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES = [
@@ -33,11 +34,34 @@ export function hasTrustRequiringProjectResources(cwd: string): boolean {
 	return TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some((entry) => existsSync(join(configDir, entry)));
 }
 
+type TrustFile = Record<string, boolean | null | undefined>;
+
+/** pi trust-manager.ts readTrustFile: a broken or invalid file is an error, not "no decision". */
+function readTrustFile(path: string): TrustFile {
+	if (!existsSync(path)) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stripBom(readFileSync(path, "utf-8")));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`Failed to read trust store ${path}: ${message}`);
+	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		throw new Error(`Invalid trust store ${path}: expected an object`);
+	}
+	const data: TrustFile = {};
+	for (const [key, value] of Object.entries(parsed)) {
+		if (value !== true && value !== false && value !== null) {
+			throw new Error(`Invalid trust store ${path}: value for ${JSON.stringify(key)} must be true, false, or null`);
+		}
+		data[key] = value;
+	}
+	return data;
+}
+
 /** The saved decision for cwd or its nearest ancestor in <agentDir>/trust.json, else null. */
 export function getSavedProjectTrust(agentDir: string, cwd: string): boolean | null {
-	const trustPath = join(agentDir, "trust.json");
-	if (!existsSync(trustPath)) return null;
-	const data = JSON.parse(readFileSync(trustPath, "utf-8")) as Record<string, boolean | null>;
+	const data = readTrustFile(join(agentDir, "trust.json"));
 	let currentDir = normalizeCwd(cwd);
 	while (true) {
 		const value = data[currentDir];
