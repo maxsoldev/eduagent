@@ -10,11 +10,11 @@ pi sends one system prompt. It is built from **sections**, always in this order:
 
 | Section | Content | When |
 |---|---|---|
-| `preamble` | "You are an expert coding assistant operating inside pi, a coding agent harness. ..." | always (a `SYSTEM.md` file replaces it) |
-| `tools` | one line per tool: `- read: Read file contents` | always (not with `SYSTEM.md`) |
-| `rules` | `- Use bash for file operations like ls, rg, find`, each tool's guidelines, then two closing rules | always (not with `SYSTEM.md`) |
+| `preamble` | "You are an expert coding assistant operating inside pi, a coding agent harness. ..." | always |
+| `tools` | one line per tool: `- read: Read file contents` | always |
+| `rules` | `- Use bash for file operations like ls, rg, find`, each tool's guidelines, then two closing rules | always |
 | `docs` | where pi's own docs are | real pi only (edupi leaves it out) |
-| `addendum` | the text of `APPEND_SYSTEM.md` | if the file exists |
+| `addendum` | the text of `APPEND_SYSTEM.md` | real pi only, if the file exists |
 | `project_context` | the AGENTS.md files | if there are any |
 | `skills` | the available-skills list (chapter 05) | if there are skills and a `read` or `bash` tool |
 | `cwd` | the working directory | always |
@@ -65,12 +65,6 @@ pi looks for one context file per folder. In each folder it takes the first file
 
 The order in the prompt is global first, then from the root down to cwd. So the file nearest to cwd comes last, and the model reads it as the most specific. Each file becomes one `<project_instructions path="...">` block, with its full text. There is no size limit.
 
-AGENTS.md files do not need project trust. Files in the project's `.pi` folder do (chapter 05).
-
-### SYSTEM.md and APPEND_SYSTEM.md
-
-A `SYSTEM.md` file replaces the preamble, the tools list and the rules with its own text. `APPEND_SYSTEM.md` adds an `addendum` section after them. pi reads each from `<cwd>/.pi/` if the project is trusted, else from the home's agent folder. AGENTS.md, skills and cwd stay in both cases.
-
 ### The prompt lives in the transcript
 
 pi does not keep the prompt beside the messages. It is a **system message** in the transcript, with the sections in `sections` and an empty `content`. Before each run (`_prepareRun`), pi builds the sections again and compares them with the sections the transcript already has (replayed from all system messages). Only the difference goes into a new system message:
@@ -103,7 +97,7 @@ So a changed section changes the **start** of the next request. That is a cache 
 | File | Mirrors (pi) | What it does |
 |---|---|---|
 | [`src/coding-agent/core/system-prompt.ts`](../../../backends/edupi/src/coding-agent/core/system-prompt.ts) | `coding-agent/src/core/system-prompt.ts` | `buildSystemPromptSections`, `buildRules`, `renderProjectContext`, `diffSystemPromptSections` |
-| [`src/coding-agent/core/resource-loader.ts`](../../../backends/edupi/src/coding-agent/core/resource-loader.ts) | `coding-agent/src/core/resource-loader.ts` | `loadContextFileFromDir`, `loadProjectContextFiles`, `DefaultResourceLoader` (AGENTS.md, skills, SYSTEM.md, APPEND_SYSTEM.md; read once per session) |
+| [`src/coding-agent/core/resource-loader.ts`](../../../backends/edupi/src/coding-agent/core/resource-loader.ts) | `coding-agent/src/core/resource-loader.ts` | `loadContextFileFromDir`, `loadProjectContextFiles`, `DefaultResourceLoader` (AGENTS.md and skills; read once per session) |
 | [`src/coding-agent/core/agent-session.ts`](../../../backends/edupi/src/coding-agent/core/agent-session.ts) | `coding-agent/src/core/agent-session.ts` | `_rebuildSystemPrompt` (gathers the inputs), `_prepareRun` and `_preparePromptAndToolLoadout` (the system message patch before the user message) |
 | [`src/coding-agent/core/tools/index.ts`](../../../backends/edupi/src/coding-agent/core/tools/index.ts) | each tool's `promptSnippet`, `promptGuidelines` | `toolSystemPromptContributions`: the tool lines and the rules |
 | [`src/ai/utils/transcript.ts`](../../../backends/edupi/src/ai/utils/transcript.ts) | `ai/src/utils/transcript.ts`, `ai/src/utils/text.ts` | `getCurrentSystemMessage`, `collapseSystemMessages`, `getSystemMessageText` |
@@ -129,7 +123,7 @@ The tests in [`test/rpc-system-prompt.test.ts`](../../../backends/edupi/test/rpc
 ## In pi
 
 - The sections: [`buildSystemPromptSections`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/system-prompt.ts#L128), [`buildRules`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/system-prompt.ts#L88), [`renderProjectContext`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/system-prompt.ts#L79), [`diffSystemPromptSections`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/system-prompt.ts#L217).
-- AGENTS.md and SYSTEM.md: [`loadContextFileFromDir`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L184), [`loadProjectContextFiles`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L232), [`discoverSystemPromptFile`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L1213), [`discoverAppendSystemPromptFile`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L1227).
+- AGENTS.md: [`loadContextFileFromDir`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L184), [`loadProjectContextFiles`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L232).
 - The session: [`_rebuildSystemPrompt`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/agent-session.ts#L1705), [`_preparePromptAndToolLoadout`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/agent-session.ts#L1743), [`_prepareRun`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/agent-session.ts#L1890).
 - The replay: [`getCurrentSystemMessage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/transcript.ts#L73), [`collapseSystemMessages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/transcript.ts#L108), [`resolveTranscript`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/transcript.ts#L115), [`getSystemMessageText`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/text.ts#L15), and where Chat Completions calls it: [`convertMessages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1203).
 
@@ -158,7 +152,9 @@ The Codex side: [`build_initial_context_with_world_state`](https://github.com/op
 - **No mid-conversation updates.** edupi's provider always collapses the system messages into one, as pi does for OpenRouter. pi can also send updates in place for providers that accept them.
 - **No nested-worktree rule.** pi skips the main repo's AGENTS.md when cwd is in a git worktree nested inside it, so the same file does not appear twice. edupi does not.
 - **No PowerShell rules** and no `.agents` folders.
-- **No prompt flags.** pi's `--system-prompt`, `--append-system-prompt` and `--no-context-files` are not in edupi; only the files set the prompt.
+- **No SYSTEM.md or APPEND_SYSTEM.md.** In pi, a `SYSTEM.md` file replaces the preamble, tools and rules, and `APPEND_SYSTEM.md` adds the `addendum` section ([`discoverSystemPromptFile`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L1213), [`discoverAppendSystemPromptFile`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/resource-loader.ts#L1227)). edupi always sends pi's own prompt.
+- **No prompt flags.** pi's `--system-prompt`, `--append-system-prompt` and `--no-context-files` are not in edupi.
+- **No care for odd files.** pi skips an AGENTS.md that is a folder or cannot be read (with a warning), and drops a byte order mark. edupi reads the file as it is.
 
 ## Try it
 
@@ -178,7 +174,7 @@ Over stdio, with the faux provider (start in `backends/edupi`):
 
 ```bash
 EDUPI=$PWD; cd /tmp/edupi-prompt/app
-node $EDUPI/bin/edupi.mjs --mode rpc --no-session --faux $EDUPI/examples/faux/demo.json --faux-log /tmp/edupi-prompt.jsonl
+node $EDUPI/bin/edupi.mjs --mode rpc --faux $EDUPI/examples/faux/demo.json --faux-log /tmp/edupi-prompt.jsonl
 {"type":"prompt","message":"Hi"}
 ```
 

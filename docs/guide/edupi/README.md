@@ -26,7 +26,7 @@ edupi's folders mirror pi's packages. File names follow pi's wherever a file sur
 |---|---|---|
 | `src/ai/` | `packages/ai/src/` | Provider layer: message types, the Chat Completions API, the OpenRouter and faux providers |
 | `src/agent/` | `packages/agent/src/` | Agent layer: the agent loop, the `Agent` class, event types |
-| `src/coding-agent/core/` | `packages/coding-agent/src/core/` | Coding-agent core: `AgentSession`, the session manager and session files, the tools (`core/tools/`: read, bash, edit, write), the system prompt, the resource loader (AGENTS.md, skills), project trust, compaction, settings, the model registry |
+| `src/coding-agent/core/` | `packages/coding-agent/src/core/` | Coding-agent core: `AgentSession`, the session manager and session files, the tools (`core/tools/`: read, bash, edit, write), the system prompt, the resource loader (AGENTS.md, skills), compaction, settings, the model registry |
 | `src/coding-agent/config.ts` | `packages/coding-agent/src/config.ts` | edupi's home: `~/.eduagent/.edupi/agent` (laid out as `~/.pi/agent`), or `$EDUPI_CODING_AGENT_DIR` |
 | `src/coding-agent/modes/` | `packages/coding-agent/src/modes/` | RPC mode over stdio |
 | `src/coding-agent/main.ts` | `packages/coding-agent/src/main.ts` | Arguments and wiring |
@@ -44,20 +44,20 @@ edupi speaks only stdio, as `pi --mode rpc` does. To use it in the visualiser, s
 (cd ../.. && pnpm eduagent)                # then open http://127.0.0.1:8765 and pick edupi
 ```
 
-The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-root `.env`. It passes `--approve`: you chose the directory in the picker, so edupi trusts it and loads its `.pi/skills`, `SYSTEM.md` and `APPEND_SYSTEM.md` (chapter 05). The default model is `openai/gpt-6-luna`, the same as educodex, so a comparison shows harness differences, not model differences.
+The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-root `.env`. It loads the `.pi/skills` of the directory you pick (chapter 05). The default model is `openai/gpt-6-luna`, the same as educodex, so a comparison shows harness differences, not model differences.
 
 **Offline.** Add an entry with the faux provider to `launcher/backends.local.json` (git-ignored) and restart the launcher. The chapters call it **edupi-faux**:
 
 ```json
 { "backends": [
   { "name": "edupi-faux", "harness": "pi", "protocol": "pi-rpc",
-    "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--approve",
+    "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc",
                 "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
     "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"] }
 ] }
 ```
 
-`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it in a folder that has that skill (the entry above already passes `--approve`). `examples/faux/compact.json` has replies for a manual compaction (chapter 07). `examples/faux/step.json` prices the model and runs one command, for step mode, the Context tab and the cost panel (chapter 09).
+`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it in a folder that has that skill. `examples/faux/compact.json` has replies for a manual compaction (chapter 07). `examples/faux/step.json` prices the model and runs one command, for step mode, the Context tab and the cost panel (chapter 09).
 
 List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `skills` the `$` list in the composer, `compaction` the compact button and `/compact`, `queues` the steer, follow-up and abort buttons, `stepMode` the step mode toggle, `contextInspector` the Context tab.
 
@@ -79,9 +79,9 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json
 |---|---|---|---|
 | 01 | [The provider API](01-provider-api.md) | Chat Completions vs Responses; OpenRouter as an OpenAI-compatible endpoint; pi's provider layer and its faux provider | [02](../educodex/02-talking-to-a-model.md) |
 | 02 | [The loop and the queues](02-loop-and-queues.md) | pi's inner and outer loops; steering and follow-up queues and their drain points; abort; the thinking level as OpenRouter's reasoning effort; how this differs from Codex's turn loop and `turn/steer` | [04](../educodex/04-agentic-loop.md), [08](../educodex/08-reasoning.md) |
-| 03 | [Prompt assembly](03-prompt-assembly.md) | pi's system prompt as named sections, in pi's order; AGENTS.md from the filesystem root down to cwd; SYSTEM.md; the prompt as a system message in the transcript, replayed into one leading message; how Codex's fragments differ | [05](../educodex/05-assembling-the-prompt.md) |
+| 03 | [Prompt assembly](03-prompt-assembly.md) | pi's system prompt as named sections, in pi's order; AGENTS.md from the filesystem root down to cwd; the prompt as a system message in the transcript, replayed into one leading message; how Codex's fragments differ | [05](../educodex/05-assembling-the-prompt.md) |
 | 04 | [Tools](04-tools.md) | pi's read, bash, edit and write; what the model reads vs what the user sees (the edit diff); tool calls run in parallel by default; tools declared in the transcript; how this differs from Codex's tools | [03](../educodex/03-tool-calling.md), [07](../educodex/07-built-in-tools.md) |
-| 05 | [Skills](05-skills.md) | where pi looks for skills; the available-skills list (names, descriptions, files); the model reads `SKILL.md` with `read`; `/skill:name` and skills hidden from the model; project trust in RPC mode | [14](../educodex/14-skills.md) |
+| 05 | [Skills](05-skills.md) | where pi looks for skills; the available-skills list (names, descriptions, files); the model reads `SKILL.md` with `read`; `/skill:name` and skills hidden from the model | [14](../educodex/14-skills.md) |
 | 06 | [Sessions](06-sessions.md) | pi's session file: a tree of entries with `id` and `parentId`; the context rebuilt from the entries; `new_session` and `get_messages`; how it differs from Codex's rollout files | [16](../educodex/16-session-logs.md) |
 | 07 | [Compaction](07-compaction.md) | pi's three triggers (manual, threshold, overflow); the cut point and split turns; the checkpoint and update prompts; the compaction entry and the request rebuilt from it | [15](../educodex/15-compaction.md) |
 | 08 | [The RPC protocol](08-rpc-protocol.md) | `pi --mode rpc`: commands, responses and events as JSON lines; how they differ from Codex's App Server | [18](../educodex/18-app-server.md) |

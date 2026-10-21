@@ -99,7 +99,7 @@ When a file already has messages, the agent starts from its rebuilt context, wit
 
 | File | Mirrors (pi) | What it does |
 |---|---|---|
-| [`src/coding-agent/core/session-manager.ts`](../../../backends/edupi/src/coding-agent/core/session-manager.ts) | `core/session-manager.ts` | Entry types, `buildContextEntries`, `buildSessionContext`, the session folder, `SessionManager` (`create`, `open`, `inMemory`, the late write) |
+| [`src/coding-agent/core/session-manager.ts`](../../../backends/edupi/src/coding-agent/core/session-manager.ts) | `core/session-manager.ts` | Entry types, `buildContextEntries`, `buildSessionContext`, the session folder, `SessionManager` (`create`, `open`, the late write) |
 | [`src/coding-agent/core/messages.ts`](../../../backends/edupi/src/coding-agent/core/messages.ts) | `core/messages.ts` | The `compactionSummary` role and `convertToLlm` |
 | [`src/coding-agent/config.ts`](../../../backends/edupi/src/coding-agent/config.ts) | `config.ts` | `getAgentDir` (`~/.eduagent/.edupi/agent`, `EDUPI_CODING_AGENT_DIR`) |
 | [`src/coding-agent/core/sdk.ts`](../../../backends/edupi/src/coding-agent/core/sdk.ts) | `core/sdk.ts` | `createAgentSession`: restore the context and settings, or record the settings of a new session |
@@ -164,8 +164,8 @@ The Codex side: [`RolloutRecorder`](https://github.com/openai/codex/blob/1c7c43c
 - **One linear branch.** No `/tree`, fork, clone, labels or branch summaries. The reader still follows `parentId` from the last entry, so a branched pi file opens on its newest branch.
 - **Fewer entry types.** No `custom`, `custom_message`, `label`, `session_info` or `usage` entries. A pi file that has them opens, but those entries add nothing to the context. edupi writes `context_edit` entries only to omit a failed overflow attempt (chapter 07).
 - **Version 3 only.** pi migrates older files (v1 without ids, v2) and rewrites them. edupi refuses them.
-- **`--session` is the only flag.** pi also has `--continue`, `--no-session`, `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`), and `--session` also takes a partial session id. A `~` in the path is not expanded (the shell does it).
-- **No file repair.** pi skips malformed lines, writes a header into an empty file, adds a missing final newline before it appends, and reads `null` message content as empty. edupi stops with an error on a line that is not JSON or a file without a header.
+- **`--session` is the only flag.** pi also has `--continue`, `--no-session`, `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`), and `--session` also takes a partial session id. A `~` in the path is not expanded (the shell does it), nor in `EDUPI_CODING_AGENT_DIR`.
+- **No file repair.** pi skips malformed lines, writes a header into an empty file, adds a missing final newline before it appends, and reads `null` message content as empty. edupi stops with an error on a line that is not JSON or a file without a header, and prints the full error where pi prints one line (`openSessionOrExit`).
 - **Context edits are not checked.** pi refuses an edit of an entry that is missing, off the active branch or not a message, and stores a string replacement as a text block. edupi only writes omissions (`null`) of entries it just saved.
 - **Models from OpenRouter only.** An opened session's model is restored only if its provider is `openrouter`; otherwise edupi uses its default model.
 - **Simpler ids and reads.** `uuidv7` leaves out pi's counter for ids made in the same millisecond. Files are read whole, without pi's streaming reader and header scan limits.

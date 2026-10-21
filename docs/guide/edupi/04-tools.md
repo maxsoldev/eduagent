@@ -202,7 +202,7 @@ Offline, over stdio, with the faux script that writes, runs and edits a file:
 
 ```bash
 EDUPI=$PWD; mkdir -p /tmp/edupi-tools && cd /tmp/edupi-tools   # the tools work in the current directory
-node $EDUPI/bin/edupi.mjs --mode rpc --no-session \
+node $EDUPI/bin/edupi.mjs --mode rpc \
   --faux $EDUPI/examples/faux/tools.json --faux-log /tmp/edupi-tools.requests.jsonl
 {"id":"1","type":"prompt","message":"Go."}
 ```
