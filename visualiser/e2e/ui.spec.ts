@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { E2E_DIR } from "./env";
 
 async function send(page: Page, text: string) {
   await expect(page.getByTestId("conn")).toHaveText("open");
@@ -7,7 +9,7 @@ async function send(page: Page, text: string) {
 }
 
 test("a full turn: tools, approval, and every inspector tab", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?backend=educodex");
   await page.getByTestId("new-thread").click(); // fresh thread = fresh fake-model script
   await send(page, "Create hello.py that prints a greeting, then run it.");
 
@@ -112,7 +114,7 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
 });
 
 test("step mode pauses before each model call", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?backend=educodex");
   await page.getByTestId("step-mode").check();
   await page.getByTestId("new-thread").click();
   await page.getByTestId("step-mode").check();
@@ -130,7 +132,7 @@ test("step mode pauses before each model call", async ({ page }) => {
 });
 
 test("slash commands and $skill mentions in the composer", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?backend=educodex");
   await expect(page.getByTestId("conn")).toHaveText("open");
   const composer = page.getByTestId("composer");
 
@@ -157,4 +159,29 @@ test("slash commands and $skill mentions in the composer", async ({ page }) => {
   await composer.press("Escape");
   await composer.press("Enter");
   await expect(page.getByTestId("note").last()).toContainText("$skill-creator (system)");
+});
+
+test("pick a backend and a directory, then run a turn there", async ({ page }) => {
+  await page.goto("/");
+  const picker = page.getByTestId("backend-picker");
+  const educodex = picker.getByTestId("backend-educodex");
+  await expect(educodex).toContainText("Codex");
+  await expect(educodex).toContainText("codex-app-server");
+  const cwd = page.getByTestId("picker-cwd");
+  await expect(cwd).toHaveValue(`${E2E_DIR}/ws`); // prefilled with the launcher's directory
+  await cwd.fill(`${E2E_DIR}/ws2`);
+  await educodex.getByRole("button", { name: "Open" }).click();
+
+  await expect(page.getByTestId("backend-name")).toHaveText("educodex");
+  await send(page, "Create hello.py that prints a greeting, then run it.");
+  await page.getByTestId("approve-decline").click();
+  await expect(page.getByTestId("turn-sep").last()).toContainText("turn completed");
+  expect(existsSync(`${E2E_DIR}/ws2/hello.py`)).toBe(true);
+});
+
+test("when the backend process exits, the viewer says which backend stopped", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("backend-crash").getByRole("button", { name: "Open" }).click();
+  await expect(page.getByTestId("backend-error")).toContainText("crash exited with code 3");
+  await expect(page.getByTestId("conn")).toHaveText("closed");
 });

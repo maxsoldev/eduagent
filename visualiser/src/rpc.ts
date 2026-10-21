@@ -9,14 +9,8 @@ type Handlers = {
   onNotification: (method: string, params: Json) => void;
   onServerRequest: (id: string | number, method: string, params: Json) => void;
   onWire: (direction: Direction, message: WireMessage) => void;
-  onStatus: (status: "connecting" | "open" | "closed") => void;
+  onStatus: (status: "connecting" | "open" | "closed", reason?: string) => void;
 };
-
-export function defaultUrl(): string {
-  const env = import.meta.env.VITE_RPC_URL as string | undefined;
-  if (env) return env;
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/rpc`;
-}
 
 export class RpcClient {
   private ws: WebSocket | null = null;
@@ -34,7 +28,12 @@ export class RpcClient {
         resolve();
       };
       ws.onerror = () => reject(new Error(`cannot connect to ${this.url}`));
-      ws.onclose = () => this.h.onStatus("closed");
+      // The launcher closes with a reason when the backend process exits ("educodex exited with code 1").
+      ws.onclose = (e) => {
+        for (const p of this.pending.values()) p.reject(new Error(e.reason || "connection closed"));
+        this.pending.clear();
+        this.h.onStatus("closed", e.reason);
+      };
       ws.onmessage = (e) => this.receive(JSON.parse(e.data));
     });
   }

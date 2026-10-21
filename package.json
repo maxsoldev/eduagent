@@ -2,6 +2,7 @@
   "name": "eduagent",
   "private": true,
   "scripts": {
+    "eduagent": "pnpm --silent --filter @eduagent/launcher exec tsx src/main.ts",
     "build": "pnpm --filter @eduagent/visualiser build",
     "test:e2e": "pnpm --filter @eduagent/visualiser test:e2e"
   }

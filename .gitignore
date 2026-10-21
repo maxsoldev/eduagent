@@ -25,3 +25,6 @@ visualiser/tsconfig.tsbuildinfo
 
 # Agent worktrees
 .claude/
+
+# Launcher: machine-specific backend entries
+launcher/backends.local.json
