@@ -134,19 +134,12 @@ export function parseSessionEntries(content: string): FileEntry[] {
 	return entries;
 }
 
-/**
- * Reads a session file. A file whose first entry is not a header gives no entries. A last line
- * without its newline gets one, so the next append starts a new line.
- */
-export function loadEntriesFromFile(filePath: string): FileEntry[] {
-	if (!existsSync(filePath)) return [];
-	const content = readFileSync(filePath, "utf8");
-	const entries = parseSessionEntries(content);
-	if (entries.length === 0) return entries;
-	const header = entries[0];
-	if (header.type !== "session" || typeof (header as { id?: unknown }).id !== "string") return [];
-	if (content && !content.endsWith("\n")) appendFileSync(filePath, "\n");
-	return entries;
+export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (entry.type === "compaction") return entry;
+	}
+	return null;
 }
 
 /** The path from the root to the leaf: walk parentId up from the leaf, then reverse. */
@@ -265,22 +258,58 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
 	return { messages, thinkingLevel, model };
 }
 
-export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
-	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i];
-		if (entry.type === "compaction") return entry;
-	}
-	return null;
-}
-
-/** <agentDir>/sessions/--<cwd without the leading /, with / \ : as ->--, created if missing. */
-export function getDefaultSessionDir(cwd: string, agentDir: string = getAgentDir()): string {
+/** <agentDir>/sessions/--<cwd without the leading /, with / \ : as ->--. */
+function getDefaultSessionDirPath(cwd: string, agentDir: string = getAgentDir()): string {
 	const safePath = `--${resolve(cwd)
 		.replace(/^[/\\]/, "")
 		.replace(/[/\\:]/g, "-")}--`;
-	const sessionDir = join(resolve(agentDir), "sessions", safePath);
+	return join(resolve(agentDir), "sessions", safePath);
+}
+
+/** The default session dir for a cwd, created if missing. */
+export function getDefaultSessionDir(cwd: string, agentDir: string = getAgentDir()): string {
+	const sessionDir = getDefaultSessionDirPath(cwd, agentDir);
 	if (!existsSync(sessionDir)) mkdirSync(sessionDir, { recursive: true });
 	return sessionDir;
+}
+
+/**
+ * Reads a session file. A file whose first entry is not a header gives no entries. A last line
+ * without its newline gets one, so the next append starts a new line.
+ */
+export function loadEntriesFromFile(filePath: string): FileEntry[] {
+	if (!existsSync(filePath)) return [];
+	const content = readFileSync(filePath, "utf8");
+	const entries = parseSessionEntries(content);
+	if (entries.length === 0) return entries;
+	const header = entries[0];
+	if (header.type !== "session" || typeof (header as { id?: unknown }).id !== "string") return [];
+	if (content && !content.endsWith("\n")) appendFileSync(filePath, "\n");
+	return entries;
+}
+
+/** The header, if the file's first entry is one. Unreadable files count as no session. */
+function readSessionHeader(filePath: string): SessionHeader | null {
+	try {
+		const first = parseSessionEntries(readFileSync(filePath, "utf8"))[0];
+		return first?.type === "session" && typeof first.id === "string" ? first : null;
+	} catch {
+		return null;
+	}
+}
+
+/** The session file in the dir that was changed last. Files that are not sessions are skipped. */
+export function findMostRecentSession(sessionDir: string): string | null {
+	try {
+		const files = readdirSync(sessionDir)
+			.filter((f) => f.endsWith(".jsonl"))
+			.map((f) => join(sessionDir, f))
+			.map((path) => ({ path, mtime: statSync(path).mtimeMs }))
+			.sort((a, b) => b.mtime - a.mtime);
+		return files.find(({ path }) => readSessionHeader(path))?.path ?? null;
+	} catch {
+		return null; // no dir, or a file went away while we looked
+	}
 }
 
 /**
@@ -310,36 +339,28 @@ export class SessionManager {
 
 	private _setSessionFile(sessionFile: string): void {
 		this.sessionFile = resolve(sessionFile);
-		if (!existsSync(this.sessionFile)) {
+		if (existsSync(this.sessionFile)) {
+			const entries = loadEntriesFromFile(this.sessionFile);
+			if (entries.length === 0) {
+				// An empty file gets a header at once; a file that is not a session is an error.
+				const explicitPath = this.sessionFile;
+				if (statSync(explicitPath).size > 0) {
+					throw new Error(`Session file is not a valid edupi session: ${explicitPath}`);
+				}
+				this.newSession();
+				this.sessionFile = explicitPath;
+				this._rewriteFile();
+				this.flushed = true;
+				return;
+			}
+			this._loadEntries(entries);
+			this.flushed = true;
+		} else {
 			// A missing file starts a new session at that path (pi's --session <new file>).
 			const explicitPath = this.sessionFile;
 			this.newSession();
 			this.sessionFile = explicitPath;
-			return;
 		}
-		const entries = loadEntriesFromFile(this.sessionFile);
-		if (entries.length === 0) {
-			// An empty file gets a header at once; a file that is not a session is an error.
-			const explicitPath = this.sessionFile;
-			if (statSync(explicitPath).size > 0) {
-				throw new Error(`Session file is not a valid edupi session: ${explicitPath}`);
-			}
-			this.newSession();
-			this.sessionFile = explicitPath;
-			this._rewriteFile();
-			this.flushed = true;
-			return;
-		}
-		const header = entries[0] as SessionHeader;
-		if ((header.version ?? 1) < CURRENT_SESSION_VERSION) {
-			throw new Error(
-				`Session file version ${header.version ?? 1} is not supported (edupi reads version ${CURRENT_SESSION_VERSION})`,
-			);
-		}
-		this.fileEntries = entries;
-		this.sessionId = header.id;
-		this.flushed = true;
-		this._buildIndex();
 	}
 
 	/** Starts a fresh session in memory: a new header and id. Returns the file it will write. */
@@ -363,6 +384,19 @@ export class SessionManager {
 			this.sessionFile = join(this.sessionDir, `${fileTimestamp}_${this.sessionId}.jsonl`);
 		}
 		return this.sessionFile;
+	}
+
+	/** Takes the entries of a loaded file. pi migrates old versions here; edupi refuses them. */
+	private _loadEntries(entries: FileEntry[]): void {
+		const header = entries[0] as SessionHeader;
+		if ((header.version ?? 1) < CURRENT_SESSION_VERSION) {
+			throw new Error(
+				`Session file version ${header.version ?? 1} is not supported (edupi reads version ${CURRENT_SESSION_VERSION})`,
+			);
+		}
+		this.fileEntries = entries;
+		this.sessionId = header.id;
+		this._buildIndex();
 	}
 
 	/** The leaf is the last entry of the file. */
@@ -531,6 +565,19 @@ export class SessionManager {
 		return this.byId.get(id);
 	}
 
+	/** The entries from the root to the leaf. */
+	getBranch(): SessionEntry[] {
+		return buildSessionPath(this.getEntries(), this.leafId);
+	}
+
+	buildSessionProjection(): SessionProjection {
+		return buildSessionProjection(this.getEntries(), this.leafId);
+	}
+
+	buildSessionContext(): SessionContext {
+		return buildSessionContext(this.getEntries(), this.leafId);
+	}
+
 	getHeader(): SessionHeader | null {
 		return this.fileEntries.find((e): e is SessionHeader => e.type === "session") ?? null;
 	}
@@ -538,19 +585,6 @@ export class SessionManager {
 	/** All entries, without the header. */
 	getEntries(): SessionEntry[] {
 		return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
-	}
-
-	/** The entries from the root to the leaf. */
-	getBranch(): SessionEntry[] {
-		return buildSessionPath(this.getEntries(), this.leafId);
-	}
-
-	buildSessionContext(): SessionContext {
-		return buildSessionContext(this.getEntries(), this.leafId);
-	}
-
-	buildSessionProjection(): SessionProjection {
-		return buildSessionProjection(this.getEntries(), this.leafId);
 	}
 
 	/** A new session in <agentDir>/sessions/<cwd folder>/, or in sessionDir. */
@@ -574,29 +608,5 @@ export class SessionManager {
 	/** A session that is never written to disk (pi's --no-session). */
 	static inMemory(cwd: string = process.cwd()): SessionManager {
 		return new SessionManager(cwd, "", undefined, false);
-	}
-}
-
-/** The header, if the file's first entry is one. Unreadable files count as no session. */
-function readSessionHeader(filePath: string): SessionHeader | null {
-	try {
-		const first = parseSessionEntries(readFileSync(filePath, "utf8"))[0];
-		return first?.type === "session" && typeof first.id === "string" ? first : null;
-	} catch {
-		return null;
-	}
-}
-
-/** The session file in the dir that was changed last. Files that are not sessions are skipped. */
-export function findMostRecentSession(sessionDir: string): string | null {
-	try {
-		const files = readdirSync(sessionDir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.map((f) => join(sessionDir, f))
-			.map((path) => ({ path, mtime: statSync(path).mtimeMs }))
-			.sort((a, b) => b.mtime - a.mtime);
-		return files.find(({ path }) => readSessionHeader(path))?.path ?? null;
-	} catch {
-		return null; // no dir, or a file went away while we looked
 	}
 }
