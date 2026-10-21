@@ -7,10 +7,18 @@ import { createEditTool } from "./edit.ts";
 import { createReadTool } from "./read.ts";
 import { createWriteTool } from "./write.ts";
 
-export { bashToolSystemPromptContribution } from "./bash.ts";
-export { editToolSystemPromptContribution } from "./edit.ts";
-export { readToolSystemPromptContribution } from "./read.ts";
-export { writeToolSystemPromptContribution } from "./write.ts";
+import { bashToolSystemPromptContribution } from "./bash.ts";
+import { editToolSystemPromptContribution } from "./edit.ts";
+import { readToolSystemPromptContribution } from "./read.ts";
+import { writeToolSystemPromptContribution } from "./write.ts";
+
+/** Each tool's line in the prompt's <tools> section and its bullets in <rules> (pi: ToolDefinition promptSnippet, promptGuidelines). */
+export const toolSystemPromptContributions: Record<string, { snippet: string; guidelines: readonly string[] }> = {
+  read: readToolSystemPromptContribution,
+  bash: bashToolSystemPromptContribution,
+  edit: editToolSystemPromptContribution,
+  write: writeToolSystemPromptContribution,
+};
 
 /** read, bash, edit, write: in this order the model sees them. Paths are relative to cwd. */
 export function createCodingTools(cwd: string): AgentTool<any>[] {

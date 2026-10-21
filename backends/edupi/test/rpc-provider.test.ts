@@ -27,7 +27,10 @@ test("each request is a stateless Chat Completions body on OpenRouter with the w
   expect(first.url).toBe("https://openrouter.ai/api/v1/chat/completions");
   expect(first.body).toEqual({
     model: "openai/gpt-6-luna",
-    messages: [{ role: "user", content: [{ type: "text", text: "First question?" }] }],
+    messages: [
+      { role: "system", content: expect.stringMatching(/^You are an expert coding assistant operating inside pi/) }, // rpc-system-prompt.test.ts checks it
+      { role: "user", content: [{ type: "text", text: "First question?" }] },
+    ],
     stream: true,
     stream_options: { include_usage: true },
     store: false,
@@ -36,6 +39,7 @@ test("each request is a stateless Chat Completions body on OpenRouter with the w
   });
   expect(first.body.tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(["read", "bash", "edit", "write"]);
   expect(second.body.messages).toEqual([
+    first.body.messages[0],
     { role: "user", content: [{ type: "text", text: "First question?" }] },
     { role: "assistant", content: "First answer." },
     { role: "user", content: [{ type: "text", text: "Second question?" }] },

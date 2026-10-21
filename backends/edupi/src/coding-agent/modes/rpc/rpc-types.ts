@@ -4,12 +4,22 @@
 import type { AgentMessage } from "../../../agent/types.ts";
 import type { ImageContent, Model, ThinkingLevel } from "../../../ai/types.ts";
 import type { PromptDisposition } from "../../core/agent-session.ts";
+import type { SourceInfo } from "../../core/skills.ts";
 
 export type RpcCommand =
   | { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
   | { id?: string; type: "new_session"; parentSession?: string }
   | { id?: string; type: "get_state" }
-  | { id?: string; type: "get_messages" };
+  | { id?: string; type: "get_messages" }
+  | { id?: string; type: "get_commands" };
+
+/** A slash command the user can type. edupi has only skill commands (pi also has extension and prompt-template commands). */
+export interface RpcSlashCommand {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+  sourceInfo: SourceInfo;
+}
 
 export interface RpcSessionState {
   model?: Model;
@@ -31,4 +41,5 @@ export type RpcResponse =
   | { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
   | { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
   | { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+  | { id?: string; type: "response"; command: "get_commands"; success: true; data: { commands: RpcSlashCommand[] } }
   | { id?: string; type: "response"; command: string; success: false; error: string };

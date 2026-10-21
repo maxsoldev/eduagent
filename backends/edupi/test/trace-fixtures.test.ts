@@ -1,6 +1,8 @@
 // Seam A against the protocol spec: edupi's trace events have the shapes of the fixtures in
 // protocol/fixtures/trace/edupi/, and the shared fields of protocol/fixtures/trace/shared.json.
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { jsonType, shapeErrors } from "../../../protocol/shape.ts";
 import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
@@ -14,9 +16,13 @@ afterEach(async () => {
   await edupi?.close();
 });
 
-test("edupi's model and tool trace events match the protocol fixtures", async () => {
+test("edupi's model, tool, prompt and skill trace events match the protocol fixtures", async () => {
   const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "echo hi" } };
-  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] });
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+  const skill = join(dir, "home", "agent", "skills", "greet");
+  mkdirSync(skill, { recursive: true });
+  writeFileSync(join(skill, "SKILL.md"), "---\nname: greet\ndescription: Greets the user.\n---\n\nSay hi.\n");
+  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] }, [], { dir });
   edupi.sendLine(JSON.stringify({ type: "prompt", message: "Hi?" }));
   await edupi.until("agent_settled");
 
@@ -28,7 +34,10 @@ test("edupi's model and tool trace events match the protocol fixtures", async ()
     toolOutput: first("toolOutput"),
     streamEvent: first("streamEvent", (m) => Boolean(m.event.choices[0]?.delta?.content)), // a text chunk, as in the fixture
     modelResponse: first("modelResponse"),
+    promptAssembled: first("promptAssembled"),
+    skillsLoaded: first("skillsLoaded"),
   };
+  expect(actual.skillsLoaded!.skills.map((s: Message) => s.name)).toEqual(["greet"]);
   expect(Object.keys(actual).sort()).toEqual(Object.keys(shared).sort()); // every shared event is checked
   for (const [name, message] of Object.entries(actual)) {
     expect(message, name).toBeDefined();

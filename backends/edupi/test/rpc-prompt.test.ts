@@ -42,7 +42,8 @@ test("a prompt streams pi's agent, turn and message events and ends with the rep
     "agent_settled",
   ]);
 
-  expect(edupi.seen[0]).toEqual({ id: "1", type: "response", command: "prompt", success: true, data: { disposition: "started" } });
+  // The reply comes once the run is prepared (after the promptAssembled trace), before the first event.
+  expect(edupi.seen.find((m) => m.type === "response")).toEqual({ id: "1", type: "response", command: "prompt", success: true, data: { disposition: "started" } });
   const user = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "user")!.message;
   expect(user).toEqual({ role: "user", content: [{ type: "text", text: "Say hello." }], timestamp: expect.any(Number) });
 

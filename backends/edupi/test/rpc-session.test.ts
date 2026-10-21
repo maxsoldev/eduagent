@@ -100,7 +100,8 @@ test("new_session starts a fresh session in a new file; the old file stays as it
   // The new session's events still reach stdout, and its first request has no old messages.
   await prompt("New question?");
   const lastBody = edupi.requests().at(-1)!.body;
-  expect(lastBody.messages).toEqual([{ role: "user", content: [{ type: "text", text: "New question?" }] }]);
+  expect(lastBody.messages.map((m: Message) => m.role)).toEqual(["system", "user"]);
+  expect(lastBody.messages[1]).toEqual({ role: "user", content: [{ type: "text", text: "New question?" }] });
 
   expect(readFileSync(old.sessionFile, "utf8")).toBe(oldFile);
   const entries = readEntries(fresh.sessionFile);
@@ -141,9 +142,13 @@ test("--session opens a session file written by real pi and rebuilds its message
   const after = readEntries(file);
   expect(after.slice(0, recorded.length)).toEqual(recorded);
   const added = after.slice(recorded.length);
-  expect(added.map((e) => e.message.role)).toEqual(["user", "assistant"]); // pi's file already has a thinking level entry
+  // pi's file already has a thinking level entry. edupi's prompt differs from the one in the file
+  // (no <docs>, no skills, another cwd), so a system message patches those sections first, as pi does.
+  expect(added.map((e) => e.message.role)).toEqual(["system", "user", "assistant"]);
+  expect(added[0].message.sections).toEqual({ docs: null, skills: null, cwd: `<cwd>\n${dir}\n</cwd>` });
   expect(added[0].parentId).toBe("3a72a5e4");
   expect(added[1].parentId).toBe(added[0].id);
+  expect(added[2].parentId).toBe(added[1].id);
 });
 
 test("a pi session with compactions is rebuilt from the latest compaction and the kept messages", async () => {
@@ -164,12 +169,13 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
 
   // The next request is the one real pi sent for q4, plus q4's answer and the new prompt. The
   // summary goes to the model as a user message. (pi's model had reasoning, so its system
-  // prompt went as "developer"; edupi's default model has none, so it goes as "system".)
+  // prompt went as "developer"; edupi's default model has none, so it goes as "system".) The
+  // prompt itself is pi's, patched by edupi: no <docs> section, and this test's cwd.
   await prompt("q5");
   const pi = JSON.parse(readFileSync(join(FIXTURES, "session-compact.q4-request.json"), "utf8")).messages;
   expect(pi[1].content[0].text).toMatch(/^The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSECOND SUMMARY/);
   expect(edupi.requests()[0].body.messages).toEqual([
-    { ...pi[0], role: "system" },
+    { role: "system", content: pi[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace("/private/tmp/pi-try/cwd", dir) },
     ...pi.slice(1),
     { role: "assistant", content: "Fourth." },
     { role: "user", content: [{ type: "text", text: "q5" }] },
@@ -186,7 +192,7 @@ test("--continue reopens the newest session of the working directory", async () 
   const state = (await edupi.command("get_state")).data;
   expect(state).toMatchObject({ sessionId: first.sessionId, sessionFile: first.sessionFile, messageCount: 3 });
   await prompt("Do you remember?");
-  expect(edupi.requests().at(-1)!.body.messages.map((m: Message) => m.role)).toEqual(["user", "assistant", "user"]);
+  expect(edupi.requests().at(-1)!.body.messages.map((m: Message) => m.role)).toEqual(["system", "user", "assistant", "user"]);
 });
 
 test("--no-session keeps the session in memory and writes no file", async () => {

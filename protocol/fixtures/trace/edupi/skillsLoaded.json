@@ -1,0 +1,21 @@
+{
+  "type": "trace",
+  "name": "skillsLoaded",
+  "roots": [
+    {
+      "path": "/tmp/edupi/home/agent/skills",
+      "scope": "user"
+    }
+  ],
+  "skills": [
+    {
+      "name": "greet",
+      "description": "Greets the user.",
+      "path": "/tmp/edupi/home/agent/skills/greet/SKILL.md",
+      "scope": "user",
+      "disableModelInvocation": false
+    }
+  ],
+  "errors": [],
+  "projectTrusted": true
+}

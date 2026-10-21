@@ -27,7 +27,7 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
-import { getCurrentTools } from "../utils/transcript.ts";
+import { collapseSystemMessages, getCurrentTools, getSystemMessageText } from "../utils/transcript.ts";
 
 /** pi's resolved OpenRouter compat values (detectCompat); edupi has no other provider. */
 interface Compat {
@@ -219,21 +219,17 @@ export function buildParams(model: Model, context: TranscriptContext, options: S
   return params;
 }
 
-function systemText(message: SystemMessage): string {
-  const content = typeof message.content === "string" ? message.content : message.content.map((c) => c.text).join("\n");
-  const parts = [content, ...Object.values(message.sections ?? {}).filter((s): s is string => s !== null)];
-  return parts.filter((p) => p.length > 0).join("\n\n");
-}
-
 /** Transcript messages to Chat Completions messages. */
-export function convertMessages(model: Model, context: TranscriptContext, compat: Compat): ChatCompletionMessageParam[] {
+export function convertMessages(model: Model, transcript: TranscriptContext, compat: Compat): ChatCompletionMessageParam[] {
+  // pi's OpenRouter compat has no mid-conversation system messages: the prompt is replayed into one leading message.
+  const context = collapseSystemMessages(transcript);
   const params: ChatCompletionMessageParam[] = [];
   // Reasoning models take the harness's instructions as "developer", as in the Responses API.
   const instructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";
 
   for (const msg of context.messages) {
     if (msg.role === "system") {
-      const text = systemText(msg);
+      const text = getSystemMessageText(msg);
       if (text.length > 0) params.push({ role: instructionRole, content: text });
     } else if (msg.role === "user") {
       if (typeof msg.content === "string") {

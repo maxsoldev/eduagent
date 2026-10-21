@@ -2,7 +2,7 @@
 // They show what pi hides: the exact request body, each streamed chunk and the response usage.
 // The faux provider records the request bodies it got, so the trace can be checked against them.
 import { afterEach, expect, test } from "vitest";
-import { startEdupi, type RpcClient } from "./rpc-client.ts";
+import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -80,6 +80,7 @@ test("trace events still arrive after new_session, for the new session's request
   const requests = traces("modelRequest");
   expect(requests).toHaveLength(2);
   expect(requests[1].body).toEqual(edupi.requests()[1].body);
-  expect(requests[1].body.messages).toEqual([{ role: "user", content: [{ type: "text", text: "New question?" }] }]);
+  expect(requests[1].body.messages.map((m: Message) => m.role)).toEqual(["system", "user"]); // the new session's prompt, then its question
+  expect(requests[1].body.messages[1]).toEqual({ role: "user", content: [{ type: "text", text: "New question?" }] });
   expect(traces("modelResponse").at(-1)).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "New answer." }] });
 });

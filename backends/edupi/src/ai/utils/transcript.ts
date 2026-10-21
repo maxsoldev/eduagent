@@ -1,8 +1,9 @@
-// Mirrors pi packages/ai/src/utils/transcript.ts (pinned 16f5f0af4), the tool part: in pi the
-// tools the model may call are declared inside the transcript, as toolsAdded and toolsRemoved on
-// system messages. Replaying those changes in order gives the current tool set.
-// edupi leaves out the system-prompt replay helpers and the per-API tool placement.
-import type { Tool, ToolReference } from "../types.ts";
+// Mirrors pi packages/ai/src/utils/transcript.ts (pinned 16f5f0af4): in pi the system prompt and
+// the tools the model may call live inside the transcript, on system messages: `sections` patch
+// the prompt by name, toolsAdded and toolsRemoved change the tools. Replaying those changes in
+// order gives the current prompt and tool set.
+// edupi leaves out the per-API tool placement (pi's Kimi-style mid-conversation tool messages).
+import type { Message, SystemMessage, Tool, ToolReference, TranscriptContext } from "../types.ts";
 
 type TranscriptMessages = readonly { role: string }[];
 
@@ -13,6 +14,59 @@ interface ToolDeclaringMessage {
 }
 
 const isSystemMessage = (message: { role: string }): message is ToolDeclaringMessage => message.role === "system";
+
+/** pi utils/text.ts contentText: the text blocks of a content, joined. */
+const contentText = (content: SystemMessage["content"]): string =>
+  typeof content === "string" ? content : content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+
+/** pi utils/text.ts: a system message as one prompt text, its content then its sections. */
+export function getSystemMessageText(message: SystemMessage): string {
+  const parts = [contentText(message.content)];
+  for (const text of Object.values(message.sections ?? {})) {
+    if (text !== null) parts.push(text);
+  }
+  return parts.filter((part) => part.length > 0).join("\n\n");
+}
+
+/**
+ * Replay every system message into one system message holding the current prompt and tools.
+ * Later content is appended to the base prompt, sections are patched by name (null removes one).
+ */
+export function getCurrentSystemMessage(messages: TranscriptMessages): SystemMessage | undefined {
+  const content: string[] = [];
+  const sections = new Map<string, string>();
+  let timestamp: number | undefined;
+  for (const message of messages) {
+    if (!isSystemMessage(message)) continue;
+    const system = message as SystemMessage;
+    timestamp ??= system.timestamp;
+    const text = contentText(system.content);
+    if (text.length > 0) content.push(text);
+    for (const [name, value] of Object.entries(system.sections ?? {})) {
+      if (value === null) sections.delete(name);
+      else sections.set(name, value);
+    }
+  }
+  const tools = getCurrentTools(messages);
+  if (timestamp === undefined && tools.length === 0) return undefined;
+  return {
+    role: "system",
+    content: content.join("\n\n"),
+    ...(sections.size > 0 ? { sections: Object.fromEntries(sections) } : {}),
+    ...(tools.length > 0 ? { toolsAdded: tools } : {}),
+    timestamp: timestamp ?? 0,
+  };
+}
+
+/**
+ * For APIs without mid-conversation system messages (OpenRouter's Chat Completions in pi): the
+ * replayed system message leads, and every later system message is dropped.
+ */
+export function collapseSystemMessages(context: TranscriptContext): TranscriptContext {
+  const head = getCurrentSystemMessage(context.messages);
+  const messages = context.messages.filter((message) => message.role !== "system");
+  return { messages: head ? [head, ...messages] : messages } as { messages: Message[] };
+}
 
 /** The tools available after applying every transcript change in order. */
 export function getCurrentTools(messages: TranscriptMessages): Tool[] {

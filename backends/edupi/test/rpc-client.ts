@@ -2,7 +2,7 @@
 // protocol to it over stdin/stdout: one JSON object per line. The model is the faux provider,
 // scripted by a JSON file; it records every request body it receives.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -81,6 +81,8 @@ export class RpcClient {
 export interface StartOptions {
   /** Directory to run in and to keep faux.json, the request log and the home. Default: a fresh one. */
   dir?: string;
+  /** Run in this folder instead of dir (made if missing). */
+  cwd?: string;
 }
 
 /**
@@ -91,7 +93,9 @@ export function startEdupi(script: unknown, args: string[] = [], options: StartO
   const dir = options.dir ?? realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
   writeFileSync(join(dir, "faux.json"), JSON.stringify(script));
   const env = { ...process.env, OPENROUTER_API_KEY: "", EDUPI_CODING_AGENT_DIR: join(dir, "home", "agent") };
+  const cwd = options.cwd ?? dir;
+  mkdirSync(cwd, { recursive: true });
   const proc = spawn(process.execPath, [BIN, "--mode", "rpc", "--faux", join(dir, "faux.json"),
-    "--faux-log", join(dir, "faux-requests.jsonl"), ...args], { cwd: dir, env });
+    "--faux-log", join(dir, "faux-requests.jsonl"), ...args], { cwd, env });
   return new RpcClient(proc, dir);
 }

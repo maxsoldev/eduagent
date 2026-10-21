@@ -175,11 +175,13 @@ Events that mean the same thing have the same name and the same **shared fields*
 | `modelResponse` | when the stream ended | `usage` (object: the harness's usage record), `seconds` (number) | `eventCounts`, `outputItems`, `cost` (the Codex usage is the Responses `usage`) | `stopReason`, `errorMessage` (on errors), `responseId`, `content` (the assistant content blocks); `usage` is pi's `Usage` |
 | `toolDispatch` | a tool call starts | `tool` (string: the tool name), `callId` (string), `parallel` (boolean: the calls of this reply run at the same time) | `kind` (the Responses item type), `arguments` or `input` (custom tools) | `arguments` (object); sent right after pi's `tool_execution_start` |
 | `toolOutput` | a tool call ended | `tool`, `callId`, `output` (string: the text the model reads), `tokens` (number: bytes / 4, rounded up) | | `isError` (boolean), `durationMs` (absent if the call failed before it ran); sent right after pi's `tool_execution_end` |
+| `promptAssembled` | the prompt for a turn (educodex) or a run (edupi) is built | `fragments` (array of `{kind, role, source, text, tokens, changed}`: one per prompt part, `changed` = new in this turn's request), `firstTurn` (boolean) | `baseInstructions`; fragments are the developer and user context items | fragments are the system prompt's sections (`preamble`, `tools`, `rules`, `addendum`, `project_context`, `skills`, `cwd`); `removed` (section names); sent before `agent_start` |
+| `skillsLoaded` | the skill folders were scanned | `roots` (array of `{path, scope}`), `skills` (array of `{name, description, path, scope}`), `errors` (array of `{path, message}`) | sent every turn (Codex rescans per turn) | `skills[].disableModelInvocation`, `projectTrusted` (boolean: were `<cwd>/.pi` files read); sent once per session, before its first `promptAssembled` |
 
 - `api` picks the request view in the Requests tab: **Chat Completions** messages (`body.messages`: role and content) or **Responses** input items (`body.input`: typed items). A `modelRequest` without `api` is read as `openai-responses`.
 - edupi sends a `modelResponse` for failed requests too (`stopReason: "error"`), but only after a `modelRequest`.
 
-Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `loopIteration`, `compactionRequest`, `compacted`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
+Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `loopIteration`, `compactionRequest`, `compacted`, and the step-mode events `paused` and `resumed`.
 
 ### Backend-only events
 

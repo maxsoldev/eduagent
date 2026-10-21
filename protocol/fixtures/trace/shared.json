@@ -21,5 +21,14 @@
     "callId": "string",
     "output": "string",
     "tokens": "number"
+  },
+  "promptAssembled": {
+    "fragments": "array",
+    "firstTurn": "boolean"
+  },
+  "skillsLoaded": {
+    "roots": "array",
+    "skills": "array",
+    "errors": "array"
   }
 }

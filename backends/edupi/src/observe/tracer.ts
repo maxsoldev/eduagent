@@ -4,7 +4,23 @@
 // are the shared trace vocabulary in protocol/README.md section 6.
 import type { AgentToolCall, AgentToolResult } from "../agent/types.ts";
 import type { AssistantMessage } from "../ai/types.ts";
-import type { Probe } from "../coding-agent/core/probe.ts";
+import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-agent/core/probe.ts";
+
+/** Where each prompt section comes from (pi's file, or the files the user wrote). */
+function sectionSource(name: string, info: PromptAssembledInfo): string {
+  switch (name) {
+    case "preamble": return info.customPromptFiles.systemPrompt ?? "system-prompt.ts";
+    case "tools": return "system-prompt.ts + tool snippets";
+    case "rules": return "system-prompt.ts + tool guidelines";
+    case "addendum": return info.customPromptFiles.appendSystemPrompt ?? "APPEND_SYSTEM.md";
+    case "project_context": return info.contextFiles.join(", ");
+    case "skills": return "skills.ts formatSkillsForPrompt";
+    case "cwd": return "process cwd";
+    default: return name;
+  }
+}
+
+const approxTokens = (text: string) => Math.ceil(text.length / 4);
 
 export type TraceOutput = (message: object) => void;
 
@@ -46,6 +62,25 @@ export class Tracer implements Probe {
     const output = result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
     const tokens = Math.floor((Buffer.byteLength(output, "utf-8") + 3) / 4);
     this.emit("toolOutput", { tool: toolCall.name, callId: toolCall.id, output, isError, durationMs, tokens });
+  }
+
+  /** One fragment per prompt section, as educodex's promptAssembled; changed = in this run's system message patch. */
+  promptAssembled(info: PromptAssembledInfo) {
+    const patch = info.patch ?? {};
+    const fragments = Object.entries(info.sections).map(([kind, text]) => ({
+      kind, role: "system", source: sectionSource(kind, info), text, tokens: approxTokens(text), changed: kind in patch,
+    }));
+    const removed = Object.keys(patch).filter((name) => patch[name] === null);
+    this.emit("promptAssembled", { fragments, removed, firstTurn: info.firstTurn });
+  }
+
+  skillsLoaded(info: SkillsLoadedInfo) {
+    this.emit("skillsLoaded", {
+      roots: info.roots,
+      skills: info.skills.map((s) => ({ name: s.name, description: s.description, path: s.filePath, scope: s.sourceInfo.scope, disableModelInvocation: s.disableModelInvocation })),
+      errors: info.diagnostics.map((d) => ({ path: d.path, message: d.message })),
+      projectTrusted: info.projectTrusted,
+    });
   }
 
   modelResponse(message: AssistantMessage) {
