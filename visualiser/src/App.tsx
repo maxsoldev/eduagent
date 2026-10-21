@@ -53,11 +53,11 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
   const loadSkills = useCallback(() => adapterRef.current!.listSkills(settings.cwd), [settings.cwd]);
 
   // Slash commands from the composer. Like Codex, each maps to one backend request.
-  const runCommand = async (name: string) => {
-    note(`/${name}`);
+  const runCommand = async (name: string, args?: string) => {
+    note(args ? `/${name} ${args}` : `/${name}`);
     try {
       if (name === "new") await startSession(settings);
-      else if (name === "compact") await adapter!.compact();
+      else if (name === "compact") await adapter!.compact(args);
       else if (name === "skills") {
         const skills = await loadSkills();
         note(skills.length ? `Skills (type $ to use one):\n${skills.map((s) => `$${s.name} (${s.scope}): ${s.shortDescription || s.description}`).join("\n")}`

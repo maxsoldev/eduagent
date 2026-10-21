@@ -11,6 +11,17 @@
     "usage": "object",
     "seconds": "number"
   },
+  "compactionRequest": {
+    "reason": "string",
+    "tokensBefore": "number",
+    "body": "object"
+  },
+  "compacted": {
+    "reason": "string",
+    "summary": "string",
+    "tokensBefore": "number",
+    "tokensAfter": "number"
+  },
   "toolDispatch": {
     "tool": "string",
     "callId": "string",

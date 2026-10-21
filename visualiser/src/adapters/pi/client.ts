@@ -59,7 +59,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
       state = { ...state, messageCount: (state?.messageCount ?? 0) + 1 };
     },
     async interrupt() { await rpc.command("abort"); },
-    async compact() { await rpc.command("compact"); },
+    async compact(customInstructions) { await rpc.command("compact", customInstructions ? { customInstructions } : {}); },
     async listSkills(): Promise<SkillInfo[]> {
       const { commands } = await rpc.command("get_commands");
       return commands.filter((c: Json) => c.source === "skill").map((c: Json) => ({

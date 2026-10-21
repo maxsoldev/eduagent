@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { E2E_DIR } from "./env";
 
@@ -131,4 +131,41 @@ test("edupi's tool calls show their output and the edit's diff, in the chat and 
   await page.getByTestId("tab-Timeline").click();
   await expect(page.locator('.t-row[data-event="toolDispatch"]').first()).toContainText("Tool call");
   await expect(page.locator('.t-row[data-event="toolOutput"]').first()).toContainText("Tool output");
+});
+
+test("a manual compaction with custom instructions shows in the chat and the timeline", async ({ page }) => {
+  // pi keeps the last 20000 tokens by default, so this short chat would have nothing to compact.
+  const home = join(E2E_DIR, "home-edupi-compact", "agent");
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, "settings.json"), JSON.stringify({ compaction: { keepRecentTokens: 10 } }));
+
+  await page.goto("/?backend=edupi-compact");
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  await send(page, "Say hello.");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(1);
+  await send(page, "Say hello again.");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(2);
+
+  // pi's /compact takes custom instructions after the command.
+  await send(page, "/compact Keep the greetings.");
+  await expect(page.getByTestId("compaction")).toHaveText("⟲ context compacted (manual)");
+  await send(page, "Go on.");
+  await expect(page.getByTestId("agent-message").last()).toHaveText(/This reply comes after the compaction\./);
+
+  // The timeline: pi's compaction events, and edupi's trace events with the summary request and the new context.
+  await page.getByTestId("tab-Timeline").click();
+  await expect(page.locator('.t-row[data-event="compaction_start"]')).toContainText("manual");
+  await expect(page.locator('.t-row[data-event="compactionRequest"]')).toHaveCount(2); // a split turn: history and turn prefix
+  await expect(page.locator('.t-row[data-event="compactionRequest"]').first()).toContainText("Compaction request");
+  await page.locator('.t-row[data-event="compacted"]').click();
+  await expect(page.locator(".t-detail")).toContainText("Greet the user.");
+  await expect(page.locator(".t-detail .links").getByRole("link", { name: /^pi: / })).toHaveAttribute("href",
+    "https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/compaction/compaction.ts");
+  await expect(page.locator('.t-row[data-event="compaction_end"]')).toContainText("tokens before");
+
+  // The command went out as pi's compact command, with the instructions.
+  await page.getByTestId("tab-Protocol").click();
+  const wire = page.getByTestId("protocol-view");
+  await wire.locator(".t-title").getByText("compact", { exact: true }).click();
+  await expect(wire).toContainText('customInstructions: "Keep the greetings."');
 });

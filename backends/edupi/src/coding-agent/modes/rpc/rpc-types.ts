@@ -4,12 +4,14 @@
 import type { AgentMessage } from "../../../agent/types.ts";
 import type { ImageContent, Model, ThinkingLevel } from "../../../ai/types.ts";
 import type { PromptDisposition } from "../../core/agent-session.ts";
+import type { CompactionResult } from "../../core/compaction/compaction.ts";
 
 export type RpcCommand =
   | { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
   | { id?: string; type: "new_session"; parentSession?: string }
   | { id?: string; type: "get_state" }
-  | { id?: string; type: "get_messages" };
+  | { id?: string; type: "get_messages" }
+  | { id?: string; type: "compact"; customInstructions?: string };
 
 export interface RpcSessionState {
   model?: Model;
@@ -31,4 +33,5 @@ export type RpcResponse =
   | { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
   | { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
   | { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+  | { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
   | { id?: string; type: "response"; command: string; success: false; error: string };

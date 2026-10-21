@@ -8,6 +8,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync
 import { join, resolve } from "node:path";
 import type { AgentMessage } from "../../agent/types.ts";
 import type { Message, SystemMessage, Usage } from "../../ai/types.ts";
+import { getCurrentSystemMessage } from "../../ai/utils/transcript.ts";
 import { uuidv7 } from "../../ai/utils/uuid.ts";
 import { getAgentDir } from "../config.ts";
 import { createCompactionSummaryMessage } from "./messages.ts";
@@ -61,8 +62,18 @@ export interface CompactionEntry<T = unknown> extends SessionEntryBase {
   systemMessage?: SystemMessage; // the system prompt and tools at this point
 }
 
+/**
+ * A later change to one earlier entry's part of the context. edupi writes only omissions
+ * (replacement null): a failed overflow attempt is dropped before the retry. The entry itself stays.
+ */
+export interface ContextEditEntry extends SessionEntryBase {
+  type: "context_edit";
+  targetId: string;
+  replacement: { content: string | Message["content"] } | null;
+}
+
 /** The entry types edupi reads and writes. pi has more (label, custom, branch_summary, ...). */
-export type SessionEntry = SessionMessageEntry | ThinkingLevelChangeEntry | ModelChangeEntry | CompactionEntry;
+export type SessionEntry = SessionMessageEntry | ThinkingLevelChangeEntry | ModelChangeEntry | CompactionEntry | ContextEditEntry;
 
 /** A line of a session file: the header or an entry. */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -72,6 +83,17 @@ export interface SessionContext {
   messages: AgentMessage[];
   thinkingLevel: string;
   model: { provider: string; modelId: string } | null;
+}
+
+/** One entry of the context and the messages it gives, after context edits. */
+export interface ProjectedSessionEntry {
+  sourceEntry: SessionEntry;
+  messages: AgentMessage[]; // empty for settings entries and omitted ones
+}
+
+/** The context with, for each message, the entry it came from (compaction needs both). */
+export interface SessionProjection extends SessionContext {
+  entries: ProjectedSessionEntry[];
 }
 
 /** A short id: 8 hex chars, checked against the ids in use. */
@@ -164,14 +186,47 @@ export function buildContextEntries(entries: SessionEntry[], leafId?: string | n
   return contextEntries;
 }
 
-/** Rebuilds the model's context from the entries on the path to the leaf. */
-export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
+/** An entry's messages after its context edit: null drops them, a replacement swaps the content. */
+function projectContextEntry(entry: SessionEntry, edit: ContextEditEntry | undefined): AgentMessage[] {
+  const messages = sessionEntryToContextMessages(entry);
+  if (!edit) return messages;
+  const replacement = edit.replacement;
+  if (replacement === null) return [];
+  return messages.map((message) => {
+    if (message.role !== "user" && message.role !== "assistant" && message.role !== "toolResult") return message;
+    const content = message.role !== "user" && typeof replacement.content === "string"
+      ? [{ type: "text" as const, text: replacement.content }] : replacement.content;
+    return { ...message, content } as AgentMessage;
+  });
+}
+
+/** The context entries, each with the messages it gives after context edits. */
+export function buildSessionProjection(entries: SessionEntry[], leafId?: string | null): SessionProjection {
   const path = buildSessionPath(entries, leafId);
   const { thinkingLevel, model } = getSessionContextSettings(path);
-  // An older compaction can sit inside the kept range. Only the latest one (index 0) adds messages.
-  const messages = buildContextEntries(entries, leafId)
-    .flatMap((entry, index) => (entry.type === "compaction" && index > 0 ? [] : sessionEntryToContextMessages(entry)));
+  const contextEntries = buildContextEntries(entries, leafId);
+  const edits = new Map<string, ContextEditEntry>();
+  for (const entry of contextEntries) if (entry.type === "context_edit") edits.set(entry.targetId, entry);
+  const projected = contextEntries.map((sourceEntry, index): ProjectedSessionEntry => ({
+    sourceEntry,
+    // An older compaction can sit inside the kept range. Only the latest one (index 0) adds messages.
+    messages: sourceEntry.type === "compaction" && index > 0 ? [] : projectContextEntry(sourceEntry, edits.get(sourceEntry.id)),
+  }));
+  return { entries: projected, messages: projected.flatMap((e) => e.messages), thinkingLevel, model };
+}
+
+/** Rebuilds the model's context from the entries on the path to the leaf. */
+export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
+  const { messages, thinkingLevel, model } = buildSessionProjection(entries, leafId);
   return { messages, thinkingLevel, model };
+}
+
+export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type === "compaction") return entry;
+  }
+  return null;
 }
 
 /** <agentDir>/sessions/--<cwd without the leading /, with / \ : as ->--, created if missing. */
@@ -336,6 +391,45 @@ export class SessionManager {
     return entry.id;
   }
 
+  /**
+   * Appends a compaction summary. It also stores the current system message (the prompt and
+   * tools at this point), because the context rebuilt from it leaves out older system messages.
+   */
+  appendCompaction<T = unknown>(summary: string, firstKeptEntryId: string | null, tokensBefore: number, details?: T,
+    fromHook?: boolean, usage?: Usage): string {
+    const base = this._entryBase();
+    const systemMessage = getCurrentSystemMessage(this.buildSessionProjection().messages);
+    const entry: CompactionEntry<T> = {
+      type: "compaction",
+      ...base,
+      summary,
+      firstKeptEntryId: firstKeptEntryId ?? base.id,
+      tokensBefore,
+      details,
+      usage,
+      fromHook,
+      ...(systemMessage ? { systemMessage: { ...systemMessage, timestamp: new Date(base.timestamp).getTime() } } : {}),
+    };
+    this._appendEntry(entry as CompactionEntry);
+    return entry.id;
+  }
+
+  /** Appends an edit of an earlier message entry's context; null leaves it out of the context. */
+  appendContextEdit(targetId: string, replacement: ContextEditEntry["replacement"]): string {
+    const target = this.byId.get(targetId);
+    if (!target) throw new Error(`Entry ${targetId} not found`);
+    if (target.type !== "message" || target.message.role === "system") {
+      throw new Error(`Entry ${targetId} does not contribute editable model content`);
+    }
+    const entry: ContextEditEntry = { type: "context_edit", ...this._entryBase(), targetId, replacement };
+    this._appendEntry(entry);
+    return entry.id;
+  }
+
+  getEntry(id: string): SessionEntry | undefined {
+    return this.byId.get(id);
+  }
+
   getHeader(): SessionHeader | null {
     return this.fileEntries.find((e): e is SessionHeader => e.type === "session") ?? null;
   }
@@ -352,6 +446,10 @@ export class SessionManager {
 
   buildSessionContext(): SessionContext {
     return buildSessionContext(this.getEntries(), this.leafId);
+  }
+
+  buildSessionProjection(): SessionProjection {
+    return buildSessionProjection(this.getEntries(), this.leafId);
   }
 
   /** A new session in <agentDir>/sessions/<cwd folder>/, or in sessionDir. */

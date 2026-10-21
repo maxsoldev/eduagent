@@ -1,0 +1,9 @@
+{
+  "responses": [
+    "Hello from edupi. This reply comes from the faux provider, streamed in small chunks like a real model.",
+    "Hello again. The next step is a compaction: two summary requests, because the cut splits this turn.",
+    "## Goal\nGreet the user.\n\n## Progress\n### Done\n- [x] Said hello once",
+    "## Original Request\nSay hello again.",
+    "This reply comes after the compaction. The request started with the summary, then the kept reply."
+  ]
+}

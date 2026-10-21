@@ -8,6 +8,7 @@ export interface Args {
   session?: string; // a session file to open (pi also takes a partial session id)
   continue?: boolean; // open the newest session of this cwd
   noSession?: boolean; // keep the session in memory only
+  offline?: boolean; // do not read OpenRouter's model list (pi: --offline, also PI_OFFLINE)
   faux?: string; // faux script file: answer from scripted replies instead of OpenRouter
   fauxLog?: string; // append every request the faux provider gets to this JSONL file
   diagnostics: { type: "error"; message: string }[];
@@ -29,6 +30,8 @@ export function parseArgs(args: string[]): Args {
       result.continue = true;
     } else if (arg === "--no-session") {
       result.noSession = true;
+    } else if (arg === "--offline") {
+      result.offline = true;
     } else if (arg === "--faux" && i + 1 < args.length) {
       result.faux = args[++i];
     } else if (arg === "--faux-log" && i + 1 < args.length) {

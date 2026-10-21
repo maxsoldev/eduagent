@@ -149,6 +149,8 @@ export interface SimpleStreamOptions {
   temperature?: number;
   sessionId?: string;
   reasoning?: Exclude<ThinkingLevel, "off">;
+  /** Sees (and may replace) the request body before it is sent. Return undefined to keep it. */
+  onPayload?: (payload: unknown, model: Model) => unknown | undefined | Promise<unknown | undefined>;
   probe?: ProviderProbe; // edupi: teaching hooks (pi's nearest are onPayload and onResponse)
 }
 
