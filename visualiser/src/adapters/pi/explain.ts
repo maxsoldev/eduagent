@@ -53,6 +53,10 @@ const TRACE: Record<string, Info> = {
     text: "pi starts a tool call. All calls of one reply start first, then run at the same time (parallel is pi's default)." },
   toolOutput: { title: "Tool output", category: "tools", chapter: "04", source: LOOP,
     text: "The text the model reads back as a role \"tool\" message. Details such as the edit's diff stay in the user interface." },
+  promptAssembled: { title: "Prompt assembled", category: "prompt", chapter: "03", source: "packages/coding-agent/src/core/system-prompt.ts",
+    text: "pi's system prompt as named sections: preamble, tools, rules, AGENTS.md files (project_context), the skills list and the cwd. Only changed sections go into the transcript, as a system message; the first prompt of a session gets all of them." },
+  skillsLoaded: { title: "Skills loaded", category: "prompt", chapter: "05", source: "packages/coding-agent/src/core/skills.ts",
+    text: "pi scanned <cwd>/.pi/skills (only in a trusted project) and its home's skills folder, once for the session. The prompt lists each skill's name, description and file; the model reads the file itself when it needs it." },
 };
 
 function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
@@ -77,6 +81,8 @@ function summary(e: TimelineEvent): string {
     case "toolsRegistered": return e.trace ? p.tools.map((t: Json) => t.function?.name).join(", ") : "";
     case "toolDispatch": return e.trace ? `${p.tool} ${JSON.stringify(p.arguments).slice(0, 80)}${p.parallel ? " · parallel" : ""}` : "";
     case "toolOutput": return e.trace ? `${p.tool}${p.isError ? " · error" : ""} → ${p.tokens} tok` : "";
+    case "promptAssembled": return e.trace ? p.fragments.map((f: Json) => `${f.kind}${f.changed ? "+" : ""}`).join(" · ") : "";
+    case "skillsLoaded": return e.trace ? `${p.skills.length} skills in ${p.roots.length} folders${p.projectTrusted ? "" : " · project not trusted"}${p.errors.length ? ` · ${p.errors.length} warnings` : ""}` : "";
     case "modelRequest": return e.trace ? `${p.body.messages.length} messages · ${p.body.model}` : "";
     case "modelResponse": return e.trace ? `${p.stopReason} · ${p.usage.input} in / ${p.usage.output} out · ${p.seconds}s` : "";
     default: return "";

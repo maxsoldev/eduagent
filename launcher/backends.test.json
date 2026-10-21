@@ -27,7 +27,7 @@
       "description": "edupi with the faux provider (backends/edupi/examples/faux/demo.json)",
       "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
       "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
-      "capabilities": ["trace"]
+      "capabilities": ["trace", "skills", "contextInspector"]
     },
     {
       "name": "edupi-tools",
@@ -36,7 +36,16 @@
       "description": "Test backend: edupi with a faux script that calls pi's tools (backends/edupi/examples/faux/tools.json)",
       "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/tools.json"],
       "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
-      "capabilities": ["trace"]
+      "capabilities": ["trace", "skills", "contextInspector"]
+    },
+    {
+      "name": "edupi-skills",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi in a trusted project (--approve); the faux model reads a skill's SKILL.md (backends/edupi/examples/faux/skills.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--approve", "--faux", "${REPO}/backends/edupi/examples/faux/skills.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi-skills/agent" },
+      "capabilities": ["trace", "skills", "contextInspector"]
     },
     {
       "name": "pi-replay",
