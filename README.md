@@ -120,6 +120,8 @@ pnpm lint                                           # at the repo root: biome ch
 cd backends/educodex && uv run ruff format && uv run ruff check
 ```
 
+The bulk formatting commit is listed in `.git-blame-ignore-revs`. To skip it in `git blame`, run once: `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
 ## Layout
 
 Paths are relative to `backends/educodex/`, except the last two rows.
