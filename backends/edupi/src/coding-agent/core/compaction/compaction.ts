@@ -20,7 +20,6 @@ import {
 	type ProjectedSessionEntry,
 	type SessionEntry,
 	type SessionProjection,
-	sessionEntryToContextMessages,
 } from "../session-manager.ts";
 import {
 	computeFileLists,
@@ -49,21 +48,15 @@ function extractFileOperations(
 	prevCompactionIndex: number,
 ): FileOperations {
 	const fileOps = createFileOps();
-	if (prevCompactionIndex >= 0) {
-		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
-		if (!prevCompaction.fromHook && prevCompaction.details) {
-			const details = prevCompaction.details as CompactionDetails;
-			if (Array.isArray(details.readFiles)) for (const f of details.readFiles) fileOps.read.add(f);
-			if (Array.isArray(details.modifiedFiles)) for (const f of details.modifiedFiles) fileOps.edited.add(f);
-		}
+	const prevCompaction = entries[prevCompactionIndex] as CompactionEntry | undefined;
+	const details = prevCompaction?.details as CompactionDetails | undefined;
+	if (details) {
+		for (const f of details.readFiles) fileOps.read.add(f);
+		for (const f of details.modifiedFiles) fileOps.edited.add(f);
 	}
 	for (const msg of messages) extractFileOpsFromMessage(msg, fileOps);
 	return fileOps;
 }
-
-// ============================================================================
-// Message Extraction
-// ============================================================================
 
 /** The conversation messages of an entry. System messages are prompt state: the compaction entry replays them. */
 function getMessagesFromProjectedEntryForCompaction(entry: ProjectedSessionEntry): AgentMessage[] {
@@ -72,18 +65,14 @@ function getMessagesFromProjectedEntryForCompaction(entry: ProjectedSessionEntry
 }
 
 /** What compact() returns; the session manager adds id and parentId when it saves it. */
-export interface CompactionResult<T = unknown> {
+export interface CompactionResult {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
 	estimatedTokensAfter?: number;
 	usage?: Usage; // of the summary call(s)
-	details?: T;
+	details?: CompactionDetails;
 }
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface CompactionSettings {
 	enabled: boolean;
@@ -108,44 +97,21 @@ export function calculateContextTokens(usage: Usage): number {
 
 /** An assistant message's usage, unless it was aborted, failed or reports nothing. */
 function getAssistantUsage(msg: AgentMessage): Usage | undefined {
-	if (
-		msg.role === "assistant" &&
-		msg.stopReason !== "aborted" &&
-		msg.stopReason !== "error" &&
-		calculateContextTokens(msg.usage) > 0
-	) {
-		return msg.usage;
-	}
-	return undefined;
+	if (msg.role !== "assistant" || msg.stopReason === "aborted" || msg.stopReason === "error") return undefined;
+	return calculateContextTokens(msg.usage) > 0 ? msg.usage : undefined;
 }
 
-export interface ContextUsageEstimate {
+interface ContextUsageEstimate {
 	tokens: number;
-	usageTokens: number;
-	trailingTokens: number;
-	lastUsageIndex: number | null;
-}
-
-function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const usage = getAssistantUsage(messages[i]);
-		if (usage) return { usage, index: i };
-	}
-	return undefined;
+	lastUsageIndex: number | null; // the message whose usage the estimate starts from
 }
 
 /** The last reported usage plus an estimate of every message after it (or an estimate of all). */
 export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
-	const usageInfo = getLastAssistantUsageInfo(messages);
-	if (!usageInfo) {
-		let estimated = 0;
-		for (const message of messages) estimated += estimateTokens(message);
-		return { tokens: estimated, usageTokens: 0, trailingTokens: estimated, lastUsageIndex: null };
-	}
-	const usageTokens = calculateContextTokens(usageInfo.usage);
-	let trailingTokens = 0;
-	for (let i = usageInfo.index + 1; i < messages.length; i++) trailingTokens += estimateTokens(messages[i]);
-	return { tokens: usageTokens + trailingTokens, usageTokens, trailingTokens, lastUsageIndex: usageInfo.index };
+	const index = messages.findLastIndex((message) => getAssistantUsage(message) !== undefined);
+	let tokens = index >= 0 ? calculateContextTokens(getAssistantUsage(messages[index])!) : 0;
+	for (let i = index + 1; i < messages.length; i++) tokens += estimateTokens(messages[i]);
+	return { tokens, lastUsageIndex: index >= 0 ? index : null };
 }
 
 /** True if the entry of the message at lastUsageIndex comes after the latest context edit or compaction. */
@@ -154,27 +120,14 @@ function isUsageAfterLatestContextChange(
 	branchEntries: SessionEntry[],
 	lastUsageIndex: number,
 ): boolean {
-	// Find the entry that produced the projected message at lastUsageIndex.
-	let projectedMessageIndex = 0;
-	let usageEntryId: string | undefined;
-	for (const entry of projection.entries) {
-		const nextMessageIndex = projectedMessageIndex + entry.messages.length;
-		if (lastUsageIndex < nextMessageIndex) {
-			usageEntryId = entry.sourceEntry.id;
-			break;
-		}
-		projectedMessageIndex = nextMessageIndex;
-	}
-	const usageEntryIndex = usageEntryId ? branchEntries.findIndex((entry) => entry.id === usageEntryId) : -1;
-	let latestInvalidatingEntryIndex = -1;
-	for (let i = branchEntries.length - 1; i >= 0; i--) {
-		const entry = branchEntries[i];
-		if (entry.type === "context_edit" || entry.type === "compaction") {
-			latestInvalidatingEntryIndex = i;
-			break;
-		}
-	}
-	return usageEntryIndex > latestInvalidatingEntryIndex;
+	// The entry that produced each projected message, and so the one at lastUsageIndex.
+	const messageEntryIds = projection.entries.flatMap((entry) => entry.messages.map(() => entry.sourceEntry.id));
+	const usageEntryId = messageEntryIds[lastUsageIndex];
+	const usageEntryIndex = branchEntries.findIndex((entry) => entry.id === usageEntryId);
+	const latestChangeIndex = branchEntries.findLastIndex(
+		(entry) => entry.type === "context_edit" || entry.type === "compaction",
+	);
+	return usageEntryIndex > latestChangeIndex;
 }
 
 /**
@@ -197,7 +150,7 @@ export function estimateProjectedContextTokens(
 	const currentSystem = getCurrentSystemMessage(projection.messages);
 	let tokens = currentSystem ? estimateTokens(currentSystem) : 0;
 	for (const message of projection.messages) if (message.role !== "system") tokens += estimateTokens(message);
-	return { tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: null };
+	return { tokens, lastUsageIndex: null };
 }
 
 /** pi's threshold rule: compact when the context leaves less than reserveTokens of the window. */
@@ -210,31 +163,20 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // Cut point detection
 // ============================================================================
 
-const ESTIMATED_IMAGE_CHARS = 4800;
-
-function estimateTextAndImageContentChars(content: string | readonly { type: string; text?: string }[]): number {
-	if (typeof content === "string") return content.length;
-	let chars = 0;
-	for (const block of content) {
-		if (block.type === "text" && block.text) chars += block.text.length;
-		else if (block.type === "image") chars += ESTIMATED_IMAGE_CHARS;
-	}
-	return chars;
-}
-
 /** A message's tokens, estimated as characters / 4 (an overestimate). */
 export function estimateTokens(message: AgentMessage): number {
 	let chars = 0;
 	switch (message.role) {
 		case "system": {
 			const system = message as SystemMessage;
-			chars = estimateTextAndImageContentChars(system.content);
+			chars = contentText(system.content, "").length;
 			for (const section of Object.values(system.sections ?? {})) if (section) chars += section.length;
 			if (system.toolsAdded) chars += JSON.stringify(system.toolsAdded).length;
 			return Math.ceil(chars / 4);
 		}
 		case "user":
-			return Math.ceil(estimateTextAndImageContentChars(message.content) / 4);
+		case "toolResult":
+			return Math.ceil(contentText(message.content, "").length / 4);
 		case "assistant": {
 			for (const block of message.content) {
 				if (block.type === "text") chars += block.text.length;
@@ -243,8 +185,6 @@ export function estimateTokens(message: AgentMessage): number {
 			}
 			return Math.ceil(chars / 4);
 		}
-		case "toolResult":
-			return Math.ceil(estimateTextAndImageContentChars(message.content) / 4);
 		case "compactionSummary":
 			return Math.ceil(message.summary.length / 4);
 	}
@@ -261,7 +201,7 @@ function isTurnStartMessage(message: AgentMessage): boolean {
 	return message.role === "user" || message.role === "compactionSummary";
 }
 
-export interface CutPointResult {
+interface CutPointResult {
 	firstKeptEntryIndex: number; // index of the first entry to keep
 	turnStartIndex: number; // the user message that starts the turn being split, or -1
 	isSplitTurn: boolean; // the cut is inside a turn, not at its user message
@@ -346,63 +286,63 @@ const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation mes
 ${UPDATE_SUMMARIZATION_INSTRUCTIONS}`;
 
 /** An error or a length stop (partial text) must not become a checkpoint. */
-export function getSummarizationFailure(response: AssistantMessage, label: string): string | undefined {
+function getSummarizationFailure(response: AssistantMessage, label: string): string | undefined {
 	if (response.stopReason === "error") return `${label} failed: ${response.errorMessage || "Unknown error"}`;
 	if (response.stopReason === "length")
 		return `${label} failed: generation hit the token cap and the summary is incomplete`;
 	return undefined;
 }
 
-/** Options of a summary call: the model's own output limit, the session's thinking level if it reasons. */
-function createSummarizationOptions(
-	model: Model,
-	apiKey: string | undefined,
-	signal: AbortSignal | undefined,
-	thinkingLevel: ThinkingLevel | undefined,
-	onPayload: SimpleStreamOptions["onPayload"],
-): SimpleStreamOptions {
-	const options: SimpleStreamOptions = { signal, apiKey, onPayload };
-	if (model.reasoning && thinkingLevel && thinkingLevel !== "off") options.reasoning = thinkingLevel;
-	return options;
+/** edupi: what every summary call needs (pi passes these as separate arguments). */
+interface SummarizationCall {
+	model: Model;
+	apiKey: string | undefined;
+	streamFn: StreamFn;
+	signal?: AbortSignal;
+	thinkingLevel?: ThinkingLevel;
+	onPayload?: SimpleStreamOptions["onPayload"];
 }
 
-/** One summary call, through the agent's stream function. A fresh session id: no shared cache. */
+/**
+ * One summary call, through the agent's stream function: the summarizer's system prompt and one
+ * user message. The model's own output limit, the session's thinking level if it reasons, no cache
+ * writes and a fresh session id (pi compaction.ts:628). Fails on an error, a length stop or a tool call.
+ */
 async function completeSummarization(
-	model: Model,
-	context: TranscriptContext,
-	options: SimpleStreamOptions,
-	streamFn: StreamFn,
-): Promise<AssistantMessage> {
-	// No cache writes for a one-off summary (pi compaction.ts:628).
-	const requestOptions: SimpleStreamOptions = {
-		...options,
-		cacheRetention: "none",
-		sessionId: options.sessionId ?? uuidv7(),
-	};
-	return (await streamFn(model, context, requestOptions)).result();
-}
-
-/** A standalone request: the summarizer's system prompt and one user message. */
-function buildSummarizationContext(promptText: string): TranscriptContext {
-	return {
+	call: SummarizationCall,
+	promptText: string,
+	label: string,
+): Promise<{ text: string; usage: Usage }> {
+	const { model, thinkingLevel } = call;
+	const context: TranscriptContext = {
 		messages: [
 			{ role: "system", content: SUMMARIZATION_SYSTEM_PROMPT, timestamp: Date.now() },
 			{ role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() },
 		],
 	};
+	const options: SimpleStreamOptions = {
+		signal: call.signal,
+		apiKey: call.apiKey,
+		onPayload: call.onPayload,
+		cacheRetention: "none",
+		sessionId: uuidv7(),
+	};
+	if (model.reasoning && thinkingLevel && thinkingLevel !== "off") options.reasoning = thinkingLevel;
+
+	const response = await (await call.streamFn(model, context, options)).result();
+	const failure = getSummarizationFailure(response, label);
+	if (failure) throw new Error(failure);
+	if (response.content.some((block) => block.type === "toolCall"))
+		throw new Error(`${label} attempted to call a tool`);
+	return { text: contentText(response.content), usage: response.usage };
 }
 
 /** Summarizes messages, or folds them into previousSummary with the update prompt. */
-export async function generateSummaryWithUsage(
+async function generateSummaryWithUsage(
 	currentMessages: AgentMessage[],
-	model: Model,
-	apiKey: string | undefined,
-	streamFn: StreamFn,
-	signal?: AbortSignal,
+	call: SummarizationCall,
 	customInstructions?: string,
 	previousSummary?: string,
-	thinkingLevel?: ThinkingLevel,
-	onPayload?: SimpleStreamOptions["onPayload"],
 ): Promise<{ text: string; usage: Usage }> {
 	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
 	if (customInstructions) basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
@@ -412,18 +352,7 @@ export async function generateSummaryWithUsage(
 	let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
 	if (previousSummary) promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
 	promptText += basePrompt;
-
-	const response = await completeSummarization(
-		model,
-		buildSummarizationContext(promptText),
-		createSummarizationOptions(model, apiKey, signal, thinkingLevel, onPayload),
-		streamFn,
-	);
-	const failure = getSummarizationFailure(response, "Summarization");
-	if (failure) throw new Error(failure);
-	if (response.content.some((block) => block.type === "toolCall"))
-		throw new Error("Summarization attempted to call a tool");
-	return { text: contentText(response.content), usage: response.usage };
+	return completeSummarization(call, promptText, "Summarization");
 }
 
 // ============================================================================
@@ -438,7 +367,6 @@ export interface CompactionPreparation {
 	tokensBefore: number;
 	previousSummary?: string; // of the previous compaction, for the update prompt
 	fileOps: FileOperations;
-	settings: CompactionSettings;
 }
 
 function isProjectedTurnStart(entry: ProjectedSessionEntry): boolean {
@@ -454,29 +382,15 @@ function findProjectedTurnStartIndex(entries: ProjectedSessionEntry[], entryInde
 /**
  * True if the entries after the cut hold only an omitted assistant reply (an overflow recovery
  * attempt) and the context edits that omit it: nothing there is still sent to the model.
- * A replacement edit of some other entry, or a compaction, makes it false.
  */
 function isRecoveryOmissionSuffix(suffix: ProjectedSessionEntry[]): boolean {
-	const isIntrinsicallyVisible = (entry: ProjectedSessionEntry): boolean =>
-		entry.sourceEntry.type !== "context_edit" && sessionEntryToContextMessages(entry.sourceEntry).length > 0;
-	const isOmitted = (entry: ProjectedSessionEntry): boolean =>
-		isIntrinsicallyVisible(entry) && entry.messages.length === 0;
-	const omittedSuffixIds = new Set(suffix.filter(isOmitted).map((entry) => entry.sourceEntry.id));
-	const hasExternalReplacement = suffix.some(
-		(entry) =>
-			entry.sourceEntry.type === "context_edit" &&
-			entry.sourceEntry.replacement !== null &&
-			!omittedSuffixIds.has(entry.sourceEntry.targetId),
-	);
 	return (
-		!hasExternalReplacement &&
 		suffix.some(
 			(entry) =>
-				entry.sourceEntry.type === "message" && entry.sourceEntry.message.role === "assistant" && isOmitted(entry),
-		) &&
-		suffix.every(
-			(entry) => entry.sourceEntry.type !== "compaction" && (!isIntrinsicallyVisible(entry) || isOmitted(entry)),
-		)
+				entry.sourceEntry.type === "message" &&
+				entry.sourceEntry.message.role === "assistant" &&
+				entry.messages.length === 0,
+		) && suffix.every((entry) => entry.sourceEntry.type !== "compaction" && entry.messages.length === 0)
 	);
 }
 
@@ -581,7 +495,6 @@ export function prepareCompaction(
 		tokensBefore,
 		previousSummary,
 		fileOps,
-		settings,
 	};
 }
 
@@ -637,15 +550,9 @@ export async function compact(
 	thinkingLevel?: ThinkingLevel,
 	onPayload?: SimpleStreamOptions["onPayload"],
 ): Promise<CompactionResult> {
-	const {
-		firstKeptEntryId,
-		messagesToSummarize,
-		turnPrefixMessages,
-		isSplitTurn,
-		tokensBefore,
-		previousSummary,
-		fileOps,
-	} = preparation;
+	const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary } =
+		preparation;
+	const call: SummarizationCall = { model, apiKey, streamFn, signal, thinkingLevel, onPayload };
 
 	let summary: string;
 	let summaryUsage: Usage;
@@ -655,79 +562,34 @@ export async function compact(
 		if (messagesToSummarize.length > 0) {
 			const historyResult = await generateSummaryWithUsage(
 				messagesToSummarize,
-				model,
-				apiKey,
-				streamFn,
-				signal,
+				call,
 				customInstructions,
 				previousSummary,
-				thinkingLevel,
-				onPayload,
 			);
 			historyText = historyResult.text;
 			historyUsage = historyResult.usage;
 		}
-		const turnPrefixResult = await generateTurnPrefixSummary(
-			turnPrefixMessages,
-			model,
-			apiKey,
-			streamFn,
-			signal,
-			thinkingLevel,
-			onPayload,
-		);
+		const turnPrefixResult = await generateTurnPrefixSummary(turnPrefixMessages, call);
 		summary = `${historyText}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.text}`;
 		summaryUsage = historyUsage ? combineUsage(historyUsage, turnPrefixResult.usage) : turnPrefixResult.usage;
 	} else {
-		const result = await generateSummaryWithUsage(
-			messagesToSummarize,
-			model,
-			apiKey,
-			streamFn,
-			signal,
-			customInstructions,
-			previousSummary,
-			thinkingLevel,
-			onPayload,
-		);
+		const result = await generateSummaryWithUsage(messagesToSummarize, call, customInstructions, previousSummary);
 		summary = result.text;
 		summaryUsage = result.usage;
 	}
 
 	// The files read and changed, appended to the summary.
-	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
+	const { readFiles, modifiedFiles } = computeFileLists(preparation.fileOps);
 	summary += formatFileOperations(readFiles, modifiedFiles);
-
-	return {
-		summary,
-		firstKeptEntryId,
-		tokensBefore,
-		usage: summaryUsage,
-		details: { readFiles, modifiedFiles } as CompactionDetails,
-	};
+	return { summary, firstKeptEntryId, tokensBefore, usage: summaryUsage, details: { readFiles, modifiedFiles } };
 }
 
 /** The summary of a split turn's first part. */
 async function generateTurnPrefixSummary(
 	messages: AgentMessage[],
-	model: Model,
-	apiKey: string | undefined,
-	streamFn: StreamFn,
-	signal?: AbortSignal,
-	thinkingLevel?: ThinkingLevel,
-	onPayload?: SimpleStreamOptions["onPayload"],
+	call: SummarizationCall,
 ): Promise<{ text: string; usage: Usage }> {
 	const conversationText = serializeConversation(convertToLlm(messages));
 	const promptText = `# Conversation\n${conversationText}\n\n# Instructions\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
-	const response = await completeSummarization(
-		model,
-		buildSummarizationContext(promptText),
-		createSummarizationOptions(model, apiKey, signal, thinkingLevel, onPayload),
-		streamFn,
-	);
-	const failure = getSummarizationFailure(response, "Turn prefix summarization");
-	if (failure) throw new Error(failure);
-	if (response.content.some((block) => block.type === "toolCall"))
-		throw new Error("Turn prefix summarization attempted to call a tool");
-	return { text: contentText(response.content), usage: response.usage };
+	return completeSummarization(call, promptText, "Turn prefix summarization");
 }

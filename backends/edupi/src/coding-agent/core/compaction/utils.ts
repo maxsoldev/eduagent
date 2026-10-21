@@ -22,16 +22,12 @@ export function createFileOps(): FileOperations {
 export function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
 	if (message.role !== "assistant") return;
 	for (const block of message.content) {
-		if (block.type === "toolCall") addFileOp(block.name, block.arguments, fileOps);
+		if (block.type !== "toolCall" || typeof block.arguments.path !== "string") continue;
+		const path = block.arguments.path;
+		if (block.name === "read") fileOps.read.add(path);
+		else if (block.name === "write") fileOps.written.add(path);
+		else if (block.name === "edit") fileOps.edited.add(path);
 	}
-}
-
-function addFileOp(toolName: string, args: Record<string, unknown> | undefined, fileOps: FileOperations): void {
-	const path = typeof args?.path === "string" ? args.path : undefined;
-	if (!path) return;
-	if (toolName === "read") fileOps.read.add(path);
-	else if (toolName === "write") fileOps.written.add(path);
-	else if (toolName === "edit") fileOps.edited.add(path);
 }
 
 /** readFiles: files only read, not modified. modifiedFiles: written or edited. Both sorted. */
@@ -57,9 +53,10 @@ export function formatFileOperations(readFiles: string[], modifiedFiles: string[
 /** Maximum characters for a tool result in serialized summaries. */
 const TOOL_RESULT_MAX_CHARS = 2000;
 
-function truncateForSummary(text: string, maxChars: number): string {
-	if (text.length <= maxChars) return text;
-	return `${text.slice(0, maxChars)}\n\n[... ${text.length - maxChars} more characters truncated]`;
+function truncateForSummary(text: string): string {
+	if (text.length <= TOOL_RESULT_MAX_CHARS) return text;
+	const more = text.length - TOOL_RESULT_MAX_CHARS;
+	return `${text.slice(0, TOOL_RESULT_MAX_CHARS)}\n\n[... ${more} more characters truncated]`;
 }
 
 /**
@@ -86,7 +83,7 @@ export function serializeConversation(messages: Message[]): string {
 			if (toolCalls.length > 0) parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
 		} else if (msg.role === "toolResult") {
 			const content = contentText(msg.content, "");
-			if (content) parts.push(`[Tool result]: ${truncateForSummary(content, TOOL_RESULT_MAX_CHARS)}`);
+			if (content) parts.push(`[Tool result]: ${truncateForSummary(content)}`);
 		}
 	}
 	return parts.join("\n\n");
