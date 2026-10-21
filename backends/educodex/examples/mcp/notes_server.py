@@ -14,7 +14,7 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-STORE = Path(os.environ.get("NOTES_FILE", Path.home() / ".educodex" / "notes.json"))
+STORE = Path(os.environ.get("NOTES_FILE", Path.home() / ".eduagent" / ".educodex" / "notes.json"))
 server = MCPServer("notes")
 
 
