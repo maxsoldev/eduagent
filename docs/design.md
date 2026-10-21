@@ -186,7 +186,7 @@ Clients can opt out of any notification with Codex's `optOutNotificationMethods`
 
 ## Documentation
 
-`docs/guide/` is a step-by-step guide from basics to advanced ([outline](guide/README.md)). Each chapter covers the concept, the educodex code, the Codex code (permalinks at the pinned commit), where educodex is simpler, things to try, and further reading.
+`docs/guide/` is a step-by-step guide from basics to advanced ([outline](guide/educodex/README.md)). Each chapter covers the concept, the educodex code, the Codex code (permalinks at the pinned commit), where educodex is simpler, things to try, and further reading.
 
 ## Milestones
 
