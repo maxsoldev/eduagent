@@ -218,7 +218,7 @@ uv run educodex exec --mcp notes="python examples/mcp/notes_server.py" \
 
 Watch for `trace/mcpToolExposed` at the start, then a `policy` line for each call. Notes are stored in `~/.eduagent/.educodex/notes.json`. Set `NOTES_FILE=/tmp/notes.json` to keep them elsewhere.
 
-In the web UI, add this entry to `launcher/backends.local.json` ([the web UI](README.md#the-web-ui)), start the launcher, open http://127.0.0.1:8765 and pick **educodex-mcp**:
+In the visualiser, add this entry to `launcher/backends.local.json` ([the visualiser](README.md#the-visualiser)), start the launcher, open http://127.0.0.1:8765 and pick **educodex-mcp**:
 
 ```json
 { "name": "educodex-mcp", "harness": "Codex", "protocol": "codex-app-server",

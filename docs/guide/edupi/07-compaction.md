@@ -194,7 +194,7 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 
 ## Try it
 
-**In the web UI.** Open **edupi** (or **edupi-faux**). Compaction needs history older than `keepRecentTokens`, so first lower it:
+**In the visualiser.** Open **edupi** (or **edupi-faux**). Compaction needs history older than `keepRecentTokens`, so first lower it:
 
 ```bash
 echo '{"compaction":{"keepRecentTokens":10}}' > ~/.eduagent/.edupi/agent/settings.json

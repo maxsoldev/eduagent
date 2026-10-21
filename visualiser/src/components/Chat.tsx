@@ -64,7 +64,7 @@ function EntryView({ entry, module }: { entry: Entry; module: AdapterModule }) {
     case "compaction":
       return <div className="turn-sep compaction" data-testid="compaction">⟲ context compacted{entry.streaming ? "…" : ""}{entry.reason ? ` (${entry.reason})` : ""}</div>;
     case "notice":
-      return entry.source === "client"
+      return entry.source === "visualiser"
         ? <pre className={`note${entry.level === "error" ? " bad" : ""}`} data-testid="note">{entry.text}</pre>
         : <div className="card error">⚠ {entry.text}</div>;
     default:

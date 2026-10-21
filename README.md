@@ -12,7 +12,7 @@ pnpm install && pnpm build                    # build the visualiser once
 pnpm eduagent                                 # open http://127.0.0.1:8765
 ```
 
-Pick a backend and a working directory (prefilled with the directory where you ran `pnpm eduagent`), then click **Open**. To compare backends, open a second tab and pick another one. Each tab gets its own process; closing the tab stops it. Options: `--port 8765`, `--cwd DIR` (the prefilled directory), `--config FILE` (relative to `launcher/`).
+Pick a backend and a working directory (prefilled with the directory where you ran `pnpm eduagent`), then click **Open**. To compare backends, open a second viewer (another browser tab) and pick another one. Each viewer gets its own process; closing it stops it. Options: `--port 8765`, `--cwd DIR` (the prefilled directory), `--config FILE` (relative to `launcher/`).
 
 The backends are listed in [`launcher/backends.json`](launcher/backends.json). Each entry has a `name`, the `harness` it re-implements, the `protocol` it speaks, the `command` to run (an argv list, no shell, `${REPO}` and `${ENV_VAR}` are replaced), an optional `env`, and `capabilities`. For machine-specific entries, create `launcher/backends.local.json` in the same format. It is git-ignored, and an entry there replaces the shared entry with the same name. For the visualiser's hot reload, run `pnpm --filter @eduagent/visualiser dev` next to the launcher; Vite forwards `/backends` and `/guide` to it.
 

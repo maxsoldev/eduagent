@@ -42,7 +42,7 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const note = (text: string, error = false) => dispatch({ type: "notice", source: "client", level: error ? "error" : "info", text });
+  const note = (text: string, error = false) => dispatch({ type: "notice", source: "visualiser", level: error ? "error" : "info", text });
   const adapter = adapterRef.current;
   const commands = (adapter?.commands ?? []).filter((c) => !c.needs || caps.has(c.needs));
 

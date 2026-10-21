@@ -169,7 +169,7 @@ printf -- '---\nname: release\ndescription: Cut a release.\ndisable-model-invoca
   > /tmp/edupi-skills/.pi/skills/release/SKILL.md
 ```
 
-Open **edupi** in the web UI in `/tmp/edupi-skills` and ask *"Write me a poem about rain."* In the **Timeline**, **Skills loaded** shows one skill and "project not trusted": the launcher entry has no `--approve`, so `.pi/skills` was skipped. The model calls `read` on `haiku/SKILL.md`, then answers. The **Context** tab shows the `skills` part of the system prompt and the `tool output: SKILL.md`.
+Open **edupi** in the visualiser in `/tmp/edupi-skills` and ask *"Write me a poem about rain."* In the **Timeline**, **Skills loaded** shows one skill and "project not trusted": the launcher entry has no `--approve`, so `.pi/skills` was skipped. The model calls `read` on `haiku/SKILL.md`, then answers. The **Context** tab shows the `skills` part of the system prompt and the `tool output: SKILL.md`.
 
 To trust the project, add `"--approve"` to the entry's `command` in `launcher/backends.local.json`, or save a decision:
 

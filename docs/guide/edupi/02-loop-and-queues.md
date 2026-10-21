@@ -202,7 +202,7 @@ The Codex side: the [loop](https://github.com/openai/codex/blob/1c7c43cd856a1ef4
 
 ## Try it
 
-In the web UI, open **edupi** (with a real model) and ask for something slow: *"Run `sleep 8; ls` and tell me what you see."* While the command runs:
+In the visualiser, open **edupi** (with a real model) and ask for something slow: *"Run `sleep 8; ls` and tell me what you see."* While the command runs:
 
 - type *"Also count the files."* and press **steer**. The queue above the box shows it. When the command ends, it goes in after the tool result. Watch the **Timeline**: `queue_update`, then after `turn_end` a new `turn_start`, a second `queue_update` and the user `message_start`.
 - type *"Then say goodbye."* and press **follow-up**. It runs only after the agent has answered.

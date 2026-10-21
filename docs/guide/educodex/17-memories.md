@@ -94,11 +94,11 @@ v1
 
 The summary is read once per thread, not on every turn. In Codex the memory text is *thread context*, built with the initial context, while skills and permissions are *world state*, checked on every turn (chapter 05). So a `/memory-update` changes what *new* threads see. The current thread sees the new summary only after compaction, which rebuilds the initial context ([`compact.py`](../../../backends/educodex/src/educodex/core/compact.py)).
 
-**Citations.** The template asks the model to end a reply that used memories with an `<oai-mem-citation>` block (file, lines, why it helped, which old threads). [`strip_citations`](../../../backends/educodex/src/educodex/core/memories/citations.py) removes the block from the `agentMessage` item and attaches it as `memoryCitation`. History keeps the raw reply. The web UI shows "memory used: MEMORY.md:12-14 (…)" under the message.
+**Citations.** The template asks the model to end a reply that used memories with an `<oai-mem-citation>` block (file, lines, why it helped, which old threads). [`strip_citations`](../../../backends/educodex/src/educodex/core/memories/citations.py) removes the block from the `agentMessage` item and attaches it as `memoryCitation`. History keeps the raw reply. The visualiser shows "memory used: MEMORY.md:12-14 (…)" under the message.
 
 ### The write path: `/memory-update`
 
-Codex starts the write path in the background whenever a turn starts. educodex runs it when you type `/memory-update` in the web UI or the TUI (app-server method `memory/update/start`). It runs as the session's task, like manual compaction, so it never overlaps a turn, and you can watch every step in the Timeline. [`run_memory_update`](../../../backends/educodex/src/educodex/core/memories/start.py#L29) does:
+Codex starts the write path in the background whenever a turn starts. educodex runs it when you type `/memory-update` in the visualiser or the TUI (app-server method `memory/update/start`). It runs as the session's task, like manual compaction, so it never overlaps a turn, and you can watch every step in the Timeline. [`run_memory_update`](../../../backends/educodex/src/educodex/core/memories/start.py#L29) does:
 
 1. **Layout.** Create the folder and `extensions/ad_hoc/instructions.md` (Codex's text, written once).
 2. **Phase 1** ([`phase1.run`](../../../backends/educodex/src/educodex/core/memories/phase1.py#L141)).
@@ -220,7 +220,7 @@ mkdir -p /tmp/memory-proj && cd /tmp/memory-proj && git init -q
    uv run --project /path/to/educodex educodex exec --cwd . "Create notes.md with a short to-do list. Also remember: I always want British spelling."
    ```
 
-2. **Run the write path.** Start the web UI with memories on and type `/memory-update`. Add this entry to `launcher/backends.local.json` ([the web UI](README.md#the-web-ui)), start the launcher, and pick **educodex-memories** with the same directory as in step 1:
+2. **Run the write path.** Start the visualiser with memories on and type `/memory-update`. Add this entry to `launcher/backends.local.json` ([the visualiser](README.md#the-visualiser)), start the launcher, and pick **educodex-memories** with the same directory as in step 1:
 
    ```json
    { "name": "educodex-memories", "harness": "Codex", "protocol": "codex-app-server",

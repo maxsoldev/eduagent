@@ -62,10 +62,10 @@ The answers come from real constraints: cost, speed, safety and model training. 
 
 ## In educodex
 
-educodex follows Codex's structure. Each part is shown in the web UI as it happens:
+educodex follows Codex's structure. Each part is shown in the visualiser as it happens:
 
 ```
-web UI / TUI  ──JSON-RPC──►  app_server  ──events──  core (loop, prompt, tools, policy, sandbox)
+visualiser / TUI  ──JSON-RPC──►  app_server  ──events──  core (loop, prompt, tools, policy, sandbox)
                                                        │
                                                        ├─► client  ──HTTP/SSE──► OpenRouter (Responses API)
                                                        ├─► mcp     ──stdio────► MCP servers
@@ -103,7 +103,7 @@ The rest is product features: the terminal UI, cloud tasks, realtime voice, sub-
 - **About 4,000 lines of Python** instead of millions of lines of Rust. Each module says which Codex file it mirrors in its docstring.
 - **One provider.** educodex talks to OpenRouter's Responses API over HTTP. Codex supports several providers, a WebSocket transport and ChatGPT login.
 - **macOS sandbox only.** Linux and Windows sandboxes are left out (chapter 10).
-- **Extra visibility.** educodex emits `trace/*` events for steps Codex keeps hidden, so the web UI can show them (chapter 19).
+- **Extra visibility.** educodex emits `trace/*` events for steps Codex keeps hidden, so the visualiser can show them (chapter 19).
 
 Each later chapter lists what it leaves out in this section.
 

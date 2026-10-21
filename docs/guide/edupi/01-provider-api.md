@@ -138,7 +138,7 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json --faux-log /tmp/edu
 
 Press Ctrl-D, then read `/tmp/edupi-requests.jsonl`. The second body repeats the first question and answer.
 
-In the web UI, pick **edupi** (or **edupi-faux**) and send a message. In the **Protocol** tab, filter for `text_delta` to see the reply arrive piece by piece. Filter for `streamEvent` to see the raw chunks each delta came from.
+In the visualiser, pick **edupi** (or **edupi-faux**) and send a message. In the **Protocol** tab, filter for `text_delta` to see the reply arrive piece by piece. Filter for `streamEvent` to see the raw chunks each delta came from.
 
 Send a second message and open the **Requests** tab. It lists the request as Chat Completions messages (role and text). Open an educodex viewer next to it and send the same messages: its Requests tab lists Responses input items, with the instructions as developer messages.
 

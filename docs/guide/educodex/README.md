@@ -16,12 +16,12 @@ Every chapter uses the same blocks:
 | **In educodex** | Our Python code: the harness in `src/educodex/core/`, teaching extras in `src/educodex/observe/` |
 | **In Codex** | The Rust code it mirrors, linked at the pinned commit |
 | **Where educodex is simpler** | What we left out or changed, and why |
-| **Try it** | Something to run: the CLI, the web UI, or offline with `--fake-model` |
+| **Try it** | Something to run: the CLI, the visualiser, or offline with `--fake-model` |
 | **Further reading** | Articles, docs, posts |
 
-## The web UI
+## The visualiser
 
-educodex itself speaks only stdio. To use the web UI (the visualiser), start the launcher at the repo root. It serves the UI and starts one educodex process per browser tab:
+educodex itself speaks only stdio. To use the visualiser (the web UI), start the launcher at the repo root. It serves the UI and starts one educodex process per browser tab:
 
 ```bash
 (cd ../.. && pnpm install && pnpm build)   # once: build the visualiser
@@ -46,7 +46,7 @@ For `--mcp`, `--memories` or `--approval never`, add an entry with those flags i
 
 ## Chapters
 
-The milestone column refers to [the design doc](../../design.md#milestones). In the web UI, every timeline event links to its chapter.
+The milestone column refers to [the design doc](../../design.md#milestones). In the visualiser, every timeline event links to its chapter.
 
 ### Part I — Foundations
 | # | Chapter | You will learn | Milestone |
@@ -89,7 +89,7 @@ The milestone column refers to [the design doc](../../design.md#milestones). In 
 | # | Chapter | You will learn | Milestone |
 |---|---|---|---|
 | 18 | [The App Server](18-app-server.md) | JSON-RPC lite, thread/turn/item primitives, server-initiated requests | 2 |
-| 19 | [Clients and observability](19-clients-and-observability.md) | Building the web UI and TUI on one protocol; slash commands; trace events and the probe seam | 3 |
+| 19 | [Clients and observability](19-clients-and-observability.md) | Building the visualiser and TUI on one protocol; slash commands; trace events and the probe seam | 3 |
 
 ### Part VII — Beyond educodex
 | # | Chapter | You will learn | Milestone |

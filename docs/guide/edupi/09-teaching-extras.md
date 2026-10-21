@@ -111,7 +111,7 @@ Codex has no step mode either; both are educodex's and edupi's own. The two back
 
 ## Try it
 
-1. **In the viewer:** add `"stepMode"` to an `edupi-faux` entry's capabilities (see the [README](README.md#the-web-ui)) and use `examples/faux/step.json`, which prices the model and runs one `bash` call. Tick **step mode**, send a message, and open the **Context** tab while it is paused. Press **Continue** and watch the tab change after each step. The cost panel and the header badge show the prices from the script's model list.
+1. **In the viewer:** add `"stepMode"` to an `edupi-faux` entry's capabilities (see the [README](README.md#the-visualiser)) and use `examples/faux/step.json`, which prices the model and runs one `bash` call. Tick **step mode**, send a message, and open the **Context** tab while it is paused. Press **Continue** and watch the tab change after each step. The cost panel and the header badge show the prices from the script's model list.
 2. **Over stdio:**
    ```bash
    node bin/edupi.mjs --mode rpc --faux examples/faux/step.json

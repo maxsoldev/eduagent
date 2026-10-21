@@ -200,7 +200,7 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json --session /tmp/pi-c
 {"id":"1","type":"get_messages"}
 ```
 
-In the web UI, open **edupi**, chat, click **new thread** and chat again: the **Protocol** tab shows `new_session`, and the session folder now has two files.
+In the visualiser, open **edupi**, chat, click **new thread** and chat again: the **Protocol** tab shows `new_session`, and the session folder now has two files.
 
 Run the tests:
 

@@ -49,9 +49,9 @@ Real models are slow, cost money, and give different answers each time. For test
 
 ## In educodex
 
-### Web UI ([`visualiser/src/`](../../../visualiser/src/))
+### The visualiser ([`visualiser/src/`](../../../visualiser/src/))
 
-The web UI is the **visualiser**. It is shared by all backends, so it does not draw Codex messages directly. It has one **adapter** per native protocol, and each adapter maps that protocol into one neutral **view model** ([ADR 0001](../../adr/0001-native-protocols-and-adapters.md)). The chat, the Inspector and the context bar read only the view model. The contract is in [`protocol/README.md`](../../../protocol/README.md).
+The **visualiser** is the visualiser. It is shared by all backends, so it does not draw Codex messages directly. It has one **adapter** per native protocol, and each adapter maps that protocol into one neutral **view model** ([ADR 0001](../../adr/0001-native-protocols-and-adapters.md)). The chat, the Inspector and the context bar read only the view model. The contract is in [`protocol/README.md`](../../../protocol/README.md).
 
 | File | Job |
 |---|---|
@@ -126,11 +126,11 @@ The browser cannot start a process, and educodex speaks stdio, as `codex app-ser
 
 The launcher binds to 127.0.0.1 and refuses WebSocket upgrades whose `Origin` is not a loopback address. A page on another site could otherwise start a backend and run commands on your machine. It also refuses HTTP requests whose `Host` is not loopback (DNS rebinding).
 
-Because each viewer has its own process, two browser tabs never share threads. Open educodex in one tab and another backend in a second tab, send the same prompt, and compare.
+Because each viewer has its own process, two viewers never share threads. Open educodex in one viewer and another backend in a second one (another browser tab), send the same prompt, and compare.
 
 ### TUI over stdio ([`tui.py`](../../../backends/educodex/src/educodex/tui.py))
 
-The Textual TUI starts `educodex app-server --listen stdio://` (the default transport) as a child process and speaks JSONL over its pipes. It is the same protocol as the web UI, only over a different transport:
+The Textual TUI starts `educodex app-server --listen stdio://` (the default transport) as a child process and speaks JSONL over its pipes. It is the same protocol as the visualiser, only over a different transport:
 
 ```python
 while line := await self.proc.stdout.readline():
@@ -162,7 +162,7 @@ Codex's TUI opens a list when you type `/` (commands) or `$` (skills). Both clie
 
 The order is Codex's: its enum order is the order in the list ([`slash_command.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui/src/slash_command.rs#L12)). The list shows exact matches first, then prefix matches ([`command_popup.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/tui/src/bottom_pane/command_popup.rs#L159)). In Codex, the two memory commands are hidden debug stubs (`/debug-m-update`, `/debug-m-drop`).
 
-The `$` list comes from `skills/list` and is fetched again each time you start a mention, so a new `SKILL.md` shows up at once. Picking a skill inserts `$name` and remembers its path. On send, the web UI adds a `{"type": "skill", "name", "path"}` item for each picked skill that is still in the text. The path is exact, so even two skills with the same name work. The TUI shows the matches in a hint line, completes the first one with →, and sends text only; the server then matches plain `$name`.
+The `$` list comes from `skills/list` and is fetched again each time you start a mention, so a new `SKILL.md` shows up at once. Picking a skill inserts `$name` and remembers its path. On send, the visualiser adds a `{"type": "skill", "name", "path"}` item for each picked skill that is still in the text. The path is exact, so even two skills with the same name work. The TUI shows the matches in a hint line, completes the first one with →, and sends text only; the server then matches plain `$name`.
 
 ### CLI printer ([`cli.py`](../../../backends/educodex/src/educodex/cli.py))
 
@@ -229,7 +229,7 @@ It is used in three places:
 ## Where educodex is simpler
 
 - **Trace events are for people, not dashboards.** Codex sends telemetry to OTel collectors. educodex sends `trace/*` to the UI and keeps them in memory per thread.
-- **Untyped clients.** The web UI uses `any` for payloads. Codex clients use generated types.
+- **Untyped clients.** The visualiser uses `any` for payloads. Codex clients use generated types.
 - **Simple reconnects.** `thread/read` with `includeTrace` returns the whole event log. Codex has thread resume, history paging and lossless event queues.
 - **One fake-model script per thread.** Each `thread/start` creates a fresh `FakeModel`, so "new thread" restarts the script. A manual compaction also uses up one scripted response.
 - **One UI for several harnesses.** Codex's clients speak only the app-server protocol. The visualiser maps each harness's protocol into one view model, so a backend-only feature (approvals, plans) needs its own component in that adapter.
@@ -238,7 +238,7 @@ It is used in three places:
 
 ## Try it
 
-1. **Web UI, offline:** add a fake-model entry to `launcher/backends.local.json` (the launcher reads it next to `backends.json`):
+1. **Visualiser, offline:** add a fake-model entry to `launcher/backends.local.json` (the launcher reads it next to `backends.json`):
    ```json
    { "backends": [{ "name": "educodex-demo", "harness": "Codex", "protocol": "codex-app-server",
      "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server",
@@ -261,7 +261,7 @@ It is used in three places:
    cd ../.. && pnpm --filter @eduagent/visualiser exec playwright install chromium && pnpm build && pnpm test:e2e
    ```
    Playwright starts the launcher with [`launcher/backends.test.json`](../../../launcher/backends.test.json): educodex with the fake model and a temporary home, plus small test backends (`echo`, `crash`, and `pi-replay`, which replays a transcript recorded from the real pi).
-6. **The real pi in a viewer.** Add the `pi` entry from [`launcher/backends.local.example.json`](../../../launcher/backends.local.example.json) (see the [README](../../../README.md#the-real-pi)), open educodex in one tab and pi in another, and send the same prompt. Compare the two **Protocol** tabs: JSON-RPC lite with a handshake and item ids, against pi's `type`-tagged events with no handshake. pi lists no trace capabilities, so its viewer shows only Timeline and Protocol.
+6. **The real pi in a viewer.** Add the `pi` entry from [`launcher/backends.local.example.json`](../../../launcher/backends.local.example.json) (see the [README](../../../README.md#the-real-pi)), open educodex in one viewer and pi in another, and send the same prompt. Compare the two **Protocol** tabs: JSON-RPC lite with a handshake and item ids, against pi's `type`-tagged events with no handshake. pi lists no trace capabilities, so its viewer shows only Timeline and Protocol.
 7. **Write your own client.** In ~30 lines of Python, start `educodex app-server --listen stdio://`, opt out of every `trace/*` method, and print only `item/completed` items. That is a complete (if plain) agent UI.
 
 ## Further reading

@@ -15,7 +15,7 @@ Paths in this section are relative to `backends/edupi/`, where edupi's package l
 | **In pi** | The pi code it mirrors, linked at the pinned commit |
 | **How Codex does it differently** | The same job in Codex (and educodex) |
 | **Where edupi is simpler** | What we left out or changed, and why |
-| **Try it** | Something to run, in the web UI or over stdio |
+| **Try it** | Something to run, in the visualiser or over stdio |
 | **Further reading** | Docs and posts |
 
 ## The code
@@ -35,9 +35,9 @@ edupi's folders mirror pi's packages. File names follow pi's wherever a file sur
 
 edupi runs on Node 22.19 or newer with [tsx](https://tsx.is/), with no build step: `bin/edupi.mjs` registers tsx and starts `main()`.
 
-## The web UI
+## The visualiser
 
-edupi speaks only stdio, as `pi --mode rpc` does. To use it in the web UI, start the launcher at the repo root and pick **edupi**:
+edupi speaks only stdio, as `pi --mode rpc` does. To use it in the visualiser, start the launcher at the repo root and pick **edupi**:
 
 ```bash
 (cd ../.. && pnpm install && pnpm build)   # once: build the visualiser

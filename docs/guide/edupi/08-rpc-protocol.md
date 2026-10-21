@@ -140,7 +140,7 @@ not json
 
 Watch for the `prompt` response before `agent_start`, `agent_settled` at the end, and the two error responses.
 
-In the web UI, open **edupi** in one tab and **educodex** in another, send the same prompt in both, and compare their **Protocol** tabs. If you set up the real pi ([`README.md`](../../../README.md#the-real-pi)), open it in a third tab: its protocol is the same as edupi's.
+In the visualiser, open one viewer for **edupi** and one for **educodex**, send the same prompt in both, and compare their **Protocol** tabs. If you set up the real pi ([`README.md`](../../../README.md#the-real-pi)), open it in a third viewer: its protocol is the same as edupi's.
 
 ## Further reading
 

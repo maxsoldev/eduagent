@@ -256,7 +256,7 @@ The first result says `Process running with session ID …`; the model then call
 
 Offline, `uv run educodex exec --cwd /tmp/edu-demo --fake-model examples/fake/demo.json "go"` runs a scripted plan, `ls`, patch and `python3 hello.py` (create `/tmp/edu-demo` first).
 
-In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**), or offline with **educodex-demo**:
+In the visualiser ([start the launcher](README.md#the-visualiser) and pick **educodex**), or offline with **educodex-demo**:
 - **Tools** tab: every spec exactly as sent, including the full Lark grammar for `apply_patch`.
 - **Timeline** tab: `trace/toolDispatch` (the call) and `trace/toolOutput` (the formatted text and its size).
 - **Guardrails** tab: the policy decision made before each command or patch.

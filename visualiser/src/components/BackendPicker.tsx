@@ -9,7 +9,7 @@ export function BackendPicker({ list, error }: { list: BackendList; error?: stri
   return (
     <div className="picker" data-testid="backend-picker">
       <h1>eduagent</h1>
-      <p className="muted">Pick a backend. Each viewer gets its own backend process. Open a second tab to compare two backends.</p>
+      <p className="muted">Pick a backend. Each viewer gets its own backend process. Open a second viewer (another browser tab) to compare two backends.</p>
       {error && <div className="banner">{error}</div>}
       <label className="picker-cwd">working directory <input value={cwd} onChange={(e) => setCwd(e.target.value)} data-testid="picker-cwd" /></label>
       <ul>

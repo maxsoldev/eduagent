@@ -138,7 +138,7 @@ async def request(self, method, params):
         await self.notify("serverRequest/resolved", {"threadId": params.get("threadId"), "requestId": request_id})
 ```
 
-When the client's answer arrives, `MessageProcessor.handle` sees a message without `method` and resolves the future. Either way, the server then sends a `serverRequest/resolved` notification, and the web UI removes the approval card. The turn never hangs:
+When the client's answer arrives, `MessageProcessor.handle` sees a message without `method` and resolves the future. Either way, the server then sends a `serverRequest/resolved` notification, and the visualiser removes the approval card. The turn never hangs:
 - If the user interrupts the turn, the turn's task is cancelled, which also cancels the `await future`. Other threads' approvals are not touched.
 - If the client disconnects, `cancel_pending` answers its open requests with `cancel`.
 - A `cancel` answer raises `TurnAborted`, which ends the turn as `interrupted`.
@@ -177,14 +177,14 @@ Escalation under `never` is refused even earlier, in the [`exec_command` handler
 
 ## Try it
 
-**Offline, in the web UI.** The fake model script ends with a `rm -rf build` that always needs approval. Use a scratch folder, since the script also writes `hello.py`:
+**Offline, in the visualiser.** The fake model script ends with a `rm -rf build` that always needs approval. Use a scratch folder, since the script also writes `hello.py`:
 
 ```bash
 mkdir -p /tmp/approval-demo
 (cd ../.. && pnpm eduagent --cwd /tmp/approval-demo)
 ```
 
-Open http://127.0.0.1:8765, pick **educodex-demo** ([the fake-model entry](README.md#the-web-ui)) and send any message. When the approval card appears:
+Open http://127.0.0.1:8765, pick **educodex-demo** ([the fake-model entry](README.md#the-visualiser)) and send any message. When the approval card appears:
 - open the **Protocol** tab and find the `item/commandExecution/requestApproval` request with an `id` like `srv-…`. The turn is paused;
 - open the **Guardrails** tab: `trace/policyDecision` says `prompt` with the reason "dangerous command (forced rm) always needs approval";
 - click `decline`. The model receives "exec command rejected by user" and the turn goes on. The Protocol tab shows the response and then a `serverRequest/resolved` notification. Run it again and click `cancel`: the turn ends as `interrupted`.
@@ -198,7 +198,7 @@ uv run educodex exec --cwd /tmp/approval-demo "Create a folder build with a file
 uv run educodex exec --cwd /tmp/approval-demo --sandbox read-only "Create notes.txt containing hi"
 ```
 
-The first one prompts in the terminal for the `rm -rf`. In the second one, the patch prompts because the sandbox is read-only. (The terminal prompt offers `accept`, `acceptForSession`, `decline` and `cancel`. The web UI draws its buttons from `availableDecisions`, so it also shows `acceptWithExecpolicyAmendment` when the model proposed a valid `prefix_rule`.)
+The first one prompts in the terminal for the `rm -rf`. In the second one, the patch prompts because the sandbox is read-only. (The terminal prompt offers `accept`, `acceptForSession`, `decline` and `cancel`. The visualiser draws its buttons from `availableDecisions`, so it also shows `acceptWithExecpolicyAmendment` when the model proposed a valid `prefix_rule`.)
 
 The same offline demo works in the terminal: `uv run educodex exec --cwd /tmp/approval-demo --fake-model examples/fake/demo.json "go"` stops at the `rm -rf` and asks you.
 
