@@ -44,8 +44,9 @@ def clean_output_item(item: ResponseItem) -> ResponseItem:
     deserialising into its typed ResponseItem (protocol/src/models.rs)."""
     item = {k: v for k, v in item.items() if k != "status"}
     if item.get("type") == "message":
-        item["content"] = [{k: v for k, v in part.items() if k not in ("annotations", "logprobs")}
-                           for part in item.get("content", [])]
+        item["content"] = [
+            {k: v for k, v in part.items() if k not in ("annotations", "logprobs")} for part in item.get("content", [])
+        ]
     return item
 
 

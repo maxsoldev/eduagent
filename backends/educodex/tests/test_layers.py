@@ -21,6 +21,10 @@ def _imports(path: Path) -> list[str]:
 
 def test_core_does_not_import_observe_or_hosts():
     core = Path(educodex.core.__file__).parent
-    bad = [f"{path.relative_to(core)}: {name}" for path in sorted(core.rglob("*.py")) for name in _imports(path)
-           if any(name == f or name.startswith(f + ".") for f in FORBIDDEN)]
+    bad = [
+        f"{path.relative_to(core)}: {name}"
+        for path in sorted(core.rglob("*.py"))
+        for name in _imports(path)
+        if any(name == f or name.startswith(f + ".") for f in FORBIDDEN)
+    ]
     assert bad == []

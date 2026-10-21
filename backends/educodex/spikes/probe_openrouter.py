@@ -93,7 +93,9 @@ def check_freeform_roundtrip(client: httpx.Client) -> None:
     print("  custom_tool_call input:\n    " + call["input"].replace("\n", "\n    "))
 
     # Send the whole history back, as Codex does with store=false.
-    history += output + [{"type": "custom_tool_call_output", "call_id": call["call_id"], "output": "Success. Updated: A hello.txt"}]
+    history += output + [
+        {"type": "custom_tool_call_output", "call_id": call["call_id"], "output": "Success. Updated: A hello.txt"}
+    ]
     r2 = client.post("/responses", json=request_body(history))
     save("roundtrip_2.json", r2.json())
     if r2.status_code != 200:
@@ -136,7 +138,11 @@ def check_reasoning(client: httpx.Client) -> None:
     if reasoning:
         follow = body | {"input": body["input"] + output + [user("Thanks. Now: is 2^67-1 prime?")]}
         r2 = client.post("/responses", json=follow)
-        print("  reasoning item sent back accepted:", r2.status_code == 200, "" if r2.status_code == 200 else r2.text[:300])
+        print(
+            "  reasoning item sent back accepted:",
+            r2.status_code == 200,
+            "" if r2.status_code == 200 else r2.text[:300],
+        )
 
 
 def main() -> None:

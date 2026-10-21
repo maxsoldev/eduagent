@@ -6,27 +6,27 @@ import type { ToolCall } from "../types.ts";
 
 /** The finished arguments text of a tool call. */
 export function parseToolCallArguments(json: string | undefined): Pick<ToolCall, "arguments" | "argumentsError"> {
-  if (!json?.trim()) return { arguments: {} };
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new Error("Tool arguments must be a JSON object");
-    }
-    return { arguments: parsed };
-  } catch (error) {
-    return {
-      arguments: {},
-      argumentsError: `${error instanceof Error ? error.message : String(error)}\n\nReceived arguments:\n${json}`,
-    };
-  }
+	if (!json?.trim()) return { arguments: {} };
+	try {
+		const parsed = JSON.parse(json);
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			throw new Error("Tool arguments must be a JSON object");
+		}
+		return { arguments: parsed };
+	} catch (error) {
+		return {
+			arguments: {},
+			argumentsError: `${error instanceof Error ? error.message : String(error)}\n\nReceived arguments:\n${json}`,
+		};
+	}
 }
 
 /** The arguments so far, or the previous value while the text is not yet valid JSON. */
 export function parseStreamingJson(partialJson: string, previous: ToolCall["arguments"]): ToolCall["arguments"] {
-  try {
-    const parsed = JSON.parse(partialJson);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : previous;
-  } catch {
-    return previous;
-  }
+	try {
+		const parsed = JSON.parse(partialJson);
+		return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : previous;
+	} catch {
+		return previous;
+	}
 }

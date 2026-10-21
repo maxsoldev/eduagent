@@ -16,19 +16,19 @@ export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 
 /** Expands a leading ~ to the user's home. */
 export function expandTildePath(path: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
-  return resolve(path);
+	if (path === "~") return homedir();
+	if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+	return resolve(path);
 }
 
 /** The agent config directory, e.g. ~/.eduagent/.edupi/agent/. */
 export function getAgentDir(): string {
-  const envDir = process.env[ENV_AGENT_DIR];
-  if (envDir) return expandTildePath(envDir);
-  return join(homedir(), CONFIG_DIR_NAME, "agent");
+	const envDir = process.env[ENV_AGENT_DIR];
+	if (envDir) return expandTildePath(envDir);
+	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
 /** The sessions directory: one subfolder per working directory. */
 export function getSessionsDir(): string {
-  return join(getAgentDir(), "sessions");
+	return join(getAgentDir(), "sessions");
 }

@@ -17,7 +17,9 @@ def test_schema_sanitizing():
     assert sanitize_schema(True) == {"type": "string"}
     assert sanitize_schema({"const": "a"}) == {"enum": ["a"], "type": "string"}
     assert sanitize_schema({"properties": {"x": {"minimum": 1}}}) == {
-        "type": "object", "properties": {"x": {"minimum": 1, "type": "number"}}}
+        "type": "object",
+        "properties": {"x": {"minimum": 1, "type": "number"}},
+    }
 
 
 def test_annotation_approval_rules():
@@ -30,7 +32,9 @@ def test_annotation_approval_rules():
 async def test_mcp_tools_exposed_as_namespace_and_called(make_session, tmp_path, monkeypatch):
     monkeypatch.setenv("NOTES_FILE", str(tmp_path / "notes.json"))
     script = [[mcp_call("add_note", text="buy milk")], [mcp_call("list_notes")], [{"type": "message", "text": "ok"}]]
-    servers = {"notes": {"command": sys.executable, "args": [SERVER], "env": {"NOTES_FILE": str(tmp_path / "notes.json")}}}
+    servers = {
+        "notes": {"command": sys.executable, "args": [SERVER], "env": {"NOTES_FILE": str(tmp_path / "notes.json")}}
+    }
     session, fake, events = await make_session(script, decisions=["accept"], mcp_servers=servers)
     try:
         await session.run("note it")
@@ -44,5 +48,5 @@ async def test_mcp_tools_exposed_as_namespace_and_called(make_session, tmp_path,
     # add_note has no hints -> asked; list_notes is read-only -> not asked.
     assert [m for m, _ in session.asked] == ["mcpServer/elicitation/request"]
     outputs = [i["output"] for i in fake.requests[2]["input"] if i["type"] == "function_call_output"]
-    assert outputs[0] == "{\"result\": \"saved note #1\"}"  # structuredContent wins, as in Codex
+    assert outputs[0] == '{"result": "saved note #1"}'  # structuredContent wins, as in Codex
     assert "buy milk" in outputs[1]

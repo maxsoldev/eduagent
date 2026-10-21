@@ -76,8 +76,11 @@ def skill_roots(config: Config) -> list[SkillRoot]:
         SkillRoot(Path.home() / ".agents" / "skills", "user"),
         SkillRoot(system_skills_root(config.home), "system"),
     ]
-    roots += [SkillRoot(d / ".agents" / "skills", "repo") for d in project_dirs(config.cwd)
-              if (d / ".agents" / "skills").is_dir()]
+    roots += [
+        SkillRoot(d / ".agents" / "skills", "repo")
+        for d in project_dirs(config.cwd)
+        if (d / ".agents" / "skills").is_dir()
+    ]
     unique: list[SkillRoot] = []
     for root in roots:  # dedupe by exact path, first one wins
         if root.path not in [r.path for r in unique]:

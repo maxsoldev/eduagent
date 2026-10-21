@@ -34,17 +34,26 @@ class Tracer(Probe):
         await session.bus.emit(method, threadId=session.thread_id, **params)
 
     async def _turn(self, ctx: "TurnContext", method: str, **params: Any) -> None:
-        await ctx.session.bus.emit(method, threadId=ctx.thread_id, turnId=ctx.turn_id, iteration=ctx.iteration, **params)
+        await ctx.session.bus.emit(
+            method, threadId=ctx.thread_id, turnId=ctx.turn_id, iteration=ctx.iteration, **params
+        )
 
     # --- session --------------------------------------------------------------------------
     async def thread_started(self, session: "Session") -> None:
         info, note = session.model_info, None
         if info.codex_tool_mode or info.codex_use_responses_lite:
-            note = (f"Codex runs {info.slug} with tool_mode={info.codex_tool_mode}, "
-                    f"use_responses_lite={info.codex_use_responses_lite}: one JavaScript `exec` tool, sent as an "
-                    "`additional_tools` input item. educodex uses classic tool calling, as Codex does for gpt-5.5.")
-        await self._thread(session, "trace/toolsRegistered", tools=session.router.specs(),
-                           mcpServers=session.mcp.summary(), codexToolModeNote=note)
+            note = (
+                f"Codex runs {info.slug} with tool_mode={info.codex_tool_mode}, "
+                f"use_responses_lite={info.codex_use_responses_lite}: one JavaScript `exec` tool, sent as an "
+                "`additional_tools` input item. educodex uses classic tool calling, as Codex does for gpt-5.5."
+            )
+        await self._thread(
+            session,
+            "trace/toolsRegistered",
+            tools=session.router.specs(),
+            mcpServers=session.mcp.summary(),
+            codexToolModeNote=note,
+        )
         await self._ensure_pricing(session)
 
     async def _ensure_pricing(self, session: "Session") -> Pricing | None:
@@ -58,8 +67,13 @@ class Tracer(Probe):
                 self.pricing = None
                 await self._thread(session, "trace/pricing", model=model, pricing=None, error=str(err))
                 return None
-            await self._thread(session, "trace/pricing", model=model,
-                               pricing=self.pricing.to_json() if self.pricing else None, source="GET /models")
+            await self._thread(
+                session,
+                "trace/pricing",
+                model=model,
+                pricing=self.pricing.to_json() if self.pricing else None,
+                source="GET /models",
+            )
         return self.pricing
 
     async def mcp_server_listed(self, session, server, server_info, tools, spec) -> None:
@@ -70,20 +84,40 @@ class Tracer(Probe):
         await self._thread(session, "trace/mcpServerFailed", server=server, error=error)
 
     async def history_appended(self, session, items) -> None:
-        await self._thread(session, "trace/historyChanged", appended=items, totalItems=len(session.history.items),
-                           tokens=session.history.token_count())
+        await self._thread(
+            session,
+            "trace/historyChanged",
+            appended=items,
+            totalItems=len(session.history.items),
+            tokens=session.history.token_count(),
+        )
 
     # --- turn loop ------------------------------------------------------------------------
     async def context_built(self, ctx, fragments, changed, first_turn) -> None:
         session = ctx.session
-        source = ("config.base_instructions" if session.config.base_instructions else
-                  f"vendor/codex/models.json → {session.model_info.slug}.model_messages.instructions_template")
+        source = (
+            "config.base_instructions"
+            if session.config.base_instructions
+            else f"vendor/codex/models.json → {session.model_info.slug}.model_messages.instructions_template"
+        )
         base = session.base_instructions
-        await self._turn(ctx, "trace/promptAssembled",
-                         baseInstructions={"source": source, "chars": len(base), "tokens": (len(base) + 3) // 4},
-                         fragments=[{"kind": f.kind, "role": f.role, "source": f.source, "text": f.text,
-                                     "tokens": (len(f.text) + 3) // 4, "changed": f in changed} for f in fragments],
-                         firstTurn=first_turn)
+        await self._turn(
+            ctx,
+            "trace/promptAssembled",
+            baseInstructions={"source": source, "chars": len(base), "tokens": (len(base) + 3) // 4},
+            fragments=[
+                {
+                    "kind": f.kind,
+                    "role": f.role,
+                    "source": f.source,
+                    "text": f.text,
+                    "tokens": (len(f.text) + 3) // 4,
+                    "changed": f in changed,
+                }
+                for f in fragments
+            ],
+            firstTurn=first_turn,
+        )
 
     async def checkpoint(self, ctx, name, **info) -> None:
         """Step mode: pause here until the client sends debug/continue."""
@@ -97,8 +131,14 @@ class Tracer(Probe):
 
     async def model_request(self, ctx, body) -> None:
         self._started, self._event_counts, self._output_items = time.monotonic(), {}, []
-        await self._turn(ctx, "trace/modelRequest", api="openai-responses", url=f"{ctx.config.base_url}/responses", body=body,
-                         inputTokensEstimate=sum(approx_tokens(i) for i in body["input"]))
+        await self._turn(
+            ctx,
+            "trace/modelRequest",
+            api="openai-responses",
+            url=f"{ctx.config.base_url}/responses",
+            body=body,
+            inputTokensEstimate=sum(approx_tokens(i) for i in body["input"]),
+        )
 
     async def sse_event(self, ctx, event) -> None:
         self._event_counts[event.type] = self._event_counts.get(event.type, 0) + 1
@@ -112,40 +152,93 @@ class Tracer(Probe):
         if usage:  # what this request cost and how much the prompt cache saved
             cost = cost_breakdown(usage, await self._ensure_pricing(ctx.session))
             self.total_cost = add_totals(self.total_cost, cost)
-        await self._turn(ctx, "trace/modelResponse", usage=usage, eventCounts=self._event_counts,
-                         outputItems=self._output_items, seconds=round(time.monotonic() - self._started, 3), cost=cost)
+        await self._turn(
+            ctx,
+            "trace/modelResponse",
+            usage=usage,
+            eventCounts=self._event_counts,
+            outputItems=self._output_items,
+            seconds=round(time.monotonic() - self._started, 3),
+            cost=cost,
+        )
         if cost:
-            await self._turn(ctx, "trace/cost", last=cost, total=self.total_cost,
-                             inputItems=len(body["input"]), toolsTokens=approx_tokens({"tools": body["tools"]}))
+            await self._turn(
+                ctx,
+                "trace/cost",
+                last=cost,
+                total=self.total_cost,
+                inputItems=len(body["input"]),
+                toolsTokens=approx_tokens({"tools": body["tools"]}),
+            )
 
     async def loop_iteration(self, ctx, needs_follow_up, tokens, limit, context_window) -> None:
-        await self._turn(ctx, "trace/loopIteration", needsFollowUp=needs_follow_up, tokens=tokens,
-                         autoCompactLimit=limit, contextWindow=context_window,
-                         decision="continue" if needs_follow_up else "stop")
+        await self._turn(
+            ctx,
+            "trace/loopIteration",
+            needsFollowUp=needs_follow_up,
+            tokens=tokens,
+            autoCompactLimit=limit,
+            contextWindow=context_window,
+            decision="continue" if needs_follow_up else "stop",
+        )
 
     # --- tools, policy, sandbox, approvals, hooks -------------------------------------------
     async def tool_call(self, ctx, call, item, parallel) -> None:
-        await self._turn(ctx, "trace/toolDispatch", tool=call.name, callId=call.call_id, kind=item["type"],
-                         arguments=call.arguments or None, input=call.input or None, parallel=parallel)
+        await self._turn(
+            ctx,
+            "trace/toolDispatch",
+            tool=call.name,
+            callId=call.call_id,
+            kind=item["type"],
+            arguments=call.arguments or None,
+            input=call.input or None,
+            parallel=parallel,
+        )
 
     async def tool_output(self, ctx, call, output) -> None:
-        await self._turn(ctx, "trace/toolOutput", tool=call.name, callId=call.call_id, output=output,
-                         tokens=(len(output.encode()) + 3) // 4)
+        await self._turn(
+            ctx,
+            "trace/toolOutput",
+            tool=call.name,
+            callId=call.call_id,
+            output=output,
+            tokens=(len(output.encode()) + 3) // 4,
+        )
 
     async def policy_decision(self, ctx, tool, decision, sandboxed, reason, matched_rules, **target) -> None:
-        await self._turn(ctx, "trace/policyDecision", tool=tool, **target, decision=decision, sandboxed=sandboxed,
-                         reason=reason, matchedRules=matched_rules, approvalPolicy=ctx.config.approval_policy,
-                         sandboxMode=ctx.config.sandbox_mode)
+        await self._turn(
+            ctx,
+            "trace/policyDecision",
+            tool=tool,
+            **target,
+            decision=decision,
+            sandboxed=sandboxed,
+            reason=reason,
+            matchedRules=matched_rules,
+            approvalPolicy=ctx.config.approval_policy,
+            sandboxMode=ctx.config.sandbox_mode,
+        )
 
     async def sandbox_command(self, ctx, argv, policy, params, warning=None) -> None:
         if policy is not None:  # sandbox-exec -p <policy text> ...: show a placeholder, the policy has its own key
             argv = [*argv[:1], "-p", "<policy>", *argv[3:]]
-        await self._turn(ctx, "trace/sandboxCommand", argv=argv, policy=policy, params=params,
-                         **({"warning": warning} if warning else {}))
+        await self._turn(
+            ctx,
+            "trace/sandboxCommand",
+            argv=argv,
+            policy=policy,
+            params=params,
+            **({"warning": warning} if warning else {}),
+        )
 
     async def sandbox_denied(self, ctx, command, exit_code) -> None:
-        await self._turn(ctx, "trace/sandboxDenied", command=command, exitCode=exit_code,
-                         note="The model sees the denial and may retry with sandbox_permissions=require_escalated.")
+        await self._turn(
+            ctx,
+            "trace/sandboxDenied",
+            command=command,
+            exitCode=exit_code,
+            note="The model sees the denial and may retry with sandbox_permissions=require_escalated.",
+        )
 
     async def approval_requested(self, ctx, method, params) -> None:
         await self._turn(ctx, "trace/approvalRequested", requestMethod=method, request=params)
@@ -154,47 +247,80 @@ class Tracer(Probe):
         await self._turn(ctx, "trace/approvalResolved", requestMethod=method, decision=decision)
 
     async def hook_ran(self, ctx, event, command, exit_code, stdout, stderr) -> None:
-        await self._turn(ctx, "trace/hook", event=event, command=command, exitCode=exit_code,
-                         stdout=stdout[-2000:], stderr=stderr[-2000:])
+        await self._turn(
+            ctx,
+            "trace/hook",
+            event=event,
+            command=command,
+            exitCode=exit_code,
+            stdout=stdout[-2000:],
+            stderr=stderr[-2000:],
+        )
 
     # --- compaction -----------------------------------------------------------------------
     async def compaction_requested(self, ctx, reason, body, tokens_before) -> None:
         await self._turn(ctx, "trace/compactionRequest", reason=reason, body=body, tokensBefore=tokens_before)
 
     async def compacted(self, ctx, reason, summary, items_before, tokens_before, new_history) -> None:
-        await self._turn(ctx, "trace/compacted", reason=reason, summary=summary, itemsBefore=items_before,
-                         itemsAfter=len(new_history), tokensBefore=tokens_before,
-                         tokensAfter=ctx.session.history.token_count(), newHistory=new_history)
+        await self._turn(
+            ctx,
+            "trace/compacted",
+            reason=reason,
+            summary=summary,
+            itemsBefore=items_before,
+            itemsAfter=len(new_history),
+            tokensBefore=tokens_before,
+            tokensAfter=ctx.session.history.token_count(),
+            newHistory=new_history,
+        )
 
     # --- skills ---------------------------------------------------------------------------
     async def skills_loaded(self, ctx, outcome) -> None:
-        await self._turn(ctx, "trace/skillsLoaded",
-                         roots=[{"path": str(r.path), "scope": r.scope} for r in outcome.roots],
-                         skills=[{"name": s.name, "description": s.description, "path": str(s.path), "scope": s.scope}
-                                 for s in outcome.skills],
-                         errors=[{"path": str(e.path), "message": e.message} for e in outcome.errors])
+        await self._turn(
+            ctx,
+            "trace/skillsLoaded",
+            roots=[{"path": str(r.path), "scope": r.scope} for r in outcome.roots],
+            skills=[
+                {"name": s.name, "description": s.description, "path": str(s.path), "scope": s.scope}
+                for s in outcome.skills
+            ],
+            errors=[{"path": str(e.path), "message": e.message} for e in outcome.errors],
+        )
 
     async def skill_injected(self, ctx, skill, item) -> None:
-        await self._turn(ctx, "trace/skillInjected", name=skill.name, path=str(skill.path),
-                         tokens=approx_tokens(item))
+        await self._turn(ctx, "trace/skillInjected", name=skill.name, path=str(skill.path), tokens=approx_tokens(item))
 
     # --- memories -------------------------------------------------------------------------
     async def memory_candidates(self, ctx, candidates) -> None:
         await self._turn(ctx, "trace/memoryCandidates", candidates=candidates)
 
     async def memory_extraction_requested(self, ctx, thread_id, rollout_path, body) -> None:
-        await self._turn(ctx, "trace/memoryExtractionRequest", sourceThreadId=thread_id, rolloutPath=rollout_path,
-                         url=f"{ctx.config.base_url}/responses", body=body)
+        await self._turn(
+            ctx,
+            "trace/memoryExtractionRequest",
+            sourceThreadId=thread_id,
+            rolloutPath=rollout_path,
+            url=f"{ctx.config.base_url}/responses",
+            body=body,
+        )
 
     async def memory_extracted(self, ctx, result) -> None:
         await self._turn(ctx, "trace/memoryExtracted", result=result)
 
     async def memory_consolidation_started(self, ctx, inputs, changes) -> None:
-        await self._turn(ctx, "trace/memoryConsolidationStarted", inputs=inputs,
-                         changes=[{"status": s, "path": p} for s, p in changes])
+        await self._turn(
+            ctx,
+            "trace/memoryConsolidationStarted",
+            inputs=inputs,
+            changes=[{"status": s, "path": p} for s, p in changes],
+        )
 
     async def memory_agent_event(self, ctx, method, params) -> None:
         if method in ("item/completed", "turn/completed", "error"):  # the sub-agent's steps, not its deltas
-            await self._turn(ctx, "trace/memoryAgent", agentMethod=method,
-                             agentThreadId=params.get("threadId"), **{k: v for k, v in params.items() if k in
-                                                                       ("item", "turn", "error")})
+            await self._turn(
+                ctx,
+                "trace/memoryAgent",
+                agentMethod=method,
+                agentThreadId=params.get("threadId"),
+                **{k: v for k, v in params.items() if k in ("item", "turn", "error")},
+            )

@@ -6,29 +6,32 @@ import { fetchOpenRouterModels, modelFromOpenRouter, openRouterModel } from "../
 import type { Model } from "../../ai/types.ts";
 
 export class ModelRegistry {
-  private constructor(private readonly models: Map<string, Model>) {}
+	private constructor(private readonly models: Map<string, Model>) {}
 
-  /** Reads OpenRouter's list. Offline (pi's --offline) or on failure, every model gets the defaults. */
-  static async load(options: { fetch?: typeof globalThis.fetch; offline?: boolean } = {}): Promise<ModelRegistry> {
-    const models = new Map<string, Model>();
-    if (!options.offline) {
-      try {
-        for (const entry of await fetchOpenRouterModels(options.fetch)) models.set(entry.id, modelFromOpenRouter(entry));
-      } catch (error) {
-        console.error(`edupi: could not read OpenRouter's model list (${error instanceof Error ? error.message : error}); using default model limits`);
-      }
-    }
-    return new ModelRegistry(models);
-  }
+	/** Reads OpenRouter's list. Offline (pi's --offline) or on failure, every model gets the defaults. */
+	static async load(options: { fetch?: typeof globalThis.fetch; offline?: boolean } = {}): Promise<ModelRegistry> {
+		const models = new Map<string, Model>();
+		if (!options.offline) {
+			try {
+				for (const entry of await fetchOpenRouterModels(options.fetch))
+					models.set(entry.id, modelFromOpenRouter(entry));
+			} catch (error) {
+				console.error(
+					`edupi: could not read OpenRouter's model list (${error instanceof Error ? error.message : error}); using default model limits`,
+				);
+			}
+		}
+		return new ModelRegistry(models);
+	}
 
-  /** The models OpenRouter's list gave (none offline). */
-  getAll(): Model[] {
-    return [...this.models.values()];
-  }
+	/** The models OpenRouter's list gave (none offline). */
+	getAll(): Model[] {
+		return [...this.models.values()];
+	}
 
-  /** The model with this id. edupi has one provider, so other providers find nothing. */
-  find(provider: string, modelId: string): Model | undefined {
-    if (provider !== "openrouter") return undefined;
-    return this.models.get(modelId) ?? openRouterModel(modelId);
-  }
+	/** The model with this id. edupi has one provider, so other providers find nothing. */
+	find(provider: string, modelId: string): Model | undefined {
+		if (provider !== "openrouter") return undefined;
+		return this.models.get(modelId) ?? openRouterModel(modelId);
+	}
 }

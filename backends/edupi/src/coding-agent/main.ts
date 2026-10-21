@@ -19,45 +19,64 @@ import { SettingsManager } from "./core/settings-manager.ts";
 import { runRpcMode } from "./modes/rpc/rpc-mode.ts";
 
 export async function main(argv: string[]): Promise<void> {
-  const parsed = parseArgs(argv);
-  if (parsed.mode !== "rpc") parsed.diagnostics.push({ type: "error", message: "edupi needs --mode rpc" });
-  for (const d of parsed.diagnostics) console.error(`edupi: ${d.message}`);
-  if (parsed.diagnostics.length > 0) process.exit(1);
+	const parsed = parseArgs(argv);
+	if (parsed.mode !== "rpc") parsed.diagnostics.push({ type: "error", message: "edupi needs --mode rpc" });
+	for (const d of parsed.diagnostics) console.error(`edupi: ${d.message}`);
+	if (parsed.diagnostics.length > 0) process.exit(1);
 
-  // With --faux, the OpenAI SDK's HTTP calls (and the model list) go to the faux provider instead of OpenRouter.
-  let fetch: typeof globalThis.fetch | undefined;
-  if (parsed.faux) {
-    const fauxLog = parsed.fauxLog;
-    const script = loadFauxScript(parsed.faux);
-    const faux = fauxProvider({ models: script.models, tokensPerSecond: script.tokensPerSecond, onRequest: fauxLog ? (request) => appendFileSync(fauxLog, `${JSON.stringify(request)}\n`) : undefined });
-    faux.setResponses(script.responses);
-    fetch = faux.fetch;
-  }
-  const modelRegistry = await ModelRegistry.load({ fetch, offline: parsed.offline });
-  const model = parsed.model ? modelRegistry.find("openrouter", parsed.model) : undefined; // else the session's, else the default
-  const getApiKey = (provider: string) => (parsed.faux ? "faux" : provider === "openrouter" ? process.env[OPENROUTER_API_KEY_ENV] || undefined : undefined);
-  // The teaching extras watch the core through its probe hooks; the core does not know them.
-  const tracer = new Tracer({ findPricing: (id) => modelRegistry.getAll().find((m) => m.id === id)?.cost });
-  const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
+	// With --faux, the OpenAI SDK's HTTP calls (and the model list) go to the faux provider instead of OpenRouter.
+	let fetch: typeof globalThis.fetch | undefined;
+	if (parsed.faux) {
+		const fauxLog = parsed.fauxLog;
+		const script = loadFauxScript(parsed.faux);
+		const faux = fauxProvider({
+			models: script.models,
+			tokensPerSecond: script.tokensPerSecond,
+			onRequest: fauxLog ? (request) => appendFileSync(fauxLog, `${JSON.stringify(request)}\n`) : undefined,
+		});
+		faux.setResponses(script.responses);
+		fetch = faux.fetch;
+	}
+	const modelRegistry = await ModelRegistry.load({ fetch, offline: parsed.offline });
+	const model = parsed.model ? modelRegistry.find("openrouter", parsed.model) : undefined; // else the session's, else the default
+	const getApiKey = (provider: string) =>
+		parsed.faux ? "faux" : provider === "openrouter" ? process.env[OPENROUTER_API_KEY_ENV] || undefined : undefined;
+	// The teaching extras watch the core through its probe hooks; the core does not know them.
+	const tracer = new Tracer({ findPricing: (id) => modelRegistry.getAll().find((m) => m.id === id)?.cost });
+	const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
-  const settingsManager = SettingsManager.create();
-  const cwd = process.cwd();
-  // RPC mode cannot ask, so <cwd>/.pi is trusted only with --approve or a saved decision.
-  const projectTrusted = resolveProjectTrusted({ cwd, agentDir: getAgentDir(), trustOverride: parsed.projectTrustOverride });
-  const createRuntime = (sessionManager: SessionManager) =>
-    createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, cwd, probe: tracer, projectTrusted });
-  const session = createRuntime(createSessionManager(parsed, cwd));
-  // Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
-  await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), {
-    connect: (output) => tracer.connect(output),
-    debug: debugCommands(tracer),
-  });
+	const settingsManager = SettingsManager.create();
+	const cwd = process.cwd();
+	// RPC mode cannot ask, so <cwd>/.pi is trusted only with --approve or a saved decision.
+	const projectTrusted = resolveProjectTrusted({
+		cwd,
+		agentDir: getAgentDir(),
+		trustOverride: parsed.projectTrustOverride,
+	});
+	const createRuntime = (sessionManager: SessionManager) =>
+		createAgentSession({
+			sessionManager,
+			model,
+			modelRegistry,
+			streamFn,
+			getApiKey,
+			settingsManager,
+			cwd,
+			probe: tracer,
+			projectTrusted,
+		});
+	const session = createRuntime(createSessionManager(parsed, cwd));
+	// Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
+	await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), {
+		connect: (output) => tracer.connect(output),
+		debug: debugCommands(tracer),
+	});
 }
 
 /** Which session to start with: pi's --no-session, --session, --continue, else a new one. */
 function createSessionManager(parsed: Args, cwd: string): SessionManager {
-  if (parsed.noSession) return SessionManager.inMemory(cwd);
-  if (parsed.session) return SessionManager.open(parsed.session);
-  if (parsed.continue) return SessionManager.continueRecent(cwd);
-  return SessionManager.create(cwd);
+	if (parsed.noSession) return SessionManager.inMemory(cwd);
+	if (parsed.session) return SessionManager.open(parsed.session);
+	if (parsed.continue) return SessionManager.continueRecent(cwd);
+	return SessionManager.create(cwd);
 }

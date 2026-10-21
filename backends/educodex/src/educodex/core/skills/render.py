@@ -55,12 +55,19 @@ def render_available_skills(outcome: SkillLoadOutcome, include_usage_instruction
     used = {s.root for s in skills}
     aliases = {r.path: f"r{i}" for i, r in enumerate(r for r in outcome.roots if r.path in used)}
     root_lines = [f"- `{alias}` = `{path}`" for path, alias in aliases.items()]
-    skill_lines = [f"- {s.name}: {_description(s)} (file: {aliases[s.root]}/{s.path.relative_to(s.root)})"
-                   for s in skills]
+    skill_lines = [
+        f"- {s.name}: {_description(s)} (file: {aliases[s.root]}/{s.path.relative_to(s.root)})" for s in skills
+    ]
     if include_usage_instructions:  # per model in models.json; false for most current models
         skill_lines += ["### How to use skills", SKILLS_HOW_TO_USE_WITH_HOST_ALIASES]
-    lines = ["## Skills", SKILLS_INTRO_WITH_HOST_ALIASES, "### Skill roots", *root_lines,
-             "### Available skills", *skill_lines]
+    lines = [
+        "## Skills",
+        SKILLS_INTRO_WITH_HOST_ALIASES,
+        "### Skill roots",
+        *root_lines,
+        "### Available skills",
+        *skill_lines,
+    ]
     return Fragment(
         kind="skills",
         role="developer",

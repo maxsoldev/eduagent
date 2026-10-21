@@ -23,8 +23,11 @@ NOT_SKILL_PREFIXES = ("app://", "mcp://", "plugin://")
 
 def extract_mentions(text: str) -> tuple[set[str], set[str]]:
     """Return (linked paths, plain names) mentioned in the text."""
-    paths = {m.group(2).strip() for m in LINKED_MENTION.finditer(text)
-             if m.group(1).upper() not in COMMON_ENV_VARS and m.group(2).strip()}
+    paths = {
+        m.group(2).strip()
+        for m in LINKED_MENTION.finditer(text)
+        if m.group(1).upper() not in COMMON_ENV_VARS and m.group(2).strip()
+    }
     plain_text = LINKED_MENTION.sub(" ", text)  # a linked mention is not also a plain one
     names = {m.group(1) for m in PLAIN_MENTION.finditer(plain_text) if m.group(1).upper() not in COMMON_ENV_VARS}
     return paths, names

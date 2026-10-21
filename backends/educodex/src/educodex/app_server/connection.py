@@ -63,7 +63,9 @@ class Connection:
         if future is None or future.done():
             return False
         if "error" in message:
-            future.set_exception(RpcError(message["error"].get("code", INTERNAL_ERROR), message["error"].get("message", "")))
+            future.set_exception(
+                RpcError(message["error"].get("code", INTERNAL_ERROR), message["error"].get("message", ""))
+            )
         else:
             future.set_result(message.get("result"))
         return True

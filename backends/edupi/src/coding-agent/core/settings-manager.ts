@@ -7,28 +7,28 @@ import { getAgentDir } from "../config.ts";
 import { type CompactionSettings, DEFAULT_COMPACTION_SETTINGS } from "./compaction/compaction.ts";
 
 interface Settings {
-  compaction?: Partial<CompactionSettings>;
+	compaction?: Partial<CompactionSettings>;
 }
 
 export class SettingsManager {
-  private constructor(private readonly settings: Settings) {}
+	private constructor(private readonly settings: Settings) {}
 
-  /** Reads <agentDir>/settings.json. A missing file means pi's defaults. */
-  static create(agentDir: string = getAgentDir()): SettingsManager {
-    const path = join(agentDir, "settings.json");
-    return new SettingsManager(existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Settings) : {});
-  }
+	/** Reads <agentDir>/settings.json. A missing file means pi's defaults. */
+	static create(agentDir: string = getAgentDir()): SettingsManager {
+		const path = join(agentDir, "settings.json");
+		return new SettingsManager(existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Settings) : {});
+	}
 
-  getCompactionEnabled(): boolean {
-    return this.settings.compaction?.enabled ?? DEFAULT_COMPACTION_SETTINGS.enabled;
-  }
+	getCompactionEnabled(): boolean {
+		return this.settings.compaction?.enabled ?? DEFAULT_COMPACTION_SETTINGS.enabled;
+	}
 
-  getCompactionSettings(): CompactionSettings {
-    const compaction = this.settings.compaction;
-    return {
-      enabled: this.getCompactionEnabled(),
-      reserveTokens: compaction?.reserveTokens ?? DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-      keepRecentTokens: compaction?.keepRecentTokens ?? DEFAULT_COMPACTION_SETTINGS.keepRecentTokens,
-    };
-  }
+	getCompactionSettings(): CompactionSettings {
+		const compaction = this.settings.compaction;
+		return {
+			enabled: this.getCompactionEnabled(),
+			reserveTokens: compaction?.reserveTokens ?? DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+			keepRecentTokens: compaction?.keepRecentTokens ?? DEFAULT_COMPACTION_SETTINGS.keepRecentTokens,
+		};
+	}
 }

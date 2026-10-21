@@ -59,20 +59,30 @@ def build_consolidation_prompt(root: Path) -> str:
     extensions = root / "extensions"
     exists = extensions.is_dir()
     return vendor.render(
-        "templates/memories/consolidation.md", memory_root=str(root),
+        "templates/memories/consolidation.md",
+        memory_root=str(root),
         memory_extensions_folder_structure=EXTENSIONS_FOLDER_STRUCTURE.format(root=extensions) if exists else "",
         memory_extensions_primary_inputs=EXTENSIONS_PRIMARY_INPUTS.format(root=extensions) if exists else "",
-        phase2_workspace_diff_file=workspace.DIFF_FILENAME)
+        phase2_workspace_diff_file=workspace.DIFF_FILENAME,
+    )
 
 
 def agent_config(parent, root: Path):
     """The parent's config, locked down (phase2.rs `agent::get_config`)."""
     return replace(
-        parent, cwd=root, ephemeral=True, memories=False, mcp_servers={}, approval_policy="never",
+        parent,
+        cwd=root,
+        ephemeral=True,
+        memories=False,
+        mcp_servers={},
+        approval_policy="never",
         # Keep "no sandbox" if the user chose it; otherwise write access to the memory folder only.
         sandbox_mode="danger-full-access" if parent.sandbox_mode == "danger-full-access" else "workspace-write",
-        network_access=False, exclude_tmp_writable_roots=True,
-        model=CONSOLIDATION_MODEL, reasoning_effort=REASONING_EFFORT)
+        network_access=False,
+        exclude_tmp_writable_roots=True,
+        model=CONSOLIDATION_MODEL,
+        reasoning_effort=REASONING_EFFORT,
+    )
 
 
 async def run(ctx: "TurnContext", store: MemoryStore) -> dict:
@@ -104,12 +114,21 @@ async def run(ctx: "TurnContext", store: MemoryStore) -> dict:
         await agent.close()
     if turn["status"] != "completed":
         workspace.remove_symlinks(root)
-        return {"status": "failed", "error": (turn.get("error") or {}).get("message", turn["status"]), "files": _files(root)}
+        return {
+            "status": "failed",
+            "error": (turn.get("error") or {}).get("message", turn["status"]),
+            "files": _files(root),
+        }
     if problem := workspace.validate_artifacts(root):
         return {"status": "failed", "error": problem, "files": _files(root)}
     workspace.reset_baseline(root)
-    return {"status": "succeeded", "inputs": len(selected), "changes": changes.changes, "files": _files(root),
-            "agentThreadId": agent.thread_id}
+    return {
+        "status": "succeeded",
+        "inputs": len(selected),
+        "changes": changes.changes,
+        "files": _files(root),
+        "agentThreadId": agent.thread_id,
+    }
 
 
 def _files(root: Path) -> list[str]:

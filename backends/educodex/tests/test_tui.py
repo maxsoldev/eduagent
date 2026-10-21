@@ -12,10 +12,14 @@ async def test_tui_turn_over_stdio(workspace, tmp_path, monkeypatch):
     monkeypatch.setenv("EDUCODEX_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("OPENROUTER_API_KEY", "test")
     script = tmp_path / "script.json"
-    script.write_text(json.dumps([
-        [{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "rm -rf nothing"})}],
-        [{"type": "message", "text": "all done"}],
-    ]))
+    script.write_text(
+        json.dumps(
+            [
+                [{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "rm -rf nothing"})}],
+                [{"type": "message", "text": "all done"}],
+            ]
+        )
+    )
     app = EducodexTui(["--cwd", str(workspace), "--fake-model", str(script)])
     async with app.run_test() as pilot:
         for _ in range(100):

@@ -21,8 +21,9 @@ class Probe:
     async def thread_started(self, session: "Session") -> None:
         """Tools are built (MCP servers connected); thread/started comes next."""
 
-    async def mcp_server_listed(self, session: "Session", server: str, server_info: dict, tools: list[dict],
-                                spec: dict) -> None:
+    async def mcp_server_listed(
+        self, session: "Session", server: str, server_info: dict, tools: list[dict], spec: dict
+    ) -> None:
         """An MCP server answered tools/list; `spec` is the namespace tool the model will see."""
 
     async def mcp_server_failed(self, session: "Session", server: str, error: str) -> None:
@@ -47,8 +48,9 @@ class Probe:
     async def model_response(self, ctx: "TurnContext", body: dict, usage: dict | None) -> None:
         """The response stream finished; `usage` is from response.completed."""
 
-    async def loop_iteration(self, ctx: "TurnContext", needs_follow_up: bool, tokens: int, limit: int,
-                             context_window: int) -> None:
+    async def loop_iteration(
+        self, ctx: "TurnContext", needs_follow_up: bool, tokens: int, limit: int, context_window: int
+    ) -> None:
         """The loop decides whether to call the model again."""
 
     # --- tools, policy, sandbox, approvals, hooks -------------------------------------------
@@ -58,12 +60,21 @@ class Probe:
     async def tool_output(self, ctx: "TurnContext", call: "ToolCall", output: str) -> None:
         """A tool call finished; `output` is what the model will see."""
 
-    async def policy_decision(self, ctx: "TurnContext", tool: str, decision: str, sandboxed: bool, reason: str,
-                              matched_rules: list, **target: Any) -> None:
+    async def policy_decision(
+        self,
+        ctx: "TurnContext",
+        tool: str,
+        decision: str,
+        sandboxed: bool,
+        reason: str,
+        matched_rules: list,
+        **target: Any,
+    ) -> None:
         """Approval policy decided allow/prompt/forbidden; `target` is command=... or paths=[...]."""
 
-    async def sandbox_command(self, ctx: "TurnContext", argv: list[str], policy: str | None, params: dict,
-                              warning: str | None = None) -> None:
+    async def sandbox_command(
+        self, ctx: "TurnContext", argv: list[str], policy: str | None, params: dict, warning: str | None = None
+    ) -> None:
         """A command is about to run in the OS sandbox (policy None: no sandbox available)."""
 
     async def sandbox_denied(self, ctx: "TurnContext", command: str, exit_code: int | None) -> None:
@@ -75,8 +86,9 @@ class Probe:
     async def approval_resolved(self, ctx: "TurnContext", method: str, decision: str) -> None:
         """The client answered an approval request."""
 
-    async def hook_ran(self, ctx: "TurnContext", event: str, command: str, exit_code: int, stdout: str,
-                       stderr: str) -> None:
+    async def hook_ran(
+        self, ctx: "TurnContext", event: str, command: str, exit_code: int, stdout: str, stderr: str
+    ) -> None:
         """A configured hook command finished."""
 
     # --- skills ---------------------------------------------------------------------------
@@ -90,8 +102,9 @@ class Probe:
     async def memory_candidates(self, ctx: "TurnContext", candidates: list[dict]) -> None:
         """Phase 1 chose the session logs to learn from."""
 
-    async def memory_extraction_requested(self, ctx: "TurnContext", thread_id: str, rollout_path: str,
-                                          body: dict) -> None:
+    async def memory_extraction_requested(
+        self, ctx: "TurnContext", thread_id: str, rollout_path: str, body: dict
+    ) -> None:
         """A phase-1 request is about to be sent."""
 
     async def memory_extracted(self, ctx: "TurnContext", result: dict) -> None:
@@ -107,6 +120,13 @@ class Probe:
     async def compaction_requested(self, ctx: "TurnContext", reason: str, body: dict, tokens_before: int) -> None:
         """The summary request is about to be sent."""
 
-    async def compacted(self, ctx: "TurnContext", reason: str, summary: str, items_before: int, tokens_before: int,
-                        new_history: list["ResponseItem"]) -> None:
+    async def compacted(
+        self,
+        ctx: "TurnContext",
+        reason: str,
+        summary: str,
+        items_before: int,
+        tokens_before: int,
+        new_history: list["ResponseItem"],
+    ) -> None:
         """History was replaced by the compacted history."""

@@ -113,10 +113,12 @@ def parse_patch(text: str) -> list[Hunk]:
 
 
 _PUNCTUATION = str.maketrans(
-    {**dict.fromkeys("‐‑‒–—―−", "-"),
-     **dict.fromkeys("‘’‚‛", "'"),
-     **dict.fromkeys("“”„‟", '"'),
-     **dict.fromkeys("            　", " ")}
+    {
+        **dict.fromkeys("‐‑‒–—―−", "-"),
+        **dict.fromkeys("‘’‚‛", "'"),
+        **dict.fromkeys("“”„‟", '"'),
+        **dict.fromkeys("            　", " "),
+    }
 )
 
 

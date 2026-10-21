@@ -19,8 +19,14 @@ from educodex.observe.tracer import Tracer
 
 console = Console()
 
-QUIET = {"item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/commandExecution/outputDelta",
-         "trace/historyChanged", "trace/streamEvent", "thread/tokenUsage/updated"}
+QUIET = {
+    "item/agentMessage/delta",
+    "item/reasoning/summaryTextDelta",
+    "item/commandExecution/outputDelta",
+    "trace/historyChanged",
+    "trace/streamEvent",
+    "thread/tokenUsage/updated",
+}
 
 
 def print_event(event: Event, verbose: bool) -> None:
@@ -34,7 +40,9 @@ def print_event(event: Event, verbose: bool) -> None:
         console.print(f"  [cyan]developer[/] base instructions  {b['tokens']:>6} tok  [dim]{escape(b['source'])}[/]")
         for f in p["fragments"]:
             mark = "[green]+ appended[/]" if f["changed"] else "[dim]  unchanged[/]"
-            console.print(f"  [cyan]{f['role']:9}[/] {f['kind']:20} {f['tokens']:>6} tok  {mark}  [dim]{escape(f['source'])}[/]")
+            console.print(
+                f"  [cyan]{f['role']:9}[/] {f['kind']:20} {f['tokens']:>6} tok  {mark}  [dim]{escape(f['source'])}[/]"
+            )
     elif m == "trace/toolsRegistered":
         names = [t.get("name") for t in p["tools"]]
         console.print(f"[magenta]tools[/] {names}")
@@ -43,24 +51,32 @@ def print_event(event: Event, verbose: bool) -> None:
     elif m == "trace/modelRequest":
         body = p["body"]
         console.rule(f"[bold yellow]model request #{p['iteration']}")
-        console.print(f"  POST {p['url']}  model={body['model']}  input items={len(body['input'])}  "
-                      f"tools={len(body['tools'])}  ~{p['inputTokensEstimate']} tok  store={body['store']}")
+        console.print(
+            f"  POST {p['url']}  model={body['model']}  input items={len(body['input'])}  "
+            f"tools={len(body['tools'])}  ~{p['inputTokensEstimate']} tok  store={body['store']}"
+        )
         if verbose:
             console.print_json(json.dumps(body))
     elif m == "trace/modelResponse":
         types = [i.get("type") for i in p["outputItems"]]
-        console.print(f"  [yellow]response[/] {types} usage={p['usage'] and p['usage'].get('total_tokens')} tok in {p['seconds']}s")
+        console.print(
+            f"  [yellow]response[/] {types} usage={p['usage'] and p['usage'].get('total_tokens')} tok in {p['seconds']}s"
+        )
     elif m == "trace/cost":
         last, total = p["last"], p["total"]
         t = last["tokens"]
         ours = last.get("usd", {}).get("total")
-        console.print(f"  [green]cost[/] ${last.get('billedUsd') or ours or 0:.6f} (computed ${ours or 0:.6f})  "
-                      f"input {t['input']} = {t['cached']} cached + {t['cacheWrite']} cache write + {t['uncached']} uncached, "
-                      f"output {t['output']}  · session ${total.get('billedUsd') or total.get('usd', {}).get('total', 0):.6f}, "
-                      f"{total['cacheHitRate']:.0%} cached")
+        console.print(
+            f"  [green]cost[/] ${last.get('billedUsd') or ours or 0:.6f} (computed ${ours or 0:.6f})  "
+            f"input {t['input']} = {t['cached']} cached + {t['cacheWrite']} cache write + {t['uncached']} uncached, "
+            f"output {t['output']}  · session ${total.get('billedUsd') or total.get('usd', {}).get('total', 0):.6f}, "
+            f"{total['cacheHitRate']:.0%} cached"
+        )
     elif m == "trace/loopIteration":
-        console.print(f"  [bold]loop[/] needs_follow_up={p['needsFollowUp']} → [bold]{p['decision']}[/]  "
-                      f"context {p['tokens']}/{p['contextWindow']} (compact at {p['autoCompactLimit']})")
+        console.print(
+            f"  [bold]loop[/] needs_follow_up={p['needsFollowUp']} → [bold]{p['decision']}[/]  "
+            f"context {p['tokens']}/{p['contextWindow']} (compact at {p['autoCompactLimit']})"
+        )
     elif m == "trace/toolDispatch":
         detail = p["arguments"] if p["arguments"] else (p["input"] or "")
         console.print(f"  [magenta]tool call[/] {p['tool']} {escape(str(detail))[:400]}")
@@ -84,7 +100,9 @@ def print_event(event: Event, verbose: bool) -> None:
     elif m.startswith("trace/") and verbose:
         console.print(f"  [dim]{m} {escape(json.dumps(p)[:300])}[/]")
     elif m == "trace/skillInjected":
-        console.print(f"  [cyan]skill[/] ${escape(p['name'])} injected ({p['tokens']} tok)  [dim]{escape(p['path'])}[/]")
+        console.print(
+            f"  [cyan]skill[/] ${escape(p['name'])} injected ({p['tokens']} tok)  [dim]{escape(p['path'])}[/]"
+        )
     elif m in ("trace/compacted", "trace/hook", "trace/sandboxDenied", "trace/mcpToolExposed", "trace/mcpServerFailed"):
         console.print(f"  [bold]{m}[/] {escape(json.dumps(p)[:400])}")
 
@@ -92,10 +110,16 @@ def print_event(event: Event, verbose: bool) -> None:
 async def ask_user(method: str, params: dict) -> dict:
     """Approval prompt in the terminal."""
     what = params.get("command") or params.get("request", {}).get("message") or params.get("reason")
-    console.print(f"\n[bold red]approval needed[/] ({method}): {escape(str(what))}\n  reason: {escape(str(params.get('reason', '')))}")
+    console.print(
+        f"\n[bold red]approval needed[/] ({method}): {escape(str(what))}\n  reason: {escape(str(params.get('reason', '')))}"
+    )
     if method == "mcpServer/elicitation/request":
         return {"action": Prompt.ask("allow?", choices=["accept", "decline", "cancel"], default="decline")}
-    return {"decision": Prompt.ask("decision", choices=["accept", "acceptForSession", "decline", "cancel"], default="decline")}
+    return {
+        "decision": Prompt.ask(
+            "decision", choices=["accept", "acceptForSession", "decline", "cancel"], default="decline"
+        )
+    }
 
 
 def build_config(args) -> Config:
@@ -105,9 +129,17 @@ def build_config(args) -> Config:
         name, _, command = spec.partition("=")
         parts = command.split()
         servers[name] = {"command": parts[0], "args": parts[1:]}
-    return Config(cwd=cwd, model=args.model, approval_policy=args.approval, sandbox_mode=args.sandbox,
-                  api_key=load_api_key(cwd) or load_api_key(Path.cwd()), reasoning_effort=args.effort,
-                  network_access=args.network, mcp_servers=servers, memories=args.memories)
+    return Config(
+        cwd=cwd,
+        model=args.model,
+        approval_policy=args.approval,
+        sandbox_mode=args.sandbox,
+        api_key=load_api_key(cwd) or load_api_key(Path.cwd()),
+        reasoning_effort=args.effort,
+        network_access=args.network,
+        mcp_servers=servers,
+        memories=args.memories,
+    )
 
 
 async def run_exec(args) -> int:
@@ -136,12 +168,17 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--cwd", default=".")
         p.add_argument("--model", default="openai/gpt-6-luna")
         p.add_argument("--approval", default="on-request", choices=["on-request", "never"])
-        p.add_argument("--sandbox", default="workspace-write", choices=["read-only", "workspace-write", "danger-full-access"])
+        p.add_argument(
+            "--sandbox", default="workspace-write", choices=["read-only", "workspace-write", "danger-full-access"]
+        )
         p.add_argument("--effort", default=None, choices=["low", "medium", "high"])
         p.add_argument("--network", action="store_true", help="allow network access inside the sandbox")
         p.add_argument("--mcp", action="append", metavar="NAME=COMMAND", help="add a stdio MCP server")
-        p.add_argument("--memories", action="store_true",
-                       help="use memories from earlier threads and allow /memory-update (Codex: [features] memories)")
+        p.add_argument(
+            "--memories",
+            action="store_true",
+            help="use memories from earlier threads and allow /memory-update (Codex: [features] memories)",
+        )
         p.add_argument("--fake-model", default=None, help="replay scripted model responses from a JSON file (offline)")
 
     p_exec = sub.add_parser("exec", help="run one task and print every step")

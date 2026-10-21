@@ -50,12 +50,18 @@ def exec_command_spec() -> dict[str, Any]:
                 },
                 "prefix_rule": APPROVAL_PARAMETERS["prefix_rule"],
                 "sandbox_permissions": APPROVAL_PARAMETERS["sandbox_permissions"],
-                "shell": {"type": "string", "description": "Shell binary to launch. Defaults to the user's default shell."},
+                "shell": {
+                    "type": "string",
+                    "description": "Shell binary to launch. Defaults to the user's default shell.",
+                },
                 "tty": {
                     "type": "boolean",
                     "description": "True allocates a PTY for the command; false or omitted uses plain pipes.",
                 },
-                "workdir": {"type": "string", "description": "Working directory for the command. Defaults to the turn cwd."},
+                "workdir": {
+                    "type": "string",
+                    "description": "Working directory for the command. Defaults to the turn cwd.",
+                },
                 "yield_time_ms": {
                     "type": "number",
                     "description": "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms.",

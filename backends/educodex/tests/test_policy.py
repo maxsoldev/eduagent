@@ -7,14 +7,28 @@ from educodex.core.policy.segments import split_segments
 
 
 def test_segments():
-    assert split_segments("git pull | tee out.txt && echo 'a b'") == [["git", "pull"], ["tee", "out.txt"], ["echo", "a b"]]
+    assert split_segments("git pull | tee out.txt && echo 'a b'") == [
+        ["git", "pull"],
+        ["tee", "out.txt"],
+        ["echo", "a b"],
+    ]
 
 
-@pytest.mark.parametrize("cmd,dangerous", [
-    ("rm -rf build", True), ("rm -f x", True), ("rm --force x", True), ("rm x", False),
-    ("sudo rm -rf /", True), ("bash -lc 'rm -rf x'", True), ("ls && rm -fr y", True),
-    ("env FOO=1 rm -f z", True), ("echo rm -rf", False), ("rm -- -f", False),
-])
+@pytest.mark.parametrize(
+    "cmd,dangerous",
+    [
+        ("rm -rf build", True),
+        ("rm -f x", True),
+        ("rm --force x", True),
+        ("rm x", False),
+        ("sudo rm -rf /", True),
+        ("bash -lc 'rm -rf x'", True),
+        ("ls && rm -fr y", True),
+        ("env FOO=1 rm -f z", True),
+        ("echo rm -rf", False),
+        ("rm -- -f", False),
+    ],
+)
 def test_dangerous(cmd, dangerous):
     assert is_dangerous_command(cmd) is dangerous
 
@@ -36,7 +50,10 @@ def test_dangerous_prompts_or_forbids():
 def test_escalation():
     assert decide("curl x", escalate=True).decision == "prompt"
     assert decide("curl x", escalate=True, policy="never").decision == "forbidden"
-    assert (decide("curl x", sandbox="danger-full-access").decision, decide("x", sandbox="danger-full-access").sandboxed) == ("allow", False)
+    assert (
+        decide("curl x", sandbox="danger-full-access").decision,
+        decide("x", sandbox="danger-full-access").sandboxed,
+    ) == ("allow", False)
 
 
 def test_rules_and_session_approvals():

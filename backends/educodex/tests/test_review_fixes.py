@@ -17,7 +17,9 @@ from educodex.core.tools.processes import ProcessManager
 RULES = [PrefixRule(("git", "status"), "allow"), PrefixRule(("rm",), "forbidden")]
 
 
-@pytest.mark.parametrize("cmd", ["git status $(touch ~/pwn)", "git status `id`", "git status > ~/.zshrc", "git status\ntouch x"])
+@pytest.mark.parametrize(
+    "cmd", ["git status $(touch ~/pwn)", "git status `id`", "git status > ~/.zshrc", "git status\ntouch x"]
+)
 def test_allow_rules_never_match_complex_shell(cmd):
     d = decide_exec(cmd, "on-request", "workspace-write", RULES, False, set())
     assert d.sandboxed and not d.matched_rules
@@ -34,7 +36,10 @@ def test_approved_dangerous_command_stays_sandboxed():
 
 
 def test_patch_into_git_dir_needs_approval(tmp_path):
-    assert decide_patch([tmp_path / ".git/hooks/pre-commit"], "on-request", "workspace-write", [tmp_path]).decision == "prompt"
+    assert (
+        decide_patch([tmp_path / ".git/hooks/pre-commit"], "on-request", "workspace-write", [tmp_path]).decision
+        == "prompt"
+    )
 
 
 @pytest.mark.skipif(not seatbelt.available(), reason="macOS only")
@@ -56,8 +61,10 @@ def test_seatbelt_blocks_creating_git_dir():
 
 def test_two_hunks_on_same_file(tmp_path):
     (tmp_path / "f.txt").write_text("a\nb\n")
-    patch = ("*** Begin Patch\n*** Update File: f.txt\n@@\n-a\n+A\n*** Update File: f.txt\n@@\n-b\n+B\n"
-             "*** Add File: g.txt\n+1\n*** Update File: g.txt\n@@\n-1\n+2\n*** End Patch")
+    patch = (
+        "*** Begin Patch\n*** Update File: f.txt\n@@\n-a\n+A\n*** Update File: f.txt\n@@\n-b\n+B\n"
+        "*** Add File: g.txt\n+1\n*** Update File: g.txt\n@@\n-1\n+2\n*** End Patch"
+    )
     apply_planned(plan_changes(patch, tmp_path))
     assert (tmp_path / "f.txt").read_text() == "A\nB\n" and (tmp_path / "g.txt").read_text() == "2\n"
 
@@ -72,22 +79,29 @@ async def test_background_child_does_not_block(tmp_path):
 
 
 async def test_interrupt_records_turn_aborted(make_session):
-    session, fake, _ = await make_session([[{"type": "function_call", "name": "exec_command",
-                                             "arguments": json.dumps({"cmd": "sleep 5"})}], [{"type": "message", "text": "ok"}]],
-                                          sandbox_mode="danger-full-access")
+    session, fake, _ = await make_session(
+        [
+            [{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "sleep 5"})}],
+            [{"type": "message", "text": "ok"}],
+        ],
+        sandbox_mode="danger-full-access",
+    )
     session.start_turn("go")
     await asyncio.sleep(0.5)
     session.interrupt()
     turn = await session._turn_task
     assert turn["status"] == "interrupted"
-    assert message_text(session.history.items[-1]).startswith("<turn_aborted>\nThe user interrupted the previous turn on purpose.")
+    assert message_text(session.history.items[-1]).startswith(
+        "<turn_aborted>\nThe user interrupted the previous turn on purpose."
+    )
 
 
 async def test_stop_hook_sees_active_flag(make_session, tmp_path):
     marker = tmp_path / "stop.json"
     hook = f"cat > {marker}.$$; if grep -q '\"stop_hook_active\": false' {marker}.$$; then echo 'keep going' >&2; exit 2; fi"
-    session, fake, _ = await make_session([[{"type": "message", "text": "a"}], [{"type": "message", "text": "b"}]],
-                                          hooks={"Stop": [hook]})
+    session, fake, _ = await make_session(
+        [[{"type": "message", "text": "a"}], [{"type": "message", "text": "b"}]], hooks={"Stop": [hook]}
+    )
     await session.run("x")
     assert len(fake.requests) == 2  # one continuation, then the flag stops the loop
     assert message_text(fake.requests[1]["input"][-1]) == "keep going"
@@ -95,8 +109,12 @@ async def test_stop_hook_sees_active_flag(make_session, tmp_path):
 
 async def test_pre_tool_use_hook_blocks_with_codex_message(make_session, workspace):
     session, fake, _ = await make_session(
-        [[{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "ls"})}], [{"type": "message", "text": "ok"}]],
-        hooks={"PreToolUse": ["echo 'no ls today' >&2; exit 2"]})
+        [
+            [{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "ls"})}],
+            [{"type": "message", "text": "ok"}],
+        ],
+        hooks={"PreToolUse": ["echo 'no ls today' >&2; exit 2"]},
+    )
     await session.run("x")
     assert fake.requests[1]["input"][-1]["output"] == "Command blocked by PreToolUse hook: no ls today. Command: ls"
 
@@ -154,7 +172,9 @@ def test_comment_and_unknown_operators_are_opaque(cmd):
 
 
 def test_hash_does_not_hide_forced_rm():
-    assert decide_exec("echo a#b && rm -rf dir", "on-request", "danger-full-access", [], False, set()).decision == "prompt"
+    assert (
+        decide_exec("echo a#b && rm -rf dir", "on-request", "danger-full-access", [], False, set()).decision == "prompt"
+    )
 
 
 def test_model_cannot_choose_shell_binary():
@@ -182,14 +202,24 @@ async def test_bad_tool_arguments_do_not_crash_the_turn(make_session):
 
 def test_turn_start_while_running_keeps_settings(app_server):
     exec_call = lambda cmd: {"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": cmd})}  # noqa: E731
-    server = app_server([[exec_call("sleep 2")], [{"type": "message", "text": "ok"}],
-                         [exec_call("ls")], [{"type": "message", "text": "ok"}]], "--sandbox", "read-only")
+    server = app_server(
+        [
+            [exec_call("sleep 2")],
+            [{"type": "message", "text": "ok"}],
+            [exec_call("ls")],
+            [{"type": "message", "text": "ok"}],
+        ],
+        "--sandbox",
+        "read-only",
+    )
     server.request("initialize", {})
     assert server.request("initialize", {})["error"]["message"] == "Already initialized"
     tid = server.request("thread/start", {})["result"]["thread"]["id"]
     server.request("turn/start", {"threadId": tid, "input": [{"type": "text", "text": "a"}]})
-    again = server.request("turn/start", {"threadId": tid, "input": [{"type": "text", "text": "b"}],
-                                          "sandboxPolicy": {"type": "dangerFullAccess"}})
+    again = server.request(
+        "turn/start",
+        {"threadId": tid, "input": [{"type": "text", "text": "b"}], "sandboxPolicy": {"type": "dangerFullAccess"}},
+    )
     assert "already running" in again["error"]["message"]
     server.until("turn/completed")
     # The refused turn/start must not have changed the thread's settings.

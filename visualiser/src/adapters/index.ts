@@ -5,6 +5,6 @@ import { codexAdapter } from "./codex";
 import { piAdapter } from "./pi";
 
 export const ADAPTERS: Record<string, AdapterModule> = {
-  [codexAdapter.protocol]: codexAdapter,
-  [piAdapter.protocol]: piAdapter,
+	[codexAdapter.protocol]: codexAdapter,
+	[piAdapter.protocol]: piAdapter,
 };

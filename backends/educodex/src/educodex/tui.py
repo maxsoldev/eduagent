@@ -19,12 +19,18 @@ from textual.suggester import Suggester
 from textual.widgets import Button, Footer, Header, Input, Label, RichLog
 
 TRACE_SUMMARY = {
-    "trace/promptAssembled": lambda p: "prompt: " + " · ".join(f"{f['kind']}{'+' if f['changed'] else ''}" for f in p["fragments"]),
-    "trace/modelRequest": lambda p: f"→ model request #{p['iteration']}: {len(p['body']['input'])} items, {len(p['body']['tools'])} tools",
+    "trace/promptAssembled": lambda p: (
+        "prompt: " + " · ".join(f"{f['kind']}{'+' if f['changed'] else ''}" for f in p["fragments"])
+    ),
+    "trace/modelRequest": lambda p: (
+        f"→ model request #{p['iteration']}: {len(p['body']['input'])} items, {len(p['body']['tools'])} tools"
+    ),
     "trace/modelResponse": lambda p: f"← response: {[i['type'] for i in p['outputItems']]}",
     "trace/loopIteration": lambda p: f"loop: needs_follow_up={p['needsFollowUp']} → {p['decision']}",
     "trace/toolDispatch": lambda p: f"tool call: {p['tool']}",
-    "trace/policyDecision": lambda p: f"policy: {p['tool']} → {p['decision']}{' (sandboxed)' if p['sandboxed'] else ''}",
+    "trace/policyDecision": lambda p: (
+        f"policy: {p['tool']} → {p['decision']}{' (sandboxed)' if p['sandboxed'] else ''}"
+    ),
     "trace/sandboxCommand": lambda p: "sandbox: " + " ".join(p["argv"])[:120],
     "trace/compacted": lambda p: f"compacted: {p['itemsBefore']} → {p['itemsAfter']} items",
     "trace/skillInjected": lambda p: f"skill injected: ${p['name']}",
@@ -70,9 +76,17 @@ class ApprovalScreen(ModalScreen[str]):
     def compose(self) -> ComposeResult:
         p = self.params
         what = p.get("command") or p.get("message") or "file changes"
-        choices = ["accept", "decline", "cancel"] if self.method == "mcpServer/elicitation/request" else (
-            [c for c in p.get("availableDecisions", ["accept", "acceptForSession", "decline", "cancel"])
-             if c != "acceptWithExecpolicyAmendment"])
+        choices = (
+            ["accept", "decline", "cancel"]
+            if self.method == "mcpServer/elicitation/request"
+            else (
+                [
+                    c
+                    for c in p.get("availableDecisions", ["accept", "acceptForSession", "decline", "cancel"])
+                    if c != "acceptWithExecpolicyAmendment"
+                ]
+            )
+        )
         with Vertical(id="approval"):
             yield Label(f"[b red]Approval needed[/] ({self.method})")
             yield Label(escape(str(what)))
@@ -110,23 +124,36 @@ class EducodexTui(App):
             yield RichLog(id="chat", wrap=True, markup=True)
             yield RichLog(id="trace", wrap=True, markup=True)
         yield Label("", id="hints")
-        yield Input(placeholder="Ask the agent… (/ commands, $ skills, → completes, Esc interrupts)",
-                    suggester=CommandSuggester(self))
+        yield Input(
+            placeholder="Ask the agent… (/ commands, $ skills, → completes, Esc interrupts)",
+            suggester=CommandSuggester(self),
+        )
         yield Footer()
 
     async def on_mount(self) -> None:
         self.title = "educodex"
         self.sub_title = "the same JSON-RPC protocol as the web UI, over stdio"
         self.proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "educodex.cli", "app-server", "--listen", "stdio://", *self.server_args,
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            limit=64 * 1024 * 1024)
+            sys.executable,
+            "-m",
+            "educodex.cli",
+            "app-server",
+            "--listen",
+            "stdio://",
+            *self.server_args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            limit=64 * 1024 * 1024,
+        )
         self.run_worker(self.read_loop(), exclusive=False)
         await self.request("initialize", {"clientInfo": {"name": "educodex-tui", "version": "0.1.0"}})
         await self.send({"method": "initialized"})
         thread = await self.request("thread/start", {})
         self.thread_id = thread["thread"]["id"]
-        self.query_one("#chat", RichLog).write(f"[dim]thread {self.thread_id} · model {thread['model']} · cwd {thread['cwd']}[/]")
+        self.query_one("#chat", RichLog).write(
+            f"[dim]thread {self.thread_id} · model {thread['model']} · cwd {thread['cwd']}[/]"
+        )
 
     async def send(self, message: dict) -> None:
         assert self.proc and self.proc.stdin
@@ -174,12 +201,16 @@ class EducodexTui(App):
             if item["type"] == "agentMessage":
                 chat.write(f"[b green]agent[/] {escape(item['text'])}")
             elif item["type"] == "commandExecution":
-                chat.write(f"[magenta]$ {escape(item['command'])}[/] [dim]({item['status']}, exit {item['exitCode']})[/]")
+                chat.write(
+                    f"[magenta]$ {escape(item['command'])}[/] [dim]({item['status']}, exit {item['exitCode']})[/]"
+                )
                 if item.get("aggregatedOutput"):
                     chat.write(f"[dim]{escape(item['aggregatedOutput'][-1500:])}[/]")
             elif item["type"] == "fileChange":
                 for change in item["changes"]:
-                    chat.write(f"[blue]patch[/] {change['kind']['type']} {escape(change['path'])} [dim]({item['status']})[/]")
+                    chat.write(
+                        f"[blue]patch[/] {change['kind']['type']} {escape(change['path'])} [dim]({item['status']})[/]"
+                    )
             elif item["type"] == "mcpToolCall":
                 chat.write(f"[green]mcp[/] {item['server']}.{item['tool']} [dim]({item['status']})[/]")
             elif item["type"] == "reasoning" and item["summary"]:
@@ -188,8 +219,10 @@ class EducodexTui(App):
                 chat.write("[dim]⟲ context compacted[/]")
             elif item["type"] == "memoryUpdate":
                 phase2 = item.get("phase2") or {}
-                chat.write(f"[magenta]memory update[/] {item['status']} · phase 1: {len(item.get('phase1') or [])} log(s)"
-                           f" · phase 2: {phase2.get('status', '-')} {escape(phase2.get('error') or item.get('error') or '')}")
+                chat.write(
+                    f"[magenta]memory update[/] {item['status']} · phase 1: {len(item.get('phase1') or [])} log(s)"
+                    f" · phase 2: {phase2.get('status', '-')} {escape(phase2.get('error') or item.get('error') or '')}"
+                )
         elif method == "turn/plan/updated":
             chat.write("[yellow]plan[/] " + escape(" · ".join(f"{s['step']} [{s['status']}]" for s in p["plan"])))
         elif method == "turn/completed":
@@ -202,8 +235,11 @@ class EducodexTui(App):
         if re.fullmatch(r"/\S*", value):
             return [(n, d) for n, d in COMMANDS.items() if n.startswith(value[1:])]
         if mention := MENTION.search(value):
-            return [(s["name"], s.get("shortDescription") or s["description"]) for s in self.skills
-                    if s["name"].startswith(mention.group(2))]
+            return [
+                (s["name"], s.get("shortDescription") or s["description"])
+                for s in self.skills
+                if s["name"].startswith(mention.group(2))
+            ]
         return []
 
     async def on_input_changed(self, event: Input.Changed) -> None:
@@ -212,7 +248,8 @@ class EducodexTui(App):
         hints = self.matches(event.value)
         prefix = "/" if event.value.startswith("/") else "$"
         self.query_one("#hints", Label).update(
-            "  ".join(f"[b cyan]{prefix}{escape(n)}[/] [dim]{escape(d[:60])}[/]" for n, d in hints[:6]))
+            "  ".join(f"[b cyan]{prefix}{escape(n)}[/] [dim]{escape(d[:60])}[/]" for n, d in hints[:6])
+        )
 
     async def run_command(self, name: str) -> None:
         """Each slash command is one app-server request, as in Codex's TUI."""
@@ -234,7 +271,9 @@ class EducodexTui(App):
             if not skills:
                 chat.write("[dim]No skills found. Add a folder with a SKILL.md to .agents/skills/ in your project.[/]")
             for skill in skills:
-                chat.write(f"[cyan]${escape(skill['name'])}[/] [dim]({skill['scope']}) {escape(skill['description'])}[/]")
+                chat.write(
+                    f"[cyan]${escape(skill['name'])}[/] [dim]({skill['scope']}) {escape(skill['description'])}[/]"
+                )
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()

@@ -37,8 +37,9 @@ def writable_roots(config: Config) -> list[str]:
     return [str(r) for r in seatbelt.writable_roots(config.cwd, config.exclude_tmp_writable_roots)]
 
 
-def build_fragments(config: Config, skills: SkillLoadOutcome | None = None,
-                    memories: Fragment | None = None) -> list[Fragment]:
+def build_fragments(
+    config: Config, skills: SkillLoadOutcome | None = None, memories: Fragment | None = None
+) -> list[Fragment]:
     """All fragments for the current config, in Codex's order (core/src/session/mod.rs
     `build_initial_context_with_world_state`): developer instructions, thread context from
     extensions (memories), then the world-state sections, where skills go before permissions."""
@@ -46,7 +47,9 @@ def build_fragments(config: Config, skills: SkillLoadOutcome | None = None,
     fragments: list[Fragment] = []
     if config.developer_instructions:
         fragments.append(
-            Fragment("developer_instructions", "developer", config.developer_instructions, "config.developer_instructions")
+            Fragment(
+                "developer_instructions", "developer", config.developer_instructions, "config.developer_instructions"
+            )
         )
     if memories:
         fragments.append(memories)
@@ -56,8 +59,14 @@ def build_fragments(config: Config, skills: SkillLoadOutcome | None = None,
             fragments.append(catalog_fragment)
     fragments.append(render_permissions(config.sandbox_mode, config.approval_policy, config.network_access, roots))
     if mode := collaboration_mode_text(config.model):
-        fragments.append(Fragment("collaboration_mode", "developer", f"<collaboration_mode>{mode}</collaboration_mode>",
-                                  "vendor/codex/models.json → model_messages.collaboration_modes.default"))
+        fragments.append(
+            Fragment(
+                "collaboration_mode",
+                "developer",
+                f"<collaboration_mode>{mode}</collaboration_mode>",
+                "vendor/codex/models.json → model_messages.collaboration_modes.default",
+            )
+        )
     if agents := render_agents_md(config.cwd, config.home):
         fragments.append(agents)
     fragments.append(render_environment_context(config.cwd, config.sandbox_mode, roots))  # roots: write entries

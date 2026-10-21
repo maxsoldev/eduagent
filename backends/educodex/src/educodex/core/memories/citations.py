@@ -37,7 +37,9 @@ def parse_memory_citation(citations: list[str]) -> dict | None:
         for line in (_block(citation, "citation_entries") or "").splitlines():
             if match := ENTRY.match(line.strip()):
                 path, start, end, note = match.groups()
-                entries.append({"path": path.strip(), "lineStart": int(start), "lineEnd": int(end), "note": note.strip()})
+                entries.append(
+                    {"path": path.strip(), "lineStart": int(start), "lineEnd": int(end), "note": note.strip()}
+                )
         ids = _block(citation, "rollout_ids") or _block(citation, "thread_ids") or ""
         thread_ids += [i.strip() for i in ids.splitlines() if i.strip() and i.strip() not in thread_ids]
     return {"entries": entries, "threadIds": thread_ids} if entries or thread_ids else None

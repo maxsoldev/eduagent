@@ -85,8 +85,10 @@ def sync_rollout_summaries(root: Path, memories: list[Stage1Output]) -> None:
         if path.stem not in keep:
             path.unlink()
     for m in memories:
-        header = (f"thread_id: {m.thread_id}\nupdated_at: {_iso(m.source_updated_at)}\n"
-                  f"rollout_path: {m.rollout_path}\ncwd: {m.cwd}\n\n")
+        header = (
+            f"thread_id: {m.thread_id}\nupdated_at: {_iso(m.source_updated_at)}\n"
+            f"rollout_path: {m.rollout_path}\ncwd: {m.cwd}\n\n"
+        )
         (directory / f"{rollout_summary_file_stem(m)}.md").write_text(header + m.rollout_summary + "\n")
 
 
@@ -97,7 +99,9 @@ def rebuild_raw_memories_file(root: Path, memories: list[Stage1Output]) -> None:
     else:
         body += "Merged stage-1 raw memories (stable ascending thread-id order):\n\n"
         for m in memories:
-            body += (f"## Thread `{m.thread_id}`\nupdated_at: {_iso(m.source_updated_at)}\ncwd: {m.cwd}\n"
-                     f"rollout_path: {m.rollout_path}\nrollout_summary_file: {rollout_summary_file_stem(m)}.md\n\n"
-                     f"{m.raw_memory.strip()}\n\n")
+            body += (
+                f"## Thread `{m.thread_id}`\nupdated_at: {_iso(m.source_updated_at)}\ncwd: {m.cwd}\n"
+                f"rollout_path: {m.rollout_path}\nrollout_summary_file: {rollout_summary_file_stem(m)}.md\n\n"
+                f"{m.raw_memory.strip()}\n\n"
+            )
     (root / RAW_MEMORIES_FILENAME).write_text(body)

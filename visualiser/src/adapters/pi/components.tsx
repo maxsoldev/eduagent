@@ -5,17 +5,31 @@ import type { Entry, NativePart } from "../../view/model";
 import { Status, ToolCard } from "../../components/parts";
 
 export function NativeEntry({ entry, part }: { entry: Entry; part: NativePart }) {
-  if (part.type === "editDiff" && entry.kind === "tool") return <EditDiff entry={entry} path={part.data.path} diff={part.data.diff} />;
-  return <pre className="small">{JSON.stringify(part.data)}</pre>;
+	if (part.type === "editDiff" && entry.kind === "tool")
+		return <EditDiff entry={entry} path={part.data.path} diff={part.data.diff} />;
+	return <pre className="small">{JSON.stringify(part.data)}</pre>;
 }
 
 function EditDiff({ entry, path, diff }: { entry: Extract<Entry, { kind: "tool" }>; path: string; diff: string }) {
-  return (
-    <ToolCard testId="edit-diff" head={<><span className="badge patch">edit</span><code className="grow">{path}</code><Status s={entry.status} /></>}>
-      <pre className="diff">{diff.split("\n").map((line, i) => (
-        <span key={i} className={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : ""}>{line + "\n"}</span>
-      ))}</pre>
-      {entry.output && <pre className="out">{entry.output}</pre>}
-    </ToolCard>
-  );
+	return (
+		<ToolCard
+			testId="edit-diff"
+			head={
+				<>
+					<span className="badge patch">edit</span>
+					<code className="grow">{path}</code>
+					<Status s={entry.status} />
+				</>
+			}
+		>
+			<pre className="diff">
+				{diff.split("\n").map((line, i) => (
+					<span key={i} className={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : ""}>
+						{line + "\n"}
+					</span>
+				))}
+			</pre>
+			{entry.output && <pre className="out">{entry.output}</pre>}
+		</ToolCard>
+	);
 }

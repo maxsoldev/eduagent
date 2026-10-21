@@ -46,15 +46,24 @@ class ProcessManager:
         self._next_id = 1000
 
     async def start(
-        self, argv: list[str], cwd: str, env: dict[str, str] | None, yield_ms: int | None,
+        self,
+        argv: list[str],
+        cwd: str,
+        env: dict[str, str] | None,
+        yield_ms: int | None,
         on_output: Callable[[str], object] | None = None,
     ) -> ExecResult:
         if len(self._processes) >= MAX_PROCESSES:
             raise RuntimeError(f"too many running processes (max {MAX_PROCESSES}); finish some with write_stdin")
         started = time.monotonic()
         proc = await asyncio.create_subprocess_exec(
-            *argv, cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True,
+            *argv,
+            cwd=cwd,
+            env=env,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
         self._next_id += 1
         process = Process(self._next_id, proc, on_output=on_output)
@@ -125,7 +134,6 @@ class ProcessManager:
         self._processes.clear()
         if self._lingering:
             await asyncio.wait(list(self._lingering), timeout=1)
-
 
 
 def _clamp(value: int | None, default: int) -> int:

@@ -7,12 +7,19 @@ export type Category = "prompt" | "model" | "loop" | "tools" | "guardrails" | "m
 export type Info = { title: string; category: Category; text: string; chapter?: string; source?: string };
 
 export type Explainer = {
-  info: (e: Pick<TimelineEvent, "name" | "trace">) => Info;
-  summary: (e: TimelineEvent) => string;
-  noisy: (e: TimelineEvent) => boolean; // streaming deltas, hidden by default
+	info: (e: Pick<TimelineEvent, "name" | "trace">) => Info;
+	summary: (e: TimelineEvent) => string;
+	noisy: (e: TimelineEvent) => boolean; // streaming deltas, hidden by default
 };
 
 export const CATEGORY_COLORS: Record<Category, string> = {
-  prompt: "#7dd3fc", model: "#fbbf24", loop: "#e5e7eb", tools: "#c084fc", guardrails: "#f87171",
-  mcp: "#34d399", memory: "#94a3b8", protocol: "#64748b", debug: "#fb923c",
+	prompt: "#7dd3fc",
+	model: "#fbbf24",
+	loop: "#e5e7eb",
+	tools: "#c084fc",
+	guardrails: "#f87171",
+	mcp: "#34d399",
+	memory: "#94a3b8",
+	protocol: "#64748b",
+	debug: "#fb923c",
 };

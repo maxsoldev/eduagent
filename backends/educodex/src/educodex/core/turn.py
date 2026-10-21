@@ -101,7 +101,8 @@ class TurnContext:
 
 TURN_ABORTED_GUIDANCE = (
     "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running "
-    "in the background. If any tools/commands were aborted, they may have partially executed.")
+    "in the background. If any tools/commands were aborted, they may have partially executed."
+)
 
 
 def token_breakdown(usage: dict) -> dict:
@@ -122,12 +123,20 @@ def _now_ms() -> int:
 
 def new_turn() -> dict:
     """A Turn object in app-server v2 shape."""
-    return {"id": str(uuid.uuid4()), "items": [], "status": "inProgress", "error": None,
-            "startedAt": _now_ms(), "completedAt": None, "durationMs": None}
+    return {
+        "id": str(uuid.uuid4()),
+        "items": [],
+        "status": "inProgress",
+        "error": None,
+        "startedAt": _now_ms(),
+        "completedAt": None,
+        "durationMs": None,
+    }
 
 
-async def run_turn(session: "Session", text: str, turn: dict | None = None,
-                   skill_inputs: list[dict] | None = None) -> dict:
+async def run_turn(
+    session: "Session", text: str, turn: dict | None = None, skill_inputs: list[dict] | None = None
+) -> dict:
     """Run one turn and return the Turn object. `skill_inputs`: UserInput skill items from the client."""
     turn = turn or new_turn()
     turn_id = turn["id"]
@@ -177,7 +186,9 @@ async def run_turn(session: "Session", text: str, turn: dict | None = None,
         session.rollout.event("turn_aborted", turn_id=turn_id, reason="interrupted")
     except hooks.HookBlocked as err:
         turn["status"] = "completed"  # Codex ends the turn quietly when a UserPromptSubmit hook blocks
-        await session.bus.emit("warning", threadId=session.thread_id, turnId=turn_id, message=f"prompt blocked by hook: {err}")
+        await session.bus.emit(
+            "warning", threadId=session.thread_id, turnId=turn_id, message=f"prompt blocked by hook: {err}"
+        )
     except Exception as err:  # surfaced to the client, like Codex's Error event
         turn["status"] = "failed"
         turn["error"] = {"message": str(err)}
@@ -237,8 +248,12 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
         elif event.type == "response.output_text.delta":
             await ctx.emit("item/agentMessage/delta", itemId=data.get("item_id"), delta=data.get("delta", ""))
         elif event.type == "response.reasoning_summary_text.delta":
-            await ctx.emit("item/reasoning/summaryTextDelta", itemId=data.get("item_id"),
-                           summaryIndex=data.get("summary_index", 0), delta=data.get("delta", ""))
+            await ctx.emit(
+                "item/reasoning/summaryTextDelta",
+                itemId=data.get("item_id"),
+                summaryIndex=data.get("summary_index", 0),
+                delta=data.get("delta", ""),
+            )
         elif event.type == "response.output_item.done":
             item = clean_output_item(data["item"])
             await session.record(item)
@@ -256,8 +271,14 @@ async def run_sampling_request(ctx: TurnContext) -> bool:
     if usage:
         last = token_breakdown(usage)
         total = session.total_usage = {k: session.total_usage.get(k, 0) + v for k, v in last.items()}
-        await ctx.emit("thread/tokenUsage/updated", tokenUsage={  # v2 ThreadTokenUsage (thread.rs)
-            "total": total, "last": last, "modelContextWindow": session.model_info.context_window})
+        await ctx.emit(
+            "thread/tokenUsage/updated",
+            tokenUsage={  # v2 ThreadTokenUsage (thread.rs)
+                "total": total,
+                "last": last,
+                "modelContextWindow": session.model_info.context_window,
+            },
+        )
         session.rollout.event("token_count", info=usage)
 
     if tool_calls:
@@ -345,10 +366,15 @@ async def _item_done(ctx: TurnContext, item: ResponseItem) -> None:
     if item.get("type") == "message":
         # History keeps the raw text; the user sees it without the memory citation block.
         text, citations = strip_citations(message_text(item))
-        await ctx.item_completed({"type": "agentMessage", "id": item.get("id"), "text": text,
-                                  "memoryCitation": parse_memory_citation(citations)})
+        await ctx.item_completed(
+            {
+                "type": "agentMessage",
+                "id": item.get("id"),
+                "text": text,
+                "memoryCitation": parse_memory_citation(citations),
+            }
+        )
         ctx.session.rollout.event("agent_message", message=text)
     elif item.get("type") == "reasoning":
         summary = [s.get("text", "") for s in item.get("summary", [])]
         await ctx.item_completed({"type": "reasoning", "id": item.get("id"), "summary": summary, "content": []})
-
