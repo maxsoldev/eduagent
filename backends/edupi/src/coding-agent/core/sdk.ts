@@ -9,7 +9,9 @@ import type { Model } from "../../ai/types.ts";
 import { AgentSession } from "./agent-session.ts";
 import { convertToLlm } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import type { Probe } from "./probe.ts";
 import type { SessionManager } from "./session-manager.ts";
+import type { SettingsManager } from "./settings-manager.ts";
 
 export interface CreateAgentSessionOptions {
   sessionManager: SessionManager;
@@ -19,6 +21,8 @@ export interface CreateAgentSessionOptions {
   modelRegistry: ModelRegistry;
   streamFn: StreamFn;
   getApiKey: (provider: string) => string | undefined;
+  settingsManager: SettingsManager;
+  probe?: Probe;
 }
 
 export function createAgentSession(options: CreateAgentSessionOptions): AgentSession {
@@ -53,5 +57,5 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
 
-  return new AgentSession({ agent, sessionManager, getApiKey: options.getApiKey });
+  return new AgentSession({ agent, sessionManager, settingsManager: options.settingsManager, getApiKey: options.getApiKey, probe: options.probe });
 }

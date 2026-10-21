@@ -29,6 +29,32 @@ export async function runAgentLoop(
   return newMessages;
 }
 
+/**
+ * Continues from the current context without a new message, e.g. to retry after the context was
+ * compacted. The last message must not be an assistant message: the model answers what is there.
+ */
+export async function runAgentLoopContinue(
+  context: AgentContext,
+  config: AgentLoopConfig,
+  emit: AgentEventSink,
+  signal: AbortSignal | undefined,
+  streamFn: StreamFn,
+): Promise<AgentMessage[]> {
+  if (context.messages.length === 0) throw new Error("Cannot continue: no messages in context");
+  if (context.messages[context.messages.length - 1].role === "assistant") {
+    throw new Error("Cannot continue from message role: assistant");
+  }
+
+  const newMessages: AgentMessage[] = [];
+  const currentContext: AgentContext = { ...context };
+
+  await emit({ type: "agent_start" });
+  await emit({ type: "turn_start" });
+
+  await runLoop(currentContext, newMessages, config, signal, emit, streamFn);
+  return newMessages;
+}
+
 /** The loop shared by every run: call the model, end the turn, decide whether to go on. */
 async function runLoop(
   currentContext: AgentContext,

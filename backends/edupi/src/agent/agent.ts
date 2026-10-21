@@ -2,7 +2,7 @@
 // It owns the transcript, runs one prompt at a time, keeps its state up to date from the loop's
 // events, then passes each event to its listeners and awaits them in order.
 import type { ImageContent, Message, Model, TextContent } from "../ai/types.ts";
-import { runAgentLoop } from "./agent-loop.ts";
+import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentState, StreamFn, ThinkingLevel } from "./types.ts";
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
@@ -70,6 +70,23 @@ export class Agent {
       throw new Error("Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.");
     }
     await this.runPromptMessages(this.normalizePromptInput(input, images));
+  }
+
+  /**
+   * Runs the loop again from the current messages, without a new prompt (after an overflow, the
+   * session compacts and continues). pi also drains the steering and follow-up queues here.
+   */
+  async continue(): Promise<void> {
+    if (this.activeRun) throw new Error("Agent is already processing. Wait for completion before continuing.");
+    const lastMessage = this._state.messages[this._state.messages.length - 1];
+    if (!lastMessage || this._state.messages.every((message) => message.role === "system")) {
+      throw new Error("No messages to continue from");
+    }
+    if (lastMessage.role === "assistant") throw new Error("Cannot continue from message role: assistant");
+    await this.runWithLifecycle(async (signal) => {
+      await runAgentLoopContinue(this.createContextSnapshot(), this.createLoopConfig(),
+        (event) => this.processEvents(event), signal, this.streamFunction);
+    });
   }
 
   private normalizePromptInput(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]): AgentMessage[] {

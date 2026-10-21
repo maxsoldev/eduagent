@@ -12,6 +12,7 @@ import { AgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import { ModelRegistry } from "./core/model-registry.ts";
 import { createAgentSession } from "./core/sdk.ts";
 import { SessionManager } from "./core/session-manager.ts";
+import { SettingsManager } from "./core/settings-manager.ts";
 import { runRpcMode } from "./modes/rpc/rpc-mode.ts";
 
 export async function main(argv: string[]): Promise<void> {
@@ -36,8 +37,9 @@ export async function main(argv: string[]): Promise<void> {
   const tracer = new Tracer();
   const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
+  const settingsManager = SettingsManager.create();
   const cwd = process.cwd();
-  const createRuntime = (sessionManager: SessionManager) => createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey });
+  const createRuntime = (sessionManager: SessionManager) => createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, probe: tracer });
   const session = createRuntime(createSessionManager(parsed, cwd));
   // The tracer lives in streamFn, which every session from createRuntime shares, so it survives new_session.
   await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), { connect: (output) => tracer.connect(output) });

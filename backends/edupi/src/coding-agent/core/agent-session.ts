@@ -1,18 +1,45 @@
 // Mirrors pi packages/coding-agent/src/core/agent-session.ts (pinned 16f5f0af4): the coding
 // agent's session around the Agent. Every mode (pi's TUI, print, JSON, RPC) drives an
 // AgentSession. It turns a prompt into a run, forwards the Agent's events with the session's
-// own events added (agent_settled), saves each finished message to the session file, and
+// own events added (agent_settled, compaction_start/end), saves each finished message to the
+// session file, compacts the context (by hand, at the threshold, after an overflow), and
 // answers the state questions of get_state.
 import type { Agent } from "../../agent/agent.ts";
 import type { AgentEvent, AgentMessage } from "../../agent/types.ts";
-import type { ImageContent, Model, ThinkingLevel } from "../../ai/types.ts";
-import type { SessionManager } from "./session-manager.ts";
+import type { AssistantMessage, ImageContent, Model, ThinkingLevel, ToolResultMessage } from "../../ai/types.ts";
+import { isContextOverflow, isRecoverableLength } from "../../ai/utils/overflow.ts";
+import {
+  type CompactionPreparation,
+  type CompactionResult,
+  calculateContextTokens,
+  compact,
+  estimateContextTokens,
+  estimateProjectedContextTokens,
+  estimateTokens,
+  prepareCompaction,
+  shouldCompact,
+} from "./compaction/compaction.ts";
+import type { Probe } from "./probe.ts";
+import { getLatestCompactionEntry, type SessionEntry, type SessionManager } from "./session-manager.ts";
+import type { SettingsManager } from "./settings-manager.ts";
+
+export type CompactionReason = "manual" | "threshold" | "overflow";
 
 /** The Agent's events, with willRetry on agent_end, plus the session's own events. */
 export type AgentSessionEvent =
   | Exclude<AgentEvent, { type: "agent_end" }>
   | { type: "agent_end"; messages: AgentMessage[]; willRetry: boolean }
-  | { type: "agent_settled"; aborted: boolean };
+  | { type: "agent_settled"; aborted: boolean }
+  | { type: "compaction_start"; reason: CompactionReason }
+  | { type: "entry_appended"; entry: SessionEntry }
+  | {
+      type: "compaction_end";
+      reason: CompactionReason;
+      result: CompactionResult | undefined;
+      aborted: boolean;
+      willRetry: boolean;
+      errorMessage?: string;
+    };
 
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
@@ -29,23 +56,46 @@ export interface PromptOptions {
 export interface AgentSessionConfig {
   agent: Agent;
   sessionManager: SessionManager;
+  settingsManager: SettingsManager;
   /** The key for a provider, or undefined if none is configured. */
   getApiKey: (provider: string) => string | undefined;
+  /** edupi's teaching hooks (compaction); pi has none. */
+  probe?: Probe;
+}
+
+function estimateMessagesTokens(messages: AgentMessage[]): number {
+  let tokens = 0;
+  for (const message of messages) tokens += estimateTokens(message);
+  return tokens;
 }
 
 export class AgentSession {
   readonly agent: Agent;
   readonly sessionManager: SessionManager;
+  readonly settingsManager: SettingsManager;
   private readonly _getApiKey: (provider: string) => string | undefined;
+  private readonly _probe: Probe | undefined;
   private _eventListeners: AgentSessionEventListener[] = [];
   private _isAgentRunActive = false; // from _startRun until agent_settled
   private _unsubscribeAgent: () => void;
 
+  // Compaction state
+  private _compactionAbortController: AbortController | undefined = undefined; // manual
+  private _autoCompactionAbortController: AbortController | undefined = undefined; // threshold, overflow
+  private _overflowRecoveryAttempted = false; // one compact-and-retry per user message
+  private _lastAssistantMessage: AssistantMessage | undefined = undefined; // of the current run
+  private _lastAssistantToolResults: ToolResultMessage[] = [];
+  /** The entry each message of the context was saved as (a context edit needs its id). */
+  private _entryIdsByMessage = new WeakMap<AgentMessage, string>();
+
   constructor(config: AgentSessionConfig) {
     this.agent = config.agent;
     this.sessionManager = config.sessionManager;
+    this.settingsManager = config.settingsManager;
     this._getApiKey = config.getApiKey;
+    this._probe = config.probe;
     this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+    this._refreshFinalizedContext(); // records the entry of each restored message
   }
 
   /** Stops listening to the Agent and drops the listeners (the session is being replaced). */
@@ -66,16 +116,33 @@ export class AgentSession {
   }
 
   private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+    // A new user message allows a new overflow recovery.
+    if (event.type === "message_start" && event.message.role === "user") this._overflowRecoveryAttempted = false;
+
     this._emit(event.type === "agent_end" ? { ...event, willRetry: false } : event); // edupi has no auto-retry
 
     // Each finished message becomes a "message" entry, child of the last entry.
     if (event.type === "message_end") {
       const role = event.message.role;
       if (role === "system" || role === "user" || role === "assistant" || role === "toolResult") {
-        this.sessionManager.appendMessage(event.message);
+        this._entryIdsByMessage.set(event.message, this.sessionManager.appendMessage(event.message));
+      }
+      if (event.message.role === "assistant") {
+        this._lastAssistantMessage = event.message;
+        if (event.message.stopReason !== "error" && event.message.stopReason !== "length") this._overflowRecoveryAttempted = false;
       }
     }
+    if (event.type === "turn_end") this._lastAssistantToolResults = event.toolResults;
   };
+
+  /** After compaction or an omission, the Agent's messages are rebuilt from the session file. */
+  private _refreshFinalizedContext(): void {
+    const projection = this.sessionManager.buildSessionProjection();
+    for (const entry of projection.entries) {
+      for (const message of entry.messages) this._entryIdsByMessage.set(message, entry.sourceEntry.id);
+    }
+    this.agent.state.messages = projection.messages;
+  }
 
   get model(): Model {
     return this.agent.state.model;
@@ -90,7 +157,7 @@ export class AgentSession {
   }
 
   get isCompacting(): boolean {
-    return false; // edupi does not compact yet
+    return this._compactionAbortController !== undefined || this._autoCompactionAbortController !== undefined;
   }
 
   get steeringMode(): "all" | "one-at-a-time" {
@@ -119,7 +186,7 @@ export class AgentSession {
   }
 
   get autoCompactionEnabled(): boolean {
-    return false; // edupi does not compact yet; pi's default is true
+    return this.settingsManager.getCompactionEnabled();
   }
 
   /**
@@ -127,6 +194,9 @@ export class AgentSession {
    * checks the model's API key; after preflightResult("started"), failures arrive as events.
    */
   async prompt(text: string, options?: PromptOptions): Promise<void> {
+    if (this.isCompacting) {
+      throw new Error("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.");
+    }
     if (this.isStreaming) {
       throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
     }
@@ -136,20 +206,220 @@ export class AgentSession {
     await this._startRun(text, options?.images ?? [], () => options?.preflightResult?.("started"));
   }
 
-  /** One run: the user message, then the Agent's loop, then agent_settled. */
+  /**
+   * One run: compact first if needed, the user message, the Agent's loop, then the post-run
+   * check (compact; after an overflow, compact and continue), then agent_settled.
+   */
   private async _startRun(text: string, images: ImageContent[], onStarted?: () => void): Promise<void> {
     this._isAgentRunActive = true;
-    const messages: AgentMessage[] = [{ role: "user", content: [{ type: "text", text }, ...images], timestamp: Date.now() }];
+    let messages: AgentMessage[];
+    try {
+      messages = await this._prepareRun(text, images);
+    } catch (error) {
+      this._isAgentRunActive = false;
+      throw error;
+    }
     onStarted?.();
     try {
       await this.agent.prompt(messages);
+      while (await this._handlePostAgentRun()) await this.agent.continue();
     } finally {
       this._emitAgentSettled();
     }
   }
 
+  /** The run's starting messages. The context may be over the threshold already: check it first. */
+  private async _prepareRun(text: string, images: ImageContent[]): Promise<AgentMessage[]> {
+    const lastAssistant = this._findLastAssistantMessage();
+    if (lastAssistant) await this._checkCompaction(lastAssistant, false);
+    return [{ role: "user", content: [{ type: "text", text }, ...images], timestamp: Date.now() }];
+  }
+
+  /** After the loop: should it continue? Only after an overflow recovery (pi also: queued messages, retries). */
+  private async _handlePostAgentRun(): Promise<boolean> {
+    const message = this._lastAssistantMessage;
+    const toolResults = this._lastAssistantToolResults;
+    this._lastAssistantMessage = undefined;
+    this._lastAssistantToolResults = [];
+    if (!message) return false;
+    return this._checkCompaction(message, true, toolResults);
+  }
+
+  private _findLastAssistantMessage(): AssistantMessage | undefined {
+    const messages = this.agent.state.messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "assistant") return msg;
+    }
+    return undefined;
+  }
+
   private _emitAgentSettled(): void {
     this._isAgentRunActive = false;
     this._emit({ type: "agent_settled", aborted: false });
+  }
+
+  // =========================================================================
+  // Compaction
+  // =========================================================================
+
+  /** pi's built-in summary, for every reason. edupi's probe sees each summary request body. */
+  private async _runDefaultCompaction(preparation: CompactionPreparation, model: Model,
+    customInstructions: string | undefined, signal: AbortSignal, reason: CompactionReason): Promise<CompactionResult> {
+    const onPayload = (body: unknown) => {
+      void this._probe?.compactionRequest?.({ reason, tokensBefore: preparation.tokensBefore, body });
+      return undefined;
+    };
+    return compact(preparation, model, this._getApiKey(model.provider), this.agent.streamFunction, customInstructions, signal,
+      this.agent.state.thinkingLevel, onPayload);
+  }
+
+  /** Saves the summary as a compaction entry and rebuilds the Agent's messages from it. */
+  private _saveCompaction(compacted: CompactionResult, reason: CompactionReason): CompactionResult {
+    const { summary, firstKeptEntryId, tokensBefore, usage, details } = compacted;
+    this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, undefined, usage);
+    this._refreshFinalizedContext();
+    const estimatedTokensAfter = estimateMessagesTokens(this.sessionManager.buildSessionProjection().messages);
+    const result = { summary, firstKeptEntryId, tokensBefore, estimatedTokensAfter, usage, details };
+    void this._probe?.compacted?.({ reason, ...result, messages: this.agent.state.messages });
+    return result;
+  }
+
+  /**
+   * Manual compaction (RPC `compact`, pi's /compact). Never retries. pi aborts a running turn
+   * first; edupi has no abort yet, so it refuses while a run is active.
+   */
+  async compact(customInstructions?: string): Promise<CompactionResult> {
+    if (this.isStreaming) throw new Error("Cannot compact while the agent is running. edupi has no abort yet; wait for the run to end.");
+    this._compactionAbortController = new AbortController();
+    this._emit({ type: "compaction_start", reason: "manual" });
+    try {
+      const model = this.model;
+      const pathEntries = this.sessionManager.getBranch();
+      const preparation = prepareCompaction(pathEntries, this.settingsManager.getCompactionSettings());
+      if (!preparation) {
+        const lastEntry = pathEntries[pathEntries.length - 1];
+        if (lastEntry?.type === "compaction") throw new Error("Already compacted");
+        throw new Error("Nothing to compact (session too small)");
+      }
+      const result = await this._runDefaultCompaction(preparation, model, customInstructions, this._compactionAbortController.signal, "manual");
+      if (this._compactionAbortController.signal.aborted) throw new Error("Compaction cancelled");
+      const compactionResult = this._saveCompaction(result, "manual");
+      this._compactionAbortController = undefined;
+      this._emit({ type: "compaction_end", reason: "manual", result: compactionResult, aborted: false, willRetry: false });
+      return compactionResult;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const aborted = this._compactionAbortController?.signal.aborted ?? false;
+      this._compactionAbortController = undefined;
+      this._emit({ type: "compaction_end", reason: "manual", result: undefined, aborted, willRetry: false,
+        errorMessage: aborted ? undefined : `Compaction failed: ${message}` });
+      throw error;
+    } finally {
+      this._compactionAbortController = undefined;
+    }
+  }
+
+  /**
+   * The automatic cases, checked before a prompt and after each run:
+   * 1. Overflow with retry: the provider refused the context (or a length stop came early).
+   *    Drop the failed reply from the context, compact, and continue the run once.
+   * 2. Overflow without retry: the reply succeeded but its input exceeded the window. Compact.
+   * 3. Threshold: the context is above contextWindow - reserveTokens. Compact, no retry.
+   * Returns whether the run should continue.
+   */
+  private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true,
+    toolResults: AgentMessage[] = []): Promise<boolean> {
+    const settings = this.settingsManager.getCompactionSettings();
+    if (!settings.enabled) return false;
+    if (skipAbortedCheck && assistantMessage.stopReason === "aborted") return false;
+
+    // An overflow of another model (the user switched models) says nothing about this one.
+    const model = this.model;
+    const sameModel = model.provider === assistantMessage.provider && model.id === assistantMessage.model;
+    const contextWindow = model.contextWindow;
+
+    // A reply from before the latest compaction has a stale usage: it must not compact again.
+    const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
+    if (compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime()) return false;
+
+    // Cases 1 and 2: context overflow.
+    const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
+    const recoverableLength = sameModel && isRecoverableLength(assistantMessage, model.maxTokens);
+    if (contextOverflow || recoverableLength) {
+      const willRetry = assistantMessage.stopReason !== "stop";
+      if (!willRetry) return this._runAutoCompaction("overflow", false);
+
+      if (this._overflowRecoveryAttempted) {
+        const errorMessage = contextOverflow
+          ? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."
+          : "Truncated response recovery failed after one compact-and-retry attempt.";
+        this._emit({ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: false, errorMessage });
+        return false;
+      }
+      this._overflowRecoveryAttempted = true;
+      this._omitRecoveryAttempt(assistantMessage, toolResults);
+      return this._runAutoCompaction("overflow", willRetry);
+    }
+
+    // Case 3: threshold. Without a usable usage (an error, or zero), estimate the context instead.
+    let contextTokens: number;
+    const projection = this.sessionManager.buildSessionProjection();
+    const directContextTokens = calculateContextTokens(assistantMessage.usage);
+    if (projection.entries.some((entry) => entry.sourceEntry.type === "context_edit")) {
+      contextTokens = estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens;
+    } else if (assistantMessage.stopReason === "error" || directContextTokens === 0) {
+      const messages = this.agent.state.messages;
+      const estimate = estimateContextTokens(messages);
+      if (estimate.lastUsageIndex !== null && compactionEntry) {
+        const usageMsg = messages[estimate.lastUsageIndex];
+        if (usageMsg.role === "assistant" && usageMsg.timestamp <= new Date(compactionEntry.timestamp).getTime()) return false;
+      }
+      contextTokens = estimate.tokens;
+    } else {
+      contextTokens = directContextTokens;
+    }
+    if (shouldCompact(contextTokens, contextWindow, settings)) return this._runAutoCompaction("threshold", false);
+    return false;
+  }
+
+  /** Leaves the failed reply (and its tool results) out of the context with context_edit entries. */
+  private _omitRecoveryAttempt(message: AssistantMessage, toolResults: AgentMessage[] = []): void {
+    for (const target of [message, ...toolResults]) {
+      const targetId = this._entryIdsByMessage.get(target);
+      if (!targetId) continue;
+      const entry = this.sessionManager.getEntry(this.sessionManager.appendContextEdit(targetId, null));
+      if (entry) this._emit({ type: "entry_appended", entry });
+    }
+    this._refreshFinalizedContext();
+  }
+
+  /** Threshold or overflow compaction. Returns whether the run should continue (the overflow retry). */
+  private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
+    let abortController: AbortController | undefined;
+    try {
+      const preparation = prepareCompaction(this.sessionManager.getBranch(), this.settingsManager.getCompactionSettings());
+      if (!preparation) return false; // nothing to summarise: no events at all
+
+      abortController = new AbortController();
+      this._autoCompactionAbortController = abortController;
+      this._emit({ type: "compaction_start", reason });
+      const compactResult = await this._runDefaultCompaction(preparation, this.model, undefined, abortController.signal, reason);
+      abortController.signal.throwIfAborted();
+      const result = this._saveCompaction(compactResult, reason);
+      this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+      return willRetry;
+    } catch (error) {
+      if (abortController) {
+        const message = error instanceof Error ? error.message : "compaction failed";
+        const aborted = abortController.signal.aborted;
+        const errorMessage = aborted ? undefined
+          : reason === "overflow" ? `Context overflow recovery failed: ${message}` : `Auto-compaction failed: ${message}`;
+        this._emit({ type: "compaction_end", reason, result: undefined, aborted, willRetry: false, errorMessage });
+      }
+      return false;
+    } finally {
+      if (this._autoCompactionAbortController === abortController) this._autoCompactionAbortController = undefined;
+    }
   }
 }
