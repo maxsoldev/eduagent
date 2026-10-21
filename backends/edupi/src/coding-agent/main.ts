@@ -76,7 +76,18 @@ export async function main(argv: string[]): Promise<void> {
 /** Which session to start with: pi's --no-session, --session, --continue, else a new one. */
 function createSessionManager(parsed: Args, cwd: string): SessionManager {
 	if (parsed.noSession) return SessionManager.inMemory(cwd);
-	if (parsed.session) return SessionManager.open(parsed.session);
+	if (parsed.session) return openSessionOrExit(parsed.session);
 	if (parsed.continue) return SessionManager.continueRecent(cwd);
 	return SessionManager.create(cwd);
+}
+
+/** pi's openSessionOrExit: a file that cannot be opened is a one-line error and exit code 1. */
+function openSessionOrExit(path: string): SessionManager {
+	try {
+		return SessionManager.open(path);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`Error: ${message}`);
+		process.exit(1);
+	}
 }
