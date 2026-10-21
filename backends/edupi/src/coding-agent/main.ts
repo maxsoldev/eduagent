@@ -25,7 +25,7 @@ export async function main(argv: string[]): Promise<void> {
   if (parsed.faux) {
     const fauxLog = parsed.fauxLog;
     const script = loadFauxScript(parsed.faux);
-    const faux = fauxProvider({ models: script.models, onRequest: fauxLog ? (request) => appendFileSync(fauxLog, `${JSON.stringify(request)}\n`) : undefined });
+    const faux = fauxProvider({ models: script.models, tokensPerSecond: script.tokensPerSecond, onRequest: fauxLog ? (request) => appendFileSync(fauxLog, `${JSON.stringify(request)}\n`) : undefined });
     faux.setResponses(script.responses);
     fetch = faux.fetch;
   }

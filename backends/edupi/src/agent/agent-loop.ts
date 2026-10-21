@@ -44,8 +44,9 @@ export async function runAgentLoop(
 }
 
 /**
- * The loop shared by every run: call the model; if it called tools, run them, put their results
- * into the context and call the model again. The run ends with a reply without tool calls.
+ * The loop shared by every run. Inner loop: call the model; if it called tools, run them and call
+ * the model again. Steering messages go in before the next model call (drain points A, B, C).
+ * Outer loop: when the agent would stop, queued follow-up messages start another inner loop.
  */
 async function runLoop(
   currentContext: AgentContext,
@@ -56,38 +57,71 @@ async function runLoop(
   streamFunction: StreamFn,
 ): Promise<void> {
   let firstTurn = true;
-  let hasMoreToolCalls = true;
+  // Drain point A: the user may have steered while the run was starting.
+  let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
-  while (hasMoreToolCalls) {
-    if (!firstTurn) await emit({ type: "turn_start" });
-    firstTurn = false;
+  // Outer loop: goes on when follow-up messages are queued after the agent would stop.
+  while (true) {
+    let hasMoreToolCalls = true;
 
-    const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
-    newMessages.push(message);
-
-    if (message.stopReason === "error" || message.stopReason === "aborted") {
-      await emit({ type: "turn_end", message, toolResults: [] });
-      await emit({ type: "agent_end", messages: newMessages });
-      return;
-    }
-
-    const toolCalls = message.content.filter((c) => c.type === "toolCall");
-    const toolResults: ToolResultMessage[] = [];
-    hasMoreToolCalls = false;
-    if (toolCalls.length > 0) {
-      // A "length" stop cut the reply off, so every call may carry truncated arguments: fail them all.
-      const executed = message.stopReason === "length"
-        ? await failToolCallsFromTruncatedMessage(toolCalls, emit)
-        : await executeToolCalls(currentContext, message, config, signal, emit);
-      toolResults.push(...executed);
-      hasMoreToolCalls = true;
-      for (const result of toolResults) {
-        currentContext.messages.push(result);
-        newMessages.push(result);
+    // Inner loop: tool calls and steering messages.
+    while (hasMoreToolCalls || pendingMessages.length > 0) {
+      if (!firstTurn) {
+        // Drain point B: poll again only if the last poll gave nothing, else one-at-a-time mode
+        // would put two messages into this turn.
+        if (pendingMessages.length === 0) pendingMessages = (await config.getSteeringMessages?.()) || [];
+        await emit({ type: "turn_start" });
       }
+      firstTurn = false;
+
+      // Queued messages go in before the next assistant response.
+      for (const message of declareToolChanges(currentContext, pendingMessages)) {
+        await emit({ type: "message_start", message });
+        await emit({ type: "message_end", message });
+        currentContext.messages.push(message);
+        newMessages.push(message);
+      }
+      pendingMessages = [];
+
+      const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
+      newMessages.push(message);
+
+      // An error or an abort ends the run at once. Queued messages stay queued.
+      if (message.stopReason === "error" || message.stopReason === "aborted") {
+        await emit({ type: "turn_end", message, toolResults: [] });
+        await emit({ type: "agent_end", messages: newMessages });
+        return;
+      }
+
+      const toolCalls = message.content.filter((c) => c.type === "toolCall");
+      const toolResults: ToolResultMessage[] = [];
+      hasMoreToolCalls = false;
+      if (toolCalls.length > 0) {
+        // A "length" stop cut the reply off, so every call may carry truncated arguments: fail them all.
+        const executed = message.stopReason === "length"
+          ? await failToolCallsFromTruncatedMessage(toolCalls, emit)
+          : await executeToolCalls(currentContext, message, config, signal, emit);
+        toolResults.push(...executed);
+        hasMoreToolCalls = true;
+        for (const result of toolResults) {
+          currentContext.messages.push(result);
+          newMessages.push(result);
+        }
+      }
+
+      await emit({ type: "turn_end", message, toolResults });
+
+      // Drain point C: steering sent while the model streamed or the tools ran.
+      pendingMessages = (await config.getSteeringMessages?.()) || [];
     }
 
-    await emit({ type: "turn_end", message, toolResults });
+    // The agent would stop here. Follow-up messages become pending and start another inner loop.
+    const followUpMessages = (await config.getFollowUpMessages?.()) || [];
+    if (followUpMessages.length > 0) {
+      pendingMessages = followUpMessages;
+      continue;
+    }
+    break;
   }
 
   await emit({ type: "agent_end", messages: newMessages });

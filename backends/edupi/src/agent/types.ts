@@ -50,6 +50,9 @@ export interface AgentProbe extends ProviderProbe {
   toolOutput?(outcome: { toolCall: AgentToolCall; result: AgentToolResult<unknown>; isError: boolean; durationMs?: number }): void | Promise<void>;
 }
 
+/** "one-at-a-time" (pi's default): a queue gives one message per drain point. "all": every queued message. */
+export type QueueMode = "all" | "one-at-a-time";
+
 export interface AgentLoopConfig extends SimpleStreamOptions {
   model: Model;
   /** AgentMessage[] to provider Message[], just before each model call. */
@@ -57,6 +60,10 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
   getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
   /** Default "parallel". A tool with executionMode "sequential" makes the whole batch sequential. */
   toolExecution?: ToolExecutionMode;
+  /** Steering messages to put in before the next model call. Polled at the loop's drain points. */
+  getSteeringMessages?: () => Promise<AgentMessage[]>;
+  /** Follow-up messages, polled only when the agent would stop. */
+  getFollowUpMessages?: () => Promise<AgentMessage[]>;
   probe?: AgentProbe;
 }
 

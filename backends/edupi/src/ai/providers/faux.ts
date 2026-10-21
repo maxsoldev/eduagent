@@ -152,14 +152,14 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 }
 
 /**
- * Reads a faux script file: `{"models"?: [...], "responses": [...]}`. `models` is the GET /models
- * list (OpenRouter's fields). A response is a string (one text reply) or `{"content": string |
+ * Reads a faux script file: `{"models"?: [...], "tokensPerSecond"?: n, "responses": [...]}`.
+ * `models` is the GET /models list (OpenRouter's fields); tokensPerSecond slows the stream down. A response is a string (one text reply) or `{"content": string |
  * blocks, "stopReason"?: ...}`, the arguments of fauxAssistantMessage.
  * A block is `{"type": "text", "text"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
  */
-export function loadFauxScript(path: string): { models: OpenRouterModel[]; responses: AssistantMessage[] } {
+export function loadFauxScript(path: string): { models: OpenRouterModel[]; tokensPerSecond?: number; responses: AssistantMessage[] } {
   const script = JSON.parse(readFileSync(path, "utf8"));
   const responses = script.responses.map((step: string | { content: string | FauxContentBlock[]; stopReason?: StopReason }) =>
     typeof step === "string" ? fauxAssistantMessage(step) : fauxAssistantMessage(step.content, { stopReason: step.stopReason }));
-  return { models: script.models ?? [], responses };
+  return { models: script.models ?? [], tokensPerSecond: script.tokensPerSecond, responses };
 }

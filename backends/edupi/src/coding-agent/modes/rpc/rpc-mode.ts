@@ -73,6 +73,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
         return undefined;
       }
 
+      // Both queue the message, also when idle (then the next run picks it up). queue_update comes first.
+      case "steer": {
+        const disposition = await session.steer(command.message, command.images);
+        return success(id, "steer", { disposition });
+      }
+
+      case "follow_up": {
+        const disposition = await session.followUp(command.message, command.images);
+        return success(id, "follow_up", { disposition });
+      }
+
       case "get_state": {
         const state: RpcSessionState = {
           model: session.model,
