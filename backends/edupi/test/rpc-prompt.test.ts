@@ -100,7 +100,7 @@ test("get_state answers with pi's session state, before and after a prompt", asy
     followUpMode: "one-at-a-time",
     sessionFile: expect.any(String),
     sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
-    autoCompactionEnabled: false,
+    autoCompactionEnabled: true, // pi's default (settings.json compaction.enabled)
     messageCount: 0,
     pendingMessageCount: 0,
   });

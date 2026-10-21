@@ -44,6 +44,32 @@ export async function runAgentLoop(
 }
 
 /**
+ * Continues from the current context without a new message, e.g. to retry after the context was
+ * compacted. The last message must not be an assistant message: the model answers what is there.
+ */
+export async function runAgentLoopContinue(
+  context: AgentContext,
+  config: AgentLoopConfig,
+  emit: AgentEventSink,
+  signal: AbortSignal | undefined,
+  streamFn: StreamFn,
+): Promise<AgentMessage[]> {
+  if (context.messages.length === 0) throw new Error("Cannot continue: no messages in context");
+  if (context.messages[context.messages.length - 1].role === "assistant") {
+    throw new Error("Cannot continue from message role: assistant");
+  }
+
+  const newMessages: AgentMessage[] = [];
+  const currentContext: AgentContext = { ...context };
+
+  await emit({ type: "agent_start" });
+  await emit({ type: "turn_start" });
+
+  await runLoop(currentContext, newMessages, config, signal, emit, streamFn);
+  return newMessages;
+}
+
+/**
  * The loop shared by every run: call the model; if it called tools, run them, put their results
  * into the context and call the model again. The run ends with a reply without tool calls.
  */
@@ -59,7 +85,11 @@ async function runLoop(
   let hasMoreToolCalls = true;
 
   while (hasMoreToolCalls) {
-    if (!firstTurn) await emit({ type: "turn_start" });
+    if (!firstTurn) {
+      const nextTurn = await config.prepareNextTurn?.({ context: currentContext });
+      currentContext = nextTurn?.context ?? currentContext;
+      await emit({ type: "turn_start" });
+    }
     firstTurn = false;
 
     const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);

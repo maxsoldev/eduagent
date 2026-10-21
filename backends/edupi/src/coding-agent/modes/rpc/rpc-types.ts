@@ -4,6 +4,7 @@
 import type { AgentMessage } from "../../../agent/types.ts";
 import type { ImageContent, Model, ThinkingLevel } from "../../../ai/types.ts";
 import type { PromptDisposition } from "../../core/agent-session.ts";
+import type { CompactionResult } from "../../core/compaction/compaction.ts";
 import type { SourceInfo } from "../../core/skills.ts";
 
 export type RpcCommand =
@@ -11,6 +12,7 @@ export type RpcCommand =
   | { id?: string; type: "new_session"; parentSession?: string }
   | { id?: string; type: "get_state" }
   | { id?: string; type: "get_messages" }
+  | { id?: string; type: "compact"; customInstructions?: string }
   | { id?: string; type: "get_commands" };
 
 /** A slash command the user can type. edupi has only skill commands (pi also has extension and prompt-template commands). */
@@ -41,5 +43,6 @@ export type RpcResponse =
   | { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
   | { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
   | { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+  | { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
   | { id?: string; type: "response"; command: "get_commands"; success: true; data: { commands: RpcSlashCommand[] } }
   | { id?: string; type: "response"; command: string; success: false; error: string };

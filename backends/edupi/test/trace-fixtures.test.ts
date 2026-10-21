@@ -28,7 +28,7 @@ test("edupi's model, tool, prompt and skill trace events match the protocol fixt
 
   const first = (name: string, where: (m: Message) => boolean = () => true) =>
     edupi.seen.find((m) => m.type === "trace" && m.name === name && where(m));
-  const actual: Record<string, Message | undefined> = {
+  const actual: Record<string, Message | undefined> = { // the compaction events are in the next test
     modelRequest: first("modelRequest"),
     toolDispatch: first("toolDispatch"),
     toolOutput: first("toolOutput"),
@@ -38,8 +38,29 @@ test("edupi's model, tool, prompt and skill trace events match the protocol fixt
     skillsLoaded: first("skillsLoaded"),
   };
   expect(actual.skillsLoaded!.skills.map((s: Message) => s.name)).toEqual(["greet"]);
-  expect(Object.keys(actual).sort()).toEqual(Object.keys(shared).sort()); // every shared event is checked
+  // Every shared event is checked: the compaction events in the next test.
+  expect([...Object.keys(actual), "compactionRequest", "compacted"].sort()).toEqual(Object.keys(shared).sort());
   for (const [name, message] of Object.entries(actual)) {
+    expect(message, name).toBeDefined();
+    expect(shapeErrors(fixture(name), message), name).toEqual([]);
+    for (const [field, type] of Object.entries(shared[name])) expect(jsonType(message![field]), `${name}.${field}`).toBe(type);
+  }
+});
+
+test("edupi's compaction trace events match the protocol fixtures", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+  mkdirSync(join(dir, "home", "agent"), { recursive: true });
+  writeFileSync(join(dir, "home", "agent", "settings.json"), JSON.stringify({ compaction: { keepRecentTokens: 6 } }));
+  edupi = startEdupi({ responses: ["Hello there.", "Hello again.", "## Goal\nSay hello."] }, [], { dir });
+  for (const message of ["Hi?", "Hi again?"]) {
+    const settled = edupi.seen.filter((m) => m.type === "agent_settled").length;
+    edupi.sendLine(JSON.stringify({ type: "prompt", message }));
+    await edupi.until(() => edupi.seen.filter((m) => m.type === "agent_settled").length > settled);
+  }
+  await edupi.command("compact");
+
+  for (const name of ["compactionRequest", "compacted"]) {
+    const message = edupi.seen.find((m) => m.type === "trace" && m.name === name);
     expect(message, name).toBeDefined();
     expect(shapeErrors(fixture(name), message), name).toEqual([]);
     for (const [field, type] of Object.entries(shared[name])) expect(jsonType(message![field]), `${name}.${field}`).toBe(type);

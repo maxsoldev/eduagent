@@ -236,3 +236,21 @@ test("get_commands lists the skills as /skill:name, and /skill:name sends the sk
   expect(user.content[0].text).toBe(
     `<skill name="release" location="${join(home, "release", "SKILL.md")}">\nReferences are relative to ${join(home, "release")}.\n\nDo the steps.\n</skill>\n\nv1.2`);
 });
+
+test("SYSTEM.md replaces the preamble, tools and rules; APPEND_SYSTEM.md adds an addendum; the project's copies need trust", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+  put(join(dir, "home", "agent", "SYSTEM.md"), "You are the home's assistant.");
+  put(join(dir, "home", "agent", "APPEND_SYSTEM.md"), "Answer in French.");
+  put(join(dir, ".pi", "SYSTEM.md"), "You are the project's assistant.");
+  put(join(dir, "AGENTS.md"), "Project rule.");
+  edupi = startEdupi({ responses: ["Bonjour."] }, [], { dir });
+  await prompt("Hello?");
+  const project = `<project_context>\nProject-specific instructions and guidelines:\n\n<project_instructions path="${join(dir, "AGENTS.md")}">\nProject rule.\n</project_instructions>\n</project_context>`;
+  expect(firstRequest()[0].content).toBe(
+    `You are the home's assistant.\n\n<addendum>\nAnswer in French.\n</addendum>\n\n${project}\n\n<cwd>\n${dir}\n</cwd>`);
+  await edupi.close();
+
+  edupi = startEdupi({ responses: ["Bonjour."] }, ["--approve"], { dir });
+  await prompt("Hello?");
+  expect(edupi.requests().at(-1)!.body.messages[0].content).toMatch(/^You are the project's assistant\.\n\n<addendum>/);
+});

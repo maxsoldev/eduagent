@@ -1,0 +1,31 @@
+{
+  "type": "trace",
+  "name": "compacted",
+  "reason": "manual",
+  "summary": "## Goal\nSay hello.",
+  "firstKeptEntryId": "fc9dcbb9",
+  "tokensBefore": 45,
+  "tokensAfter": 11,
+  "details": {
+    "readFiles": [],
+    "modifiedFiles": []
+  },
+  "messages": [
+    {
+      "role": "compactionSummary",
+      "summary": "## Goal\nSay hello.",
+      "tokensBefore": 45,
+      "timestamp": 1792596679940
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hi again?"
+        }
+      ],
+      "timestamp": 1792596678928
+    }
+  ]
+}

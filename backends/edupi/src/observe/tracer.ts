@@ -2,8 +2,9 @@
 // observe/tracer.py does. pi has no trace events. edupi sends them in pi's type-tagged style,
 // {type: "trace", name, ...payload}, on the same stdout as the RPC events. Names and payloads
 // are the shared trace vocabulary in protocol/README.md section 6.
-import type { AgentToolCall, AgentToolResult } from "../agent/types.ts";
+import type { AgentMessage, AgentToolCall, AgentToolResult } from "../agent/types.ts";
 import type { AssistantMessage } from "../ai/types.ts";
+import type { CompactionResult } from "../coding-agent/core/compaction/compaction.ts";
 import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-agent/core/probe.ts";
 
 /** Where each prompt section comes from (pi's file, or the files the user wrote). */
@@ -41,7 +42,9 @@ export class Tracer implements Probe {
   /** Before the request: the tool specs the model gets, when they are new for this session (educodex's toolsRegistered). */
   modelRequest(request: { api: string; url: string; body: unknown }, sessionId?: string) {
     const tools = (request.body as { tools?: unknown[] }).tools ?? [];
-    if (JSON.stringify(tools) !== this.registeredTools.get(sessionId)) {
+    // A request without tools in a new session (a compaction's summary request) registers nothing.
+    const isToolless = tools.length === 0 && !this.registeredTools.has(sessionId);
+    if (!isToolless && JSON.stringify(tools) !== this.registeredTools.get(sessionId)) {
       this.registeredTools.set(sessionId, JSON.stringify(tools));
       this.emit("toolsRegistered", { tools });
     }
@@ -87,5 +90,15 @@ export class Tracer implements Probe {
     const { stopReason, errorMessage, responseId, content, usage } = message;
     const seconds = Math.round(performance.now() - this.started) / 1000;
     this.emit("modelResponse", { stopReason, errorMessage, responseId, content, usage, seconds });
+  }
+
+  compactionRequest(request: { reason: string; tokensBefore: number; body: unknown }) {
+    this.emit("compactionRequest", request);
+  }
+
+  /** tokensAfter is pi's estimate of the rebuilt context (estimatedTokensAfter). */
+  compacted(compaction: CompactionResult & { reason: string; messages: AgentMessage[] }) {
+    const { reason, summary, firstKeptEntryId, tokensBefore, estimatedTokensAfter, details, messages } = compaction;
+    this.emit("compacted", { reason, summary, firstKeptEntryId, tokensBefore, tokensAfter: estimatedTokensAfter, details, messages });
   }
 }

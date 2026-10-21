@@ -13,7 +13,7 @@ export function Composer({ disabled, turnRunning, placeholder, commands, loadSki
   disabled: boolean; turnRunning: boolean; placeholder: string; commands: Command[];
   loadSkills: (() => Promise<SkillInfo[]>) | null;
   onSend: (text: string, skills: { type: "skill"; name: string; path: string }[]) => void;
-  onCommand: (name: string) => void; onInterrupt: () => void;
+  onCommand: (name: string, args?: string) => void; onInterrupt: () => void;
 }) {
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -46,10 +46,11 @@ export function Composer({ disabled, turnRunning, placeholder, commands, loadSki
     edit(value, at);
     requestAnimationFrame(() => box.current?.setSelectionRange(at, at));
   };
-  const runCommand = (name: string) => { edit("", 0); onCommand(name); };
+  const runCommand = (name: string, args?: string) => { edit("", 0); onCommand(name, args); };
   const send = () => {
-    const command = /^\/(\S+)$/.exec(text.trim());
-    if (command && matchCommands(commands, command[1])[0]?.name === command[1]) { runCommand(command[1]); return; }
+    // "/name" or "/name args": pi's /compact takes custom instructions after the name.
+    const command = /^\/(\S+)(?:\s+([\s\S]+))?$/.exec(text.trim());
+    if (command && matchCommands(commands, command[1])[0]?.name === command[1]) { runCommand(command[1], command[2]); return; }
     if (!text.trim() || disabled || turnRunning) return;
     // Only skills whose $name is still in the text; Codex drops mention bindings the same way.
     const skillItems = [...picked.current].filter(([name]) => text.includes(`$${name}`))
