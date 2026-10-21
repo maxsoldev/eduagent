@@ -83,7 +83,6 @@ export async function main(argv: string[]): Promise<void> {
 function createSessionManager(parsed: Args, cwd: string): SessionManager {
 	if (parsed.noSession) return SessionManager.inMemory(cwd);
 	if (parsed.session) return openSessionOrExit(parsed.session);
-	if (parsed.continue) return SessionManager.continueRecent(cwd);
 	return SessionManager.create(cwd);
 }
 
