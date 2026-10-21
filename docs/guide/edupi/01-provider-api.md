@@ -100,6 +100,8 @@ So the agent loop never sees SSE, chunks or provider fields. This is why pi can 
 
 The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-provider.test.ts) check the recorded bodies.
 
+**Trace events.** pi does not show its requests to an RPC client. edupi adds teaching hooks, as educodex does: the provider calls an optional `probe` in the stream options (`ProviderProbe` in `src/ai/types.ts`) with the exact body after `buildParams`, with each raw chunk, and with the final message. The core only calls these hooks. The tracer in [`src/observe/tracer.ts`](../../../backends/edupi/src/observe/tracer.ts) implements them and writes `{"type": "trace", "name": "modelRequest" | "streamEvent" | "modelResponse", ...}` lines next to pi's events. The names and payloads are shared with educodex ([protocol spec, section 6](../../../protocol/README.md#6-trace-events)); `modelRequest` names its API, `openai-completions`, so the viewer draws the request as Chat Completions messages. [`test/rpc-trace.test.ts`](../../../backends/edupi/test/rpc-trace.test.ts) checks the traces against the bodies the faux provider recorded.
+
 ## In pi
 
 - [`stream`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L304) in `packages/ai/src/api/openai-completions.ts` is the main function. [`streamSimple`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L738), [`createClient`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L759), [`buildParams`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L804), [`convertMessages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1197) (the [`developer` or `system` choice](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1239)), [`parseChunkUsage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1527) and [`mapStopReason`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1570) are in the same file. OpenRouter's [`reasoning` field](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L942) is one of many reasoning formats pi supports.
@@ -136,7 +138,9 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json --faux-log /tmp/edu
 
 Press Ctrl-D, then read `/tmp/edupi-requests.jsonl`. The second body repeats the first question and answer.
 
-In the web UI, pick **edupi** (or **edupi-faux**) and send a message. In the **Protocol** tab, filter for `text_delta` to see the reply arrive piece by piece.
+In the web UI, pick **edupi** (or **edupi-faux**) and send a message. In the **Protocol** tab, filter for `text_delta` to see the reply arrive piece by piece. Filter for `streamEvent` to see the raw chunks each delta came from.
+
+Send a second message and open the **Requests** tab. It lists the request as Chat Completions messages (role and text). Open an educodex viewer next to it and send the same messages: its Requests tab lists Responses input items, with the instructions as developer messages.
 
 ## Further reading
 

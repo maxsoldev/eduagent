@@ -94,7 +94,7 @@ The adapters are tested on recorded transcripts (`visualiser/test/`, vitest): re
 |---|---|---|
 | Timeline | every event | One row per step, with its explanation and JSON. Category chips filter rows; **follow** keeps the newest row in view |
 | Context | `debug/context/get` | The exact `input` of the next request, coloured by source, with a context-window bar. **zoom to used** (on by default) scales the bar to what is used; turn it off to see the whole window and the auto-compact marker |
-| Requests | `trace/modelRequest` | Each request body. It checks that earlier items are "unchanged ✓ (prompt cache can hit)" |
+| Requests | `trace/modelRequest` | Each request body, listed as Responses input items (or Chat Completions messages for edupi; the event's `api` field picks the view). It checks that earlier items are "unchanged ✓ (prompt cache can hit)" |
 | Tools | `trace/toolsRegistered`, `trace/mcpToolsListed` / `trace/mcpToolExposed` | Tool specs as sent; for MCP, raw vs exposed side by side |
 | Guardrails | `trace/policyDecision`, `trace/sandboxCommand`, approvals | Why each command was allowed, sandboxed or asked about |
 | Protocol | `wire` | Every native message (JSON-RPC lite for Codex, pi RPC for pi), filterable |
