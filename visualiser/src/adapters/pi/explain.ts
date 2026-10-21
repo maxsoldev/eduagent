@@ -27,9 +27,9 @@ const EXPLAIN: Record<string, Info> = {
     text: "The tool finished. Ends come in completion order; the tool-result messages then follow in call order." },
   queue_update: { title: "Queue update", category: "loop", source: SESSION,
     text: "The steering and follow-up queues changed. Steering is delivered after the current tools; follow-ups when the agent would stop." },
-  compaction_start: { title: "Compaction starts", category: "memory", source: "packages/coding-agent/src/core/compaction/compaction.ts",
+  compaction_start: { title: "Compaction starts", category: "memory", chapter: "07", source: "packages/coding-agent/src/core/compaction/compaction.ts",
     text: "pi asks the model to summarise the older messages. reason: manual (/compact), threshold (context nearly full) or overflow (the provider refused)." },
-  compaction_end: { title: "Compaction ends", category: "memory", source: "packages/coding-agent/src/core/compaction/compaction.ts",
+  compaction_end: { title: "Compaction ends", category: "memory", chapter: "07", source: "packages/coding-agent/src/core/compaction/compaction.ts",
     text: "The summary is stored as a compaction entry. The next request starts with it, then the kept recent messages." },
   thinking_level_changed: { title: "Thinking level", category: "model", source: SESSION, text: "The thinking level changed (clamped to what the model supports)." },
   auto_retry_start: { title: "Retry", category: "model", source: SESSION, text: "The provider failed with a retryable error; pi waits and tries again." },
@@ -37,6 +37,7 @@ const EXPLAIN: Record<string, Info> = {
 };
 
 const PROVIDER = "packages/ai/src/api/openai-completions.ts";
+const COMPACTION = "packages/coding-agent/src/core/compaction/compaction.ts";
 
 // edupi's trace events (protocol/README.md section 6). Chapter 01 of the edupi guide is the provider API.
 const TRACE: Record<string, Info> = {
@@ -46,6 +47,10 @@ const TRACE: Record<string, Info> = {
     text: "One raw Chat Completions chunk. pi turns each delta into a message_update event." },
   modelResponse: { title: "Model response", category: "model", chapter: "01", source: PROVIDER,
     text: "The stream ended. usage is pi's Usage, parsed from the last chunk; stopReason comes from finish_reason." },
+  compactionRequest: { title: "Compaction request", category: "memory", chapter: "07", source: COMPACTION,
+    text: "The summary request: pi's summarizer system prompt and one user message, the older conversation as text plus the checkpoint prompt (or the update prompt with the previous summary). A split turn makes a second request for the turn's first part." },
+  compacted: { title: "Context compacted", category: "memory", chapter: "07", source: COMPACTION,
+    text: "The summary is saved as a compaction entry. messages is the context rebuilt from it: the summary, then the kept messages from firstKeptEntryId on." },
 };
 
 function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
@@ -67,6 +72,8 @@ function summary(e: TimelineEvent): string {
     case "compaction_start": return p.reason;
     case "compaction_end": return `${p.reason}${p.result ? ` · ${p.result.tokensBefore} tokens before` : ""}${p.errorMessage ? ` · ${p.errorMessage}` : ""}`;
     case "thinking_level_changed": return p.level;
+    case "compactionRequest": return e.trace ? `${p.reason} · ${p.tokensBefore} tokens before` : "";
+    case "compacted": return e.trace ? `${p.reason} · ${p.tokensBefore} → ${p.tokensAfter} tokens · ${p.messages.length} messages` : "";
     case "modelRequest": return e.trace ? `${p.body.messages.length} messages · ${p.body.model}` : "";
     case "modelResponse": return e.trace ? `${p.stopReason} · ${p.usage.input} in / ${p.usage.output} out · ${p.seconds}s` : "";
     default: return "";

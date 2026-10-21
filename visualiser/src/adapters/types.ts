@@ -33,7 +33,7 @@ export interface Adapter {
   startSession(settings: Settings): Promise<{ model?: string; cwd?: string }>; // what the backend chose
   send(settings: Settings, text: string, skills: { name: string; path: string }[]): Promise<void>;
   interrupt(): Promise<void>;
-  compact(): Promise<void>;
+  compact(customInstructions?: string): Promise<void>; // pi takes instructions for the summary; Codex has none
   listSkills(cwd: string): Promise<SkillInfo[]>;
   runCommand(name: string): Promise<string | void>; // adapter-only slash commands; returns a note
   setStepMode(enabled: boolean): Promise<void>;

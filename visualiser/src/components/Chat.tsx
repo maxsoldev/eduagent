@@ -62,7 +62,7 @@ function EntryView({ entry, module }: { entry: Entry; module: AdapterModule }) {
     case "tool":
       return <ToolCall entry={entry} />;
     case "compaction":
-      return <div className="turn-sep compaction">⟲ context compacted{entry.streaming ? "…" : ""}{entry.reason ? ` (${entry.reason})` : ""}</div>;
+      return <div className="turn-sep compaction" data-testid="compaction">⟲ context compacted{entry.streaming ? "…" : ""}{entry.reason ? ` (${entry.reason})` : ""}</div>;
     case "notice":
       return entry.source === "client"
         ? <pre className={`note${entry.level === "error" ? " bad" : ""}`} data-testid="note">{entry.text}</pre>

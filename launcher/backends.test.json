@@ -27,7 +27,16 @@
       "description": "edupi with the faux provider (backends/edupi/examples/faux/demo.json)",
       "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
       "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
-      "capabilities": ["trace"]
+      "capabilities": ["trace", "compaction"]
+    },
+    {
+      "name": "edupi-compact",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi with a faux script for a manual compaction (backends/edupi/examples/faux/compact.json); the test writes its settings.json",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/compact.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi-compact/agent" },
+      "capabilities": ["trace", "compaction"]
     },
     {
       "name": "pi-replay",
