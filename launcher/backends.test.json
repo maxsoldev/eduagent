@@ -11,6 +11,16 @@
       "capabilities": ["approvals", "sandbox", "memories", "skills", "compaction", "mcp", "trace", "stepMode", "contextInspector"]
     },
     {
+      "name": "educodex-plain",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "Test backend: educodex with the fake model, listed with no capabilities, so the viewer hides their panels",
+      "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://",
+                  "--approval", "never", "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"],
+      "env": { "EDUCODEX_HOME": "${E2E_DIR}/home-plain", "OPENROUTER_API_KEY": "test" },
+      "capabilities": []
+    },
+    {
       "name": "echo",
       "harness": "none",
       "protocol": "echo",

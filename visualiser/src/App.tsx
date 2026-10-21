@@ -1,56 +1,39 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { RpcClient, type Json } from "./rpc";
+// One viewer: connects to one backend through its protocol's adapter and draws the neutral view.
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { backendUrl, type BackendInfo } from "./launcher";
-import { initialState, reducer, type Approval } from "./store";
+import type { Adapter, AdapterModule, Option, Settings } from "./adapters/types";
+import { initialView, reduceView } from "./view/model";
+import { linksFor } from "./view/harness";
 import { Chat } from "./components/Chat";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { pct, usd } from "./cost";
 
-// thread/start takes a kebab-case sandbox mode; turn/start takes a camelCase SandboxPolicy (as in Codex v2).
-const SANDBOX_POLICY_TAGS: Record<string, string> = { "read-only": "readOnly", "workspace-write": "workspaceWrite", "danger-full-access": "dangerFullAccess" };
-
-type Settings = { model: string; approvalPolicy: string; sandbox: string; effort: string; cwd: string };
-
-export function App({ backend, cwd }: { backend: BackendInfo; cwd: string }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
-  const rpcRef = useRef<RpcClient | null>(null);
-  const [models, setModels] = useState<Json[]>([]);
-  const [settings, setSettings] = useState<Settings>({ model: "", approvalPolicy: "on-request", sandbox: "workspace-write", effort: "", cwd: "" });
+export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: string; module: AdapterModule }) {
+  const [view, dispatch] = useReducer(reduceView, initialView);
+  const caps = useMemo(() => new Set(backend.capabilities), [backend.capabilities]);
+  const links = useMemo(() => linksFor(backend.harness), [backend.harness]);
+  const adapterRef = useRef<Adapter | null>(null);
+  const [models, setModels] = useState<Option[]>([]);
+  const [settings, setSettings] = useState<Settings>({ model: "", effort: "", cwd: "", ...module.defaults } as Settings);
   const [stepMode, setStepMode] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
-  const [closedReason, setClosedReason] = useState<string | null>(null);
 
-  const startThread = useCallback(async (s: Settings) => {
-    const rpc = rpcRef.current!;
-    const res = await rpc.request("thread/start", {
-      model: s.model || undefined, approvalPolicy: s.approvalPolicy, sandbox: s.sandbox, cwd: s.cwd || undefined,
-      effort: s.effort || undefined,
-    });
-    dispatch({ type: "thread", thread: res.thread });
-    setSettings((prev) => ({ ...prev, model: res.model, cwd: res.cwd }));
-    if (stepMode) await rpc.request("debug/stepMode/set", { threadId: res.thread.id, enabled: true });
+  const startSession = useCallback(async (s: Settings) => {
+    const adapter = adapterRef.current!;
+    const chosen = await adapter.startSession(s);
+    setSettings((prev) => ({ ...prev, ...chosen }));
+    if (stepMode) await adapter.setStepMode(true);
   }, [stepMode]);
 
   useEffect(() => {
-    const rpc = new RpcClient(backendUrl(backend.name, cwd), {
-      onNotification: (method, params) => dispatch({ type: "notification", method, params }),
-      onServerRequest: (id, method, params) => dispatch({ type: "serverRequest", approval: { id, method, params } }),
-      onWire: (direction, message) => dispatch({ type: "wire", direction, message }),
-      onStatus: (status, reason) => {
-        dispatch({ type: "status", status });
-        if (status === "closed") setClosedReason(reason || `the connection to ${backend.name} closed`);
-      },
-    });
-    rpcRef.current = rpc;
+    const adapter = module.create({ url: backendUrl(backend.name, cwd), capabilities: caps, dispatch });
+    adapterRef.current = adapter;
     (async () => {
       try {
-        await rpc.connect();
-        await rpc.request("initialize", { clientInfo: { name: "educodex-web", title: "educodex web UI", version: "0.1.0" }, capabilities: {} });
-        rpc.notify("initialized");
-        const list = await rpc.request("model/list");
-        setModels(list.data);
-        await startThread(settings);
+        const { models } = await adapter.connect();
+        setModels(models);
+        await startSession(settings);
       } catch (err) {
         setConnectError(String((err as Error).message ?? err));
       }
@@ -58,96 +41,87 @@ export function App({ backend, cwd }: { backend: BackendInfo; cwd: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const note = (text: string, error = false) => dispatch({ type: "note", text, error });
+  const note = (text: string, error = false) => dispatch({ type: "notice", source: "client", level: error ? "error" : "info", text });
+  const adapter = adapterRef.current;
+  const commands = (adapter?.commands ?? []).filter((c) => !c.needs || caps.has(c.needs));
 
-  const send = async (text: string, skills: Json[]) => {
-    if (!state.threadId || state.turnRunning) return;
-    await rpcRef.current!.request("turn/start", {
-      threadId: state.threadId, input: [{ type: "text", text }, ...skills],
-      approvalPolicy: settings.approvalPolicy, sandboxPolicy: { type: SANDBOX_POLICY_TAGS[settings.sandbox] }, model: settings.model || undefined,
-      effort: settings.effort || undefined,
-    }).catch((err) => note(String(err.message ?? err), true));
+  const send = async (text: string, skills: { name: string; path: string }[]) => {
+    if (!view.sessionId || view.running) return;
+    await adapter!.send(settings, text, skills).catch((err) => note(String(err.message ?? err), true));
   };
 
-  const loadSkills = useCallback(async () => {
-    const res = await rpcRef.current!.request("skills/list", { cwds: settings.cwd ? [settings.cwd] : undefined });
-    return res.data[0]?.skills ?? [];
-  }, [settings.cwd]);
+  const loadSkills = useCallback(() => adapterRef.current!.listSkills(settings.cwd), [settings.cwd]);
 
-  // Slash commands from the composer. Like Codex, each maps to one app-server request.
+  // Slash commands from the composer. Like Codex, each maps to one backend request.
   const runCommand = async (name: string) => {
-    const rpc = rpcRef.current!;
     note(`/${name}`);
     try {
-      if (name === "new") await startThread(settings);
-      else if (name === "compact") await rpc.request("thread/compact/start", { threadId: state.threadId });
-      else if (name === "memory-update") await rpc.request("memory/update/start", { threadId: state.threadId });
-      else if (name === "memory-drop") { await rpc.request("memory/reset"); note("All memories were deleted. New threads start without them."); }
+      if (name === "new") await startSession(settings);
+      else if (name === "compact") await adapter!.compact();
       else if (name === "skills") {
         const skills = await loadSkills();
-        note(skills.length ? `Skills (type $ to use one):\n${skills.map((s: Json) => `$${s.name} (${s.scope}): ${s.shortDescription || s.description}`).join("\n")}`
+        note(skills.length ? `Skills (type $ to use one):\n${skills.map((s) => `$${s.name} (${s.scope}): ${s.shortDescription || s.description}`).join("\n")}`
           : "No skills found. Add a folder with a SKILL.md to .agents/skills/ in your project.");
+      } else {
+        const result = await adapter!.runCommand(name);
+        if (result) note(result);
       }
     } catch (err) {
       note(String((err as Error).message ?? err), true);
     }
   };
 
-  const answer = (a: Approval, result: Json) => {
-    rpcRef.current!.respond(a.id, result);
-    dispatch({ type: "approvalAnswered", id: a.id });
-  };
-
   const toggleStep = async (enabled: boolean) => {
     setStepMode(enabled);
-    if (state.threadId) await rpcRef.current!.request("debug/stepMode/set", { threadId: state.threadId, enabled });
+    await adapter?.setStepMode(enabled);
   };
 
-  const call = (method: string) => state.threadId && rpcRef.current!.request(method, { threadId: state.threadId, turnId: state.currentTurnId });
-  const set = (k: keyof Settings) => (e: { target: { value: string } }) => setSettings({ ...settings, [k]: e.target.value });
+  const set = (k: string, value: string) => setSettings({ ...settings, [k]: value });
+  const ready = Boolean(view.sessionId);
+  const closed = view.status === "closed" ? view.closedReason || `the connection to ${backend.name} closed` : null;
 
   return (
     <div className="app">
       <header>
         <div className="brand"><a href="/" title="pick another backend"><b data-testid="backend-name">{backend.name}</b></a> <span className="muted">inside {backend.harness}</span></div>
         <div className="controls">
-          <select value={settings.model} onChange={set("model")} title="model" data-testid="model">
-            {models.map((m) => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+          <select value={settings.model} onChange={(e) => set("model", e.target.value)} title="model" data-testid="model">
+            {models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
-          <select value={settings.approvalPolicy} onChange={set("approvalPolicy")} title="approval policy" data-testid="approval-policy">
-            <option value="on-request">approval: on-request</option><option value="never">approval: never</option>
+          {module.Controls && <module.Controls settings={settings} set={set} capabilities={caps} />}
+          <select value={settings.effort} onChange={(e) => set("effort", e.target.value)} title="reasoning effort">
+            <option value="">effort: default</option>
+            {(adapter?.efforts ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <select value={settings.sandbox} onChange={set("sandbox")} title="sandbox mode" data-testid="sandbox">
-            <option value="read-only">sandbox: read-only</option><option value="workspace-write">sandbox: workspace-write</option>
-            <option value="danger-full-access">sandbox: danger-full-access</option>
-          </select>
-          <select value={settings.effort} onChange={set("effort")} title="reasoning effort">
-            <option value="">effort: default</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
-          </select>
-          <label className="toggle" title="pause before each model call and tool call"><input type="checkbox" checked={stepMode} onChange={(e) => toggleStep(e.target.checked)} data-testid="step-mode" /> step mode</label>
-          <button onClick={() => call("thread/compact/start")} disabled={!state.threadId || state.turnRunning} title="summarise history now">compact</button>
-          <button onClick={() => startThread(settings)} disabled={!state.threadId || state.turnRunning} data-testid="new-thread">new thread</button>
-          {state.costTotal && (
+          {caps.has("stepMode") && <label className="toggle" title="pause before each model call and tool call"><input type="checkbox" checked={stepMode} onChange={(e) => toggleStep(e.target.checked)} data-testid="step-mode" /> step mode</label>}
+          {caps.has("compaction") && <button onClick={() => adapter?.compact()} disabled={!ready || view.running} title="summarise history now" data-testid="compact">compact</button>}
+          <button onClick={() => startSession(settings)} disabled={!ready || view.running} data-testid="new-thread">new thread</button>
+          {caps.has("trace") && view.costTotal && (
             <span className="cost-badge" data-testid="cost-badge"
-              title={`${state.costTotal.requests} requests · ${state.costTotal.tokens.input.toLocaleString()} input tokens (${state.costTotal.tokens.cached.toLocaleString()} cached) · ${state.costTotal.tokens.output.toLocaleString()} output tokens${state.costTotal.usd ? ` · saved ${usd(state.costTotal.usd.savedByCache)} by caching` : ""}`}>
-              {usd(state.costTotal.billedUsd ?? state.costTotal.usd?.total)} · {pct(state.costTotal.cacheHitRate)} cached
+              title={`${view.costTotal.requests} requests · ${view.costTotal.tokens.input.toLocaleString()} input tokens (${view.costTotal.tokens.cached.toLocaleString()} cached) · ${view.costTotal.tokens.output.toLocaleString()} output tokens${view.costTotal.usd ? ` · saved ${usd(view.costTotal.usd.savedByCache)} by caching` : ""}`}>
+              {usd(view.costTotal.billedUsd ?? view.costTotal.usd?.total)} · {pct(view.costTotal.cacheHitRate)} cached
             </span>
           )}
-          <span className={`conn ${state.status}`} data-testid="conn">{state.status}</span>
+          <span className={`conn ${view.status}`} data-testid="conn">{view.status}</span>
         </div>
       </header>
-      {closedReason ? <div className="banner" data-testid="backend-error">Backend stopped: {closedReason}. Reload the page to start a new {backend.name} process.</div>
+      {closed ? <div className="banner" data-testid="backend-error">Backend stopped: {closed}. Reload the page to start a new {backend.name} process.</div>
         : connectError && <div className="banner" data-testid="backend-error">Cannot start {backend.name}: {connectError}.</div>}
       <main>
         <section className="left">
-          <div className="thread-info muted small">thread {state.threadId?.slice(0, 8) ?? "—"} · cwd <input className="cwd" value={settings.cwd} onChange={set("cwd")} title="working directory (applies to new threads)" /></div>
-          <Chat chat={state.chat} live={state.live} approvals={state.approvals} onAnswer={answer} paused={state.paused}
-            onContinue={() => call("debug/continue")} />
-          <Composer disabled={!state.threadId} turnRunning={state.turnRunning} loadSkills={loadSkills}
-            placeholder={!state.threadId ? "starting thread…" : state.turnRunning ? "agent is working…" : "Ask the agent to do something (/ for commands, $ for skills, Shift+Enter for newline)"}
-            onSend={send} onCommand={runCommand} onInterrupt={() => call("turn/interrupt")} />
+          <div className="thread-info muted small">thread {view.sessionId?.slice(0, 8) ?? "—"} · cwd <input className="cwd" value={settings.cwd} onChange={(e) => set("cwd", e.target.value)} title="working directory (applies to new threads)" /></div>
+          <Chat turns={view.turns} approvals={caps.has("approvals") ? view.approvals : []} paused={view.paused} module={module}
+            onAnswer={(a, result) => adapter?.respond(a, result)} onContinue={() => adapter?.continueStep()}
+            welcome={[
+              ...(commands.length ? [`Type / for commands (${commands.map((c) => `/${c.name}`).join(", ")}).`] : []),
+              ...(caps.has("skills") ? ["Type $ to use a skill."] : []),
+              ...(caps.has("stepMode") ? ["Turn on Step mode to pause before each model call."] : []),
+            ]} />
+          <Composer disabled={!ready} turnRunning={view.running} commands={commands} loadSkills={caps.has("skills") ? loadSkills : null}
+            placeholder={!ready ? "starting thread…" : view.running ? "agent is working…" : "Ask the agent to do something (/ for commands, $ for skills, Shift+Enter for newline)"}
+            onSend={send} onCommand={runCommand} onInterrupt={() => adapter?.interrupt()} />
         </section>
-        <section className="right"><Inspector state={state} rpc={rpcRef.current} /></section>
+        <section className="right"><Inspector view={view} adapter={adapter} capabilities={caps} links={links} /></section>
       </main>
     </div>
   );

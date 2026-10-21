@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Json } from "../rpc";
+import type { Json } from "../view/model";
 
 // A collapsible JSON tree. The arrow expands a node and everything below it; clicking the key
 // or the "N items" summary opens just one level. Long strings are clipped with a "more" toggle.

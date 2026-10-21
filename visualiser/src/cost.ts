@@ -1,6 +1,6 @@
 // Money and cache helpers for the UI. Costs come from trace/cost (server-side observe/pricing.py);
 // per-item numbers in the Context tab are estimates spread over items by their size.
-import type { Json } from "./rpc";
+import type { Json } from "./view/model";
 
 export function usd(n: number | null | undefined): string {
   if (n === null || n === undefined) return "–";

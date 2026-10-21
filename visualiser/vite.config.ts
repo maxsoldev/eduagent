@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -8,6 +9,7 @@ const launcher = process.env.EDUAGENT_LAUNCHER ?? "http://127.0.0.1:8765";
 
 export default defineConfig({
   plugins: [react()],
+  test: { include: ["test/**/*.test.ts"] }, // vitest: adapter tests on recorded transcripts (e2e/ is Playwright)
   server: {
     proxy: {
       "/backends": { target: launcher, ws: true },

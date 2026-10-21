@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { BackendPicker } from "./components/BackendPicker";
 import { fetchBackends, type BackendList } from "./launcher";
+import { ADAPTERS } from "./adapters";
 import "./styles.css";
 
 // Without ?backend=..., show the picker. With it, connect to that backend through the launcher.
@@ -17,8 +18,9 @@ function Root() {
   if (!name) return <BackendPicker list={list} />;
   const backend = list.backends.find((b) => b.name === name);
   if (!backend) return <BackendPicker list={list} error={`Unknown backend: ${name}`} />;
-  if (backend.protocol !== "codex-app-server") return <BackendPicker list={list} error={`No adapter yet for the ${backend.protocol} protocol.`} />;
-  return <App backend={backend} cwd={params.get("cwd") || list.cwd} />;
+  const module = ADAPTERS[backend.protocol]; // the adapter comes from the protocol named in the backend list
+  if (!module) return <BackendPicker list={list} error={`No adapter yet for the ${backend.protocol} protocol.`} />;
+  return <App backend={backend} cwd={params.get("cwd") || list.cwd} module={module} />;
 }
 
 createRoot(document.getElementById("root")!).render(<Root />);
