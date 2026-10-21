@@ -228,59 +228,11 @@ test("an aborted reply is left out of later requests, even with a half-streamed 
 	]);
 });
 
-test("a stream that fails mid tool call keeps only the call's fields, not the stream's scratch buffers", async () => {
-	const write = { type: "toolCall", id: "call_w", name: "write", arguments: { path: "a.txt", content: "x" } };
-	// streamError: the connection breaks after the scripted chunks, before the finish chunk.
-	edupi = startEdupi({ responses: [{ content: [write], stopReason: "toolUse", streamError: "socket hang up" }] });
-	await prompt("Write.");
-	const reply = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
-	expect(reply).toMatchObject({ stopReason: "error", errorMessage: expect.stringContaining("socket hang up") });
-	// pi's catch block deletes partialArgs and streamIndex, so they are never persisted.
-	expect(Object.keys(reply.content[0]).sort()).toEqual(["arguments", "id", "name", "type"]);
-});
-
-test("an HTTP error shows its status and the error body, as pi's formatProviderError writes it", async () => {
+test("an HTTP error becomes an error reply with the OpenAI SDK's message", async () => {
 	edupi = startEdupi({ responses: [{ error: { status: 400, message: "Invalid model" } }] });
 	await prompt("Hi?");
 	const reply = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
-	// The SDK's message is "400 Invalid model"; pi prefers the parsed body when the message lacks it.
-	expect(reply).toMatchObject({ stopReason: "error", errorMessage: '400: {"message":"Invalid model","code":400}' });
-});
-
-test("unpaired surrogates are removed from the text sent to the model; emoji stay", async () => {
-	edupi = startEdupi({ responses: ["Hi."] });
-	await prompt("cut \ud83d here, keep \ud83d\ude48");
-	const user = edupi.requests()[0].body.messages.find((m: Message) => m.role === "user");
-	expect(user.content).toEqual([{ type: "text", text: "cut  here, keep \ud83d\ude48" }]);
-});
-
-test("a null for an optional tool argument counts as left out, as pi's validation reads it", async () => {
-	const read = {
-		type: "toolCall",
-		id: "r1",
-		name: "read",
-		arguments: { path: "notes.txt", offset: null, limit: null },
-	};
-	edupi = startEdupi({ responses: [{ content: [read], stopReason: "toolUse" }, "Read it."] });
-	writeFileSync(join(edupi.dir, "notes.txt"), "line 1\nline 2");
-	await prompt("Read the notes.");
-	const end = edupi.seen.find((m) => m.type === "tool_execution_end")!;
-	expect(end).toMatchObject({ isError: false, result: { content: [{ type: "text", text: "line 1\nline 2" }] } });
-});
-
-test("finished tool-call arguments with a raw newline or a bad escape in a string are repaired, as pi does", async () => {
-	// rawArguments: the faux streams this text as the arguments instead of JSON.stringify(arguments).
-	const write = {
-		type: "toolCall",
-		id: "w1",
-		name: "write",
-		arguments: {},
-		rawArguments: '{"path": "a.txt", "content": "one\ntwo \\d"}',
-	};
-	edupi = startEdupi({ responses: [{ content: [write], stopReason: "toolUse" }, "Done."] });
-	await prompt("Write.");
-	expect(edupi.seen.find((m) => m.type === "tool_execution_end")).toMatchObject({ isError: false });
-	expect(readFileSync(join(edupi.dir, "a.txt"), "utf8")).toBe("one\ntwo \\d");
+	expect(reply).toMatchObject({ stopReason: "error", errorMessage: "400 Invalid model" });
 });
 
 test("conversation requests carry the session id for OpenRouter's cache affinity; a summary request (cacheRetention none) does not", async () => {

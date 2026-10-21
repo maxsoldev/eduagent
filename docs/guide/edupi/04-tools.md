@@ -190,7 +190,7 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 - **Simpler paths.** No Unicode-space repair, no `file://` URLs, no macOS file-name variants (NFD, curly quotes, screenshot names) in `read`.
 - **Simpler edit.** No `prepareEditArguments` (pi repairs `edits` sent as a JSON string, one object instead of an array, or `oldText`/`newText` at the top level), no byte-order mark or CRLF handling, no access check before reading (a missing file fails with the system's `ENOENT` message). The per-file queue is keyed by the absolute path, not the real path.
 - **No `beforeToolCall` / `afterToolCall` hooks** (pi uses them for extensions), no `terminate` flag, no `grep`, `find` and `ls` tools, no tool set changes after the first prompt (so no `toolsRemoved` in practice).
-- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser. As in pi, a `null` for an optional argument counts as left out (it is deleted before validation).
+- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser. pi also deletes a `null` for an optional argument before validation; edupi does not ([chapter 01](01-provider-api.md#where-edupi-is-simpler)).
 
 ## Try it
 

@@ -30,9 +30,8 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 		else this.queue.push(event);
 	}
 
-	end(result?: R): void {
+	end(): void {
 		this.done = true;
-		if (result !== undefined) this.resolveFinalResult(result);
 		for (const waiter of this.waiting.splice(0)) waiter({ value: undefined as never, done: true });
 	}
 
@@ -57,8 +56,7 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 
 /** The stream of one assistant response. It ends on `done` or `error` and times the response. */
 export class AssistantMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
-	private readonly startedAt = Date.now();
-	private readonly startedAtMonotonic = performance.now();
+	private readonly startedAt = performance.now();
 
 	constructor() {
 		super(
@@ -77,9 +75,8 @@ export class AssistantMessageEventStream extends EventStream<AssistantMessageEve
 		super.push(event);
 	}
 
-	/** Sets `durationMs` on the final message, unless it started before this stream. */
+	/** Sets `durationMs` on the final message. */
 	private time(message: AssistantMessage): void {
-		if (this.done || message.durationMs !== undefined || message.timestamp < this.startedAt) return;
-		message.durationMs = Math.max(0, Math.round(performance.now() - this.startedAtMonotonic));
+		if (!this.done) message.durationMs = Math.round(performance.now() - this.startedAt);
 	}
 }
