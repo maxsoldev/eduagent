@@ -2,7 +2,7 @@
 // Completions endpoint and records each request.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -246,6 +246,21 @@ test("finished tool-call arguments with a raw newline or a bad escape in a strin
 	await prompt("Write.");
 	expect(edupi.seen.find((m) => m.type === "tool_execution_end")).toMatchObject({ isError: false });
 	expect(readFileSync(join(edupi.dir, "a.txt"), "utf8")).toBe("one\ntwo \\d");
+});
+
+test("conversation requests carry the session id for OpenRouter's cache affinity; a summary request (cacheRetention none) does not", async () => {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+	mkdirSync(join(dir, "home", "agent"), { recursive: true });
+	writeFileSync(join(dir, "home", "agent", "settings.json"), JSON.stringify({ compaction: { keepRecentTokens: 9 } }));
+	edupi = startEdupi({ responses: ["First answer with some words.", "Second answer.", "## Goal\nSUMMARY"] }, [], {
+		dir,
+	});
+	const { sessionId } = (await edupi.command("get_state")).data;
+	await prompt("q1");
+	await prompt("q2");
+	await edupi.command("compact");
+	// The faux log keeps the x-session-id header of each request.
+	expect(edupi.requests().map((r) => r.headers?.["x-session-id"])).toEqual([sessionId, sessionId, undefined]);
 });
 
 test("a tool call without a result gets pi's synthetic error result before the next user message", async () => {

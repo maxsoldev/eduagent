@@ -80,6 +80,8 @@ export interface UserMessage {
 	timestamp: number;
 }
 
+export type CacheRetention = "none" | "short" | "long";
+
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface AssistantMessage {
@@ -148,6 +150,8 @@ export interface SimpleStreamOptions {
 	maxTokens?: number;
 	temperature?: number;
 	sessionId?: string;
+	/** "none": no prompt cache wanted (one-off requests), so no cache affinity header. edupi treats "long" as "short". */
+	cacheRetention?: CacheRetention;
 	reasoning?: Exclude<ThinkingLevel, "off">;
 	/** Sees (and may replace) the request body before it is sent. Return undefined to keep it. */
 	onPayload?: (payload: unknown, model: Model) => unknown | undefined | Promise<unknown | undefined>;

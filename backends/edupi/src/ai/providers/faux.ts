@@ -67,7 +67,8 @@ export type FauxResponse = AssistantMessage | FauxBrokenStream | FauxError;
 export interface RegisterFauxProviderOptions {
 	tokensPerSecond?: number; // delay between chunks; unset = as fast as possible
 	tokenSize?: { min?: number; max?: number }; // chunk size in tokens (4 characters each)
-	onRequest?: (request: { url: string; body: unknown }) => void;
+	/** headers: only `x-session-id` (OpenRouter's cache affinity), when the request has it. */
+	onRequest?: (request: { url: string; body: unknown; headers?: Record<string, string> }) => void;
 	models?: OpenRouterModel[]; // the GET /models list
 }
 
@@ -116,7 +117,8 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 		if ((init?.method ?? "GET") === "GET" && url.endsWith("/models"))
 			return Response.json({ data: options.models ?? [] });
 		const body = JSON.parse(String(init?.body ?? "null"));
-		options.onRequest?.({ url, body });
+		const sessionHeader = new Headers(init?.headers).get("x-session-id");
+		options.onRequest?.({ url, body, ...(sessionHeader ? { headers: { "x-session-id": sessionHeader } } : {}) });
 		state.callCount++;
 		const message = pendingResponses.shift();
 		if (!message) {

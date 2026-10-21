@@ -93,7 +93,7 @@ So the agent loop never sees SSE, chunks or provider fields. This is why pi can 
 `stream()` in `openai-completions.ts` does pi's steps in pi's order:
 
 1. Make an empty assistant message with `stopReason: "pending"`.
-2. `createClient`: an OpenAI SDK client with OpenRouter's base URL. With a session id it adds `x-session-id`, so OpenRouter sends the session's requests to the same upstream (warm prompt cache).
+2. `createClient`: an OpenAI SDK client with OpenRouter's base URL. With a session id it adds `x-session-id`, so OpenRouter sends the session's requests to the same upstream (warm prompt cache). A request with `cacheRetention: "none"` (a compaction summary, [chapter 07](07-compaction.md)) gets no such header.
 3. `buildParams`: the body above. `convertMessages` turns pi messages into Chat Completions messages. System messages become `developer` messages for reasoning models that support it, else `system`.
 4. `client.chat.completions.create(params, {signal, maxRetries: 0})`, then push `start`.
 5. For each chunk: keep the response id and usage, map `finish_reason` (`stop` → `stop`, `tool_calls` → `toolUse`, `length` → `length`, anything else → error), turn `delta.content` into `text_start` / `text_delta`, and `delta.tool_calls` into `toolcall_start` / `toolcall_delta` (chapter 04).
@@ -134,6 +134,7 @@ The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-prov
 - **No `max_completion_tokens` clamp.** pi lowers it so that the prompt plus the answer fit in the context window. edupi sends the model's `maxTokens`.
 - **Fewer compat switches.** pi detects about twenty differences between OpenAI-compatible servers (`detectCompat`). edupi keeps only OpenRouter's values. So it also leaves out pi's handling of other servers' quirks: usage inside `choices[0]`, other cached-token fields, tool-call deltas without an `index` (pi matches them by id), non-object chunks.
 - **No Anthropic prompt caching.** For `anthropic/` models pi uses OpenRouter's Anthropic Messages API, and adds `cache_control` marks in Chat Completions. edupi sends every model the same Chat Completions body.
+- **No long cache retention.** pi's `cacheRetention: "long"` (or `PI_CACHE_RETENTION=long`) adds `prompt_cache_key` and `prompt_cache_retention: "24h"`; edupi only knows `"none"` (no session header) and treats `"long"` as the default `"short"`.
 - **No `User-Agent` header and no request timeout.** pi sends `User-Agent: pi (<os> <release>; <arch>)` and supports `timeoutMs`; edupi sends the SDK's defaults.
 - **No early key check in `streamSimple`.** pi's `streamSimple` throws at once without an API key; edupi's `stream()` turns it into an `error` event. `AgentSession.prompt` checks the key before a run in both.
 - **Error text from the OpenAI SDK only.** pi's `normalizeProviderError` also reads the error shapes of the Mistral, Google and Bedrock SDKs.

@@ -106,7 +106,8 @@ export function stream(
 		try {
 			const apiKey = getClientApiKey(model.provider, options?.apiKey);
 			const compat = getCompat(model);
-			const client = createClient(model, apiKey, options?.headers, options?.fetch, options?.sessionId);
+			const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
+			const client = createClient(model, apiKey, options?.headers, options?.fetch, cacheSessionId);
 			let params = buildParams(model, context, options, compat);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) params = nextParams as ChatCompletionCreateParamsStreaming;
