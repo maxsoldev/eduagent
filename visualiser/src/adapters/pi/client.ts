@@ -19,12 +19,10 @@ const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
 export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
   const map = createPiMapping();
-  // edupi's trace events of the current session: the last request body and the prompt's sections.
-  let lastRequest: Json = null, fragments: Json[] | null = null;
+  // edupi's promptAssembled trace event names the prompt's sections, for the Context tab.
+  let fragments: Json[] | null = null;
   const watch = (m: Json) => {
-    if (m.type !== "trace") return;
-    if (m.name === "modelRequest") lastRequest = m.body;
-    if (m.name === "promptAssembled") fragments = m.fragments;
+    if (m.type === "trace" && m.name === "promptAssembled") fragments = m.fragments;
   };
   const rpc = new PiRpcClient(url, {
     onMessage: (message) => { watch(message); map(message).forEach(dispatch); },
@@ -46,7 +44,8 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
     commands: COMMANDS,
     efforts: LEVELS.map((l) => ({ value: l, label: l })),
     protocolNote: "pi RPC: one JSON object per line, tagged by \"type\". A command may carry an \"id\"; pi answers it with {type: \"response\", command, id}. Every other message is an event. There is no handshake.",
-    contextTriggers: ["modelRequest"],
+    // edupi trace events after which the next request differs (a reply, a tool result, a compaction), and step-mode pauses.
+    contextTriggers: ["modelResponse", "toolOutput", "compacted", "paused", "promptAssembled"],
 
     // pi has no handshake: the process already holds a session. get_state names it and its model;
     // get_messages shows a session already in progress (edupi or pi started with --continue).
@@ -61,7 +60,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
       if (resumed) resumed = false; // keep the session connect showed
       else if (state?.messageCount || state?.isStreaming) { // "new thread"
         await rpc.command("new_session");
-        lastRequest = fragments = null;
+        fragments = null;
       }
       state = await rpc.command("get_state");
       await setLevel(s.effort);
@@ -86,14 +85,13 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
       }));
     },
     async runCommand() {},
-    // pi has no step mode or context inspector; edupi adds them as debug_* commands later.
-    async setStepMode() {},
-    async continueStep() {},
-    // Until edupi answers a debug_ context command, the Context tab shows the last request edupi traced.
+    // edupi's debug_ commands (pi has none; the capabilities stepMode and contextInspector say so).
+    async setStepMode(enabled) { await rpc.command("debug_set_step_mode", { enabled }); },
+    async continueStep() { await rpc.command("debug_continue"); },
+    // The exact next request body, with pi's context window and compaction limit.
     async context() {
-      if (!lastRequest) return null;
-      return piContext(lastRequest, fragments, state?.model?.contextWindow ?? 128000,
-        "edupi: this is the last request edupi sent (from its modelRequest trace event); the next one adds the reply and your next message.");
+      const ctx = await rpc.command("debug_get_context");
+      return piContext(ctx.body, fragments, ctx.contextWindow, ctx.autoCompactLimit);
     },
     wireLabel: (m) => m.type === "response"
       ? { title: `response ${m.command}`, detail: `${m.id !== undefined ? `id=${m.id} · ` : ""}${m.success ? "ok" : m.error}` }

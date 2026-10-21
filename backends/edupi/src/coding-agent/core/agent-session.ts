@@ -122,6 +122,7 @@ export class AgentSession {
     this.agent.prepareNextTurn = ({ context }) => this._compactBeforeNextAssistantResponse(context);
     this._refreshFinalizedContext(); // records the entry of each restored message
     this._rebuildSystemPrompt(this.agent.state.tools.map((tool) => tool.name));
+    this._probe?.sessionStarted?.({ sessionId: this.sessionId });
   }
 
   /** Gathers the prompt's inputs: cwd, skills, AGENTS.md files, SYSTEM.md, APPEND_SYSTEM.md, tool snippets and guidelines. */

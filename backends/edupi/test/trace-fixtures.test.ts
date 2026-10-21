@@ -16,15 +16,23 @@ afterEach(async () => {
   await edupi?.close();
 });
 
-test("edupi's model, tool, prompt and skill trace events match the protocol fixtures", async () => {
+test("edupi's model, tool, prompt, skill, cost and step-mode trace events match the protocol fixtures", async () => {
   const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "echo hi" } };
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
   const skill = join(dir, "home", "agent", "skills", "greet");
   mkdirSync(skill, { recursive: true });
   writeFileSync(join(skill, "SKILL.md"), "---\nname: greet\ndescription: Greets the user.\n---\n\nSay hi.\n");
-  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] }, [], { dir });
+  // OpenRouter's list prices the model, so the cost events have dollars.
+  const models = [{ id: "openai/gpt-6-luna", name: "Luna", context_length: 128000, pricing: { prompt: "0.000001", completion: "0.000008" } }];
+  edupi = startEdupi({ models, responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] }, [], { dir });
+  // Step mode on: release each pause until the run settles.
+  await edupi.command("debug_set_step_mode", { enabled: true, breakpoints: ["beforeModelRequest"] });
   edupi.sendLine(JSON.stringify({ type: "prompt", message: "Hi?" }));
-  await edupi.until("agent_settled");
+  const pauses = () => edupi.seen.filter((m) => m.type === "trace" && m.name === "paused").length;
+  for (let released = 0; !edupi.seen.some((m) => m.type === "agent_settled"); released++) {
+    await edupi.until(() => pauses() > released || edupi.seen.some((m) => m.type === "agent_settled"));
+    if (pauses() > released) await edupi.command("debug_continue");
+  }
 
   const first = (name: string, where: (m: Message) => boolean = () => true) =>
     edupi.seen.find((m) => m.type === "trace" && m.name === name && where(m));
@@ -36,6 +44,10 @@ test("edupi's model, tool, prompt and skill trace events match the protocol fixt
     modelResponse: first("modelResponse"),
     promptAssembled: first("promptAssembled"),
     skillsLoaded: first("skillsLoaded"),
+    pricing: first("pricing"),
+    cost: first("cost"),
+    paused: first("paused"),
+    resumed: first("resumed"),
   };
   expect(actual.skillsLoaded!.skills.map((s: Message) => s.name)).toEqual(["greet"]);
   // Every shared event is checked: the compaction events in the next test.

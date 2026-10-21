@@ -1,0 +1,5 @@
+{
+  "type": "trace",
+  "name": "resumed",
+  "breakpoint": "beforeModelRequest"
+}

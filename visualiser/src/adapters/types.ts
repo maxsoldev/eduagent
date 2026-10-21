@@ -18,7 +18,7 @@ export type Settings = { model: string; effort: string; cwd: string; [key: strin
 export type ContextItem = { label: string; cat: CtxCat; tokens: number; preview: string; summary: string;
   parts: { type: string; text?: string; tokens: number; raw: Json }[] | null; raw: Json };
 export type ContextSnapshot = { items: ContextItem[]; tools: { names: string[]; tokens: number };
-  contextWindow: number; autoCompactLimit: number; note?: string }; // note: how the snapshot was made, if not the exact next request
+  contextWindow: number; autoCompactLimit: number };
 
 export type AdapterOptions = { url: string; capabilities: Capabilities; dispatch: (action: ViewAction) => void };
 

@@ -41,5 +41,21 @@
     "roots": "array",
     "skills": "array",
     "errors": "array"
+  },
+  "paused": {
+    "breakpoint": "string",
+    "info": "object"
+  },
+  "resumed": {
+    "breakpoint": "string"
+  },
+  "pricing": {
+    "model": "string",
+    "pricing": "object"
+  },
+  "cost": {
+    "last": "object",
+    "total": "object",
+    "inputItems": "number"
   }
 }

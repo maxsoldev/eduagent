@@ -56,7 +56,7 @@ test("each model response is traced with pi's usage, taken from the last chunk",
   const reply = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
   expect(response).toEqual({
     type: "trace", name: "modelResponse", stopReason: "stop", responseId: "chatcmpl-faux",
-    content: [{ type: "text", text: "Short reply." }], usage: reply.usage, seconds: expect.any(Number),
+    content: [{ type: "text", text: "Short reply." }], usage: reply.usage, seconds: expect.any(Number), cost: expect.any(Object),
   });
   expect(response.usage).toMatchObject({ input: usageChunk.prompt_tokens, output: usageChunk.completion_tokens,
     totalTokens: usageChunk.prompt_tokens + usageChunk.completion_tokens });
@@ -83,4 +83,65 @@ test("trace events still arrive after new_session, for the new session's request
   expect(requests[1].body.messages.map((m: Message) => m.role)).toEqual(["system", "user"]); // the new session's prompt, then its question
   expect(requests[1].body.messages[1]).toEqual({ role: "user", content: [{ type: "text", text: "New question?" }] });
   expect(traces("modelResponse").at(-1)).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "New answer." }] });
+});
+
+// OpenRouter's GET /models prices, in USD per token: $1 per million input tokens, $8 per million output tokens.
+const PRICED = [{ id: "openai/gpt-6-luna", name: "Luna", context_length: 200000,
+  top_provider: { context_length: 200000, max_completion_tokens: 32000 }, pricing: { prompt: "0.000001", completion: "0.000008", input_cache_read: "0.0000001" } }];
+
+test("the model's prices are traced once, from OpenRouter's model list (pi's Model.cost)", async () => {
+  edupi = startEdupi({ models: PRICED, responses: ["One.", "Two."] });
+  await prompt("Hi?");
+  await prompt("Again?");
+
+  expect(traces("pricing")).toEqual([{
+    type: "trace", name: "pricing", model: "openai/gpt-6-luna", source: "GET /models",
+    pricing: { model: "openai/gpt-6-luna", perMillionTokens: { prompt: 1, completion: 8, cache_read: 0.1, cache_write: 0 }, longContext: null, longContextFromTokens: null },
+  }]);
+  const order = edupi.seen.map((m) => (m.type === "trace" ? m.name : m.type));
+  expect(order.indexOf("pricing")).toBeLessThan(order.indexOf("modelRequest"));
+});
+
+test("each response's cost is traced: tokens and dollars from pi's usage, and the session total", async () => {
+  edupi = startEdupi({ models: PRICED, responses: ["One.", "Two."] });
+  await prompt("Hi?");
+  await prompt("Again?");
+
+  const replies = edupi.seen.filter((m) => m.type === "message_end" && m.message.role === "assistant").map((m) => m.message);
+  const costs = traces("cost");
+  expect(costs).toHaveLength(2);
+  costs.forEach((c, i) => {
+    const u = replies[i].usage;
+    expect(c.last).toEqual({
+      tokens: { input: u.input, uncached: u.input, cached: 0, cacheWrite: 0, output: u.output, reasoning: 0 },
+      cacheHitRate: 0, billedUsd: null,
+      usd: { uncachedInput: u.cost.input, cachedInput: 0, cacheWrite: 0, output: u.cost.output, total: u.cost.total, withoutCache: u.cost.total, savedByCache: 0 },
+    });
+    expect(c.last.usd.total).toBeCloseTo((u.input * 1 + u.output * 8) / 1e6, 12);
+    expect(c.inputItems).toBe(edupi.requests()[i].body.messages.length);
+    expect(traces("modelResponse")[i].cost).toEqual(c.last); // the Requests tab's cost table
+  });
+  expect(costs[1].total).toMatchObject({
+    requests: 2, cacheHitRate: 0,
+    tokens: { input: replies[0].usage.input + replies[1].usage.input, output: replies[0].usage.output + replies[1].usage.output },
+  });
+  expect(costs[1].total.usd.total).toBeCloseTo(replies[0].usage.cost.total + replies[1].usage.cost.total, 12);
+});
+
+test("without prices (a model OpenRouter does not list), costs have tokens but no dollars", async () => {
+  edupi = startEdupi({ responses: ["One."] });
+  await prompt("Hi?");
+
+  expect(traces("pricing")).toEqual([{ type: "trace", name: "pricing", model: "openai/gpt-6-luna", pricing: null, source: "GET /models" }]);
+  const [cost] = traces("cost");
+  expect(cost.last.tokens.output).toBeGreaterThan(0);
+  expect(cost.last).not.toHaveProperty("usd");
+});
+
+test("a new session starts a new cost total", async () => {
+  edupi = startEdupi({ models: PRICED, responses: ["One.", "Two."] });
+  await prompt("Hi?");
+  await edupi.command("new_session");
+  await prompt("Again?");
+  expect(traces("cost").map((c) => c.total.requests)).toEqual([1, 1]);
 });

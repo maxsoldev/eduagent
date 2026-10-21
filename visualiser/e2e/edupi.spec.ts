@@ -289,3 +289,57 @@ test("a manual compaction with custom instructions shows in the chat and the tim
   await wire.locator(".t-title").getByText("compact", { exact: true }).click();
   await expect(wire).toContainText('customInstructions: "Keep the greetings."');
 });
+
+// The test entry "edupi-step" runs backends/edupi/examples/faux/step.json: OpenRouter's list
+// prices the model (200k context window), the model runs one bash command, then answers.
+test("step mode, the Context tab, the context bar and the cost panel work for edupi", async ({ page }) => {
+  await page.goto("/?backend=edupi-step");
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  await page.getByTestId("step-mode").check();
+  await send(page, "Run a command.");
+
+  // Paused before the first model request: the Context tab shows that request, from debug_get_context.
+  const paused = page.getByTestId("paused");
+  await expect(paused).toContainText("beforeModelRequest");
+  await page.getByTestId("tab-Context").click();
+  const items = page.getByTestId("ctx-item");
+  await expect(items.first()).toContainText("system prompt");
+  await expect(items.last()).toContainText("user");
+  // pi's threshold: the model's context window minus pi's reserve (16384 tokens).
+  await expect(page.getByTestId("context-view")).toContainText("of 200,000 tokens (estimate) · auto-compact at 183,616");
+
+  // Step through: before the tool call, after it, before the second request.
+  const seen: string[] = [];
+  const where = async () => (await paused.count()) ? await paused.locator("code").textContent() : null;
+  for (let i = 0; i < 10 && !(await page.getByTestId("turn-sep").count()); i++) {
+    const at = await where();
+    if (at) {
+      seen.push(at);
+      await page.getByTestId("continue").click();
+      await expect.poll(where).not.toBe(at); // the next pause, or none (no two pauses in a row at the same point here)
+    }
+    await page.waitForTimeout(100);
+  }
+  await expect(page.getByTestId("turn-sep").last()).toContainText("turn completed");
+  expect(seen).toEqual(["beforeModelRequest", "beforeToolCall", "afterToolCall", "beforeModelRequest"]);
+  await expect(page.getByTestId("agent-message").last()).toContainText("The command printed a greeting.");
+
+  // The context now ends with the reply; the bar and the breakdown show its parts and their cost.
+  await expect(items.last()).toContainText("assistant");
+  await expect(page.getByTestId("context-view")).toContainText("tool output");
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("tool definitions");
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("next cost");
+  await page.getByTestId("ctx-seg").nth(1).hover();
+  await expect(page.getByTestId("ctx-tip")).toContainText("system prompt");
+
+  // Cost: pi priced each response with OpenRouter's prices; the panel and the header badge show it.
+  const cost = page.getByTestId("context-cost");
+  await expect(cost).toContainText("Read from cache");
+  await expect(cost).toContainText("where the money goes");
+  await expect(cost).toContainText("$1/M"); // uncached input, from the model list
+  await expect(cost).toContainText("2 requests");
+  await expect(page.getByTestId("cost-badge")).toContainText("$");
+
+  await page.getByTestId("tab-Requests").click();
+  await expect(page.getByTestId("cost-table").first()).toBeVisible();
+});

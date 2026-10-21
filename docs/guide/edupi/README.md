@@ -53,13 +53,13 @@ The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-ro
   { "name": "edupi-faux", "harness": "pi", "protocol": "pi-rpc",
     "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc",
                 "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
-    "capabilities": ["trace", "skills", "compaction", "queues", "contextInspector"] }
+    "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"] }
 ] }
 ```
 
-`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it with `--approve` in a folder that has that skill. `examples/faux/compact.json` has replies for a manual compaction (chapter 07).
+`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it with `--approve` in a folder that has that skill. `examples/faux/compact.json` has replies for a manual compaction (chapter 07). `examples/faux/step.json` prices the model and runs one command, for step mode, the Context tab and the cost panel (chapter 09).
 
-List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `skills` the `$` list in the composer, `compaction` the compact button and `/compact`, `queues` the steer, follow-up and abort buttons, `contextInspector` the Context tab.
+List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `skills` the `$` list in the composer, `compaction` the compact button and `/compact`, `queues` the steer, follow-up and abort buttons, `stepMode` the step mode toggle, `contextInspector` the Context tab.
 
 For another model, add `"--model", "<any OpenRouter model id>"` to `command`.
 
@@ -85,4 +85,5 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json
 | 06 | [Sessions](06-sessions.md) | pi's session file: a tree of entries with `id` and `parentId`; the context rebuilt from the entries; `new_session` and `get_messages`; how it differs from Codex's rollout files | [16](../educodex/16-session-logs.md) |
 | 07 | [Compaction](07-compaction.md) | pi's three triggers (manual, threshold, overflow); the cut point and split turns; the checkpoint and update prompts; the compaction entry and the request rebuilt from it | [15](../educodex/15-compaction.md) |
 | 08 | [The RPC protocol](08-rpc-protocol.md) | `pi --mode rpc`: commands, responses and events as JSON lines; how they differ from Codex's App Server | [18](../educodex/18-app-server.md) |
+| 09 | [Teaching extras](09-teaching-extras.md) | edupi's `debug_` commands: step mode at three checkpoints of pi's loop, the exact next request with pi's compaction limit, and cost from pi's usage | [18](../educodex/18-app-server.md), [19](../educodex/19-clients-and-observability.md) |
 

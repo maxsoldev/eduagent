@@ -96,7 +96,11 @@ class StdioClient:
 
     def until(self, method: str) -> dict:
         """Read messages (kept in `seen`) until a notification or request with this method arrives."""
-        while (msg := self.recv()).get("method") != method:
+        return self.until_any(method)
+
+    def until_any(self, *methods: str) -> dict:
+        """Like until, for the first of several methods."""
+        while (msg := self.recv()).get("method") not in methods:
             self.seen.append(msg)
         self.seen.append(msg)
         return msg

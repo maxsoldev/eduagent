@@ -120,7 +120,7 @@ private _prepareRun(text: string, images: ImageContent[]): AgentMessage[] {
 }
 ```
 
-**Teaching extras.** Before each run the session calls the probe hook `promptAssembled`. The tracer sends the shared trace event `promptAssembled` (`protocol/README.md` section 6): one fragment per section with its `kind` (the section name), `source` (pi's code, or the AGENTS.md paths), `text`, `tokens` and `changed` (in this run's patch), plus `firstTurn`. In the viewer, the **Context** tab shows the request's first message as the system prompt, with one part per section. Until edupi has a context command (`debug_` commands, later), the Context tab shows the last request edupi sent.
+**Teaching extras.** Before each run the session calls the probe hook `promptAssembled`. The tracer sends the shared trace event `promptAssembled` (`protocol/README.md` section 6): one fragment per section with its `kind` (the section name), `source` (pi's code, or the AGENTS.md paths), `text`, `tokens` and `changed` (in this run's patch), plus `firstTurn`. In the viewer, the **Context** tab shows the request's first message as the system prompt, with one part per section. The tab gets the next request from edupi's `debug_get_context` command (chapter 09).
 
 The tests in [`test/rpc-system-prompt.test.ts`](../../../backends/edupi/test/rpc-system-prompt.test.ts) check the prompt in the request body against real pi's text: without AGENTS.md, with nested AGENTS.md files, with skills, after a second prompt, and the trace events.
 

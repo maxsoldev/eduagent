@@ -3,6 +3,7 @@
 // edupi (pi has none); their source is the pi code at the same step.
 import type { Explainer, Info } from "../../view/explain";
 import type { Json, TimelineEvent } from "../../view/model";
+import { pct, usd } from "../../cost";
 
 const LOOP = "packages/agent/src/agent-loop.ts";
 const SESSION = "packages/coding-agent/src/core/agent-session.ts";
@@ -63,6 +64,14 @@ const TRACE: Record<string, Info> = {
     text: "pi's system prompt as named sections: preamble, tools, rules, AGENTS.md files (project_context), the skills list and the cwd. Only changed sections go into the transcript, as a system message; the first prompt of a session gets all of them." },
   skillsLoaded: { title: "Skills loaded", category: "prompt", chapter: "05", source: "packages/coding-agent/src/core/skills.ts",
     text: "pi scanned <cwd>/.pi/skills (only in a trusted project) and its home's skills folder, once for the session. The prompt lists each skill's name, description and file; the model reads the file itself when it needs it." },
+  pricing: { title: "Pricing", category: "model", chapter: "09", source: "packages/ai/src/providers/openrouter.ts",
+    text: "The model's prices, from OpenRouter's model list (pi's Model.cost, in USD per million tokens). pi prices every response with them (calculateCost)." },
+  cost: { title: "Request cost", category: "model", chapter: "09", source: "packages/ai/src/models.ts",
+    text: "What the last request cost: pi's usage.cost regrouped into uncached input, cache reads, cache writes and output, plus the session's total. edupi only: pi keeps the numbers in each assistant message." },
+  paused: { title: "Paused (step mode)", category: "debug", chapter: "09", source: LOOP,
+    text: "edupi only: step mode stopped the pi loop at this checkpoint. The Context tab shows the exact next request. Press Continue (debug_continue)." },
+  resumed: { title: "Resumed", category: "debug", chapter: "09", source: LOOP,
+    text: "edupi only: the loop goes on after debug_continue (or an abort)." },
 };
 
 function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
@@ -92,6 +101,9 @@ function summary(e: TimelineEvent): string {
     case "promptAssembled": return e.trace ? p.fragments.map((f: Json) => `${f.kind}${f.changed ? "+" : ""}`).join(" · ") : "";
     case "skillsLoaded": return e.trace ? `${p.skills.length} skills in ${p.roots.length} folders${p.projectTrusted ? "" : " · project not trusted"}${p.errors.length ? ` · ${p.errors.length} warnings` : ""}` : "";
     case "modelRequest": return e.trace ? `${p.body.messages.length} messages · ${p.body.model}` : "";
+    case "paused": case "resumed": return e.trace ? `${p.breakpoint}${p.info?.tool ? ` · ${p.info.tool}` : ""}` : "";
+    case "pricing": return e.trace ? (p.pricing ? `input $${p.pricing.perMillionTokens.prompt}/M · cached $${p.pricing.perMillionTokens.cache_read}/M · output $${p.pricing.perMillionTokens.completion}/M` : "no pricing") : "";
+    case "cost": return e.trace ? `${usd(p.last.billedUsd ?? p.last.usd?.total)} · ${pct(p.last.cacheHitRate)} of ${p.last.tokens.input} input tokens cached · session ${usd(p.total.billedUsd ?? p.total.usd?.total)}` : "";
     case "modelResponse": return e.trace ? `${p.stopReason} · ${p.usage.input} in / ${p.usage.output} out · ${p.seconds}s` : "";
     default: return "";
   }

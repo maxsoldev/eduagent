@@ -6,6 +6,7 @@ import type { StreamFn } from "../agent/types.ts";
 import { streamSimple } from "../ai/api/openai-completions.ts";
 import { fauxProvider, loadFauxScript } from "../ai/providers/faux.ts";
 import { OPENROUTER_API_KEY_ENV } from "../ai/providers/openrouter.ts";
+import { debugCommands } from "../observe/debug.ts";
 import { Tracer } from "../observe/tracer.ts";
 import { type Args, parseArgs } from "./cli/args.ts";
 import { getAgentDir } from "./config.ts";
@@ -36,7 +37,7 @@ export async function main(argv: string[]): Promise<void> {
   const model = parsed.model ? modelRegistry.find("openrouter", parsed.model) : undefined; // else the session's, else the default
   const getApiKey = (provider: string) => (parsed.faux ? "faux" : provider === "openrouter" ? process.env[OPENROUTER_API_KEY_ENV] || undefined : undefined);
   // The teaching extras watch the core through its probe hooks; the core does not know them.
-  const tracer = new Tracer();
+  const tracer = new Tracer({ findPricing: (id) => modelRegistry.getAll().find((m) => m.id === id)?.cost });
   const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
   const settingsManager = SettingsManager.create();
@@ -47,7 +48,10 @@ export async function main(argv: string[]): Promise<void> {
     createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, cwd, probe: tracer, projectTrusted });
   const session = createRuntime(createSessionManager(parsed, cwd));
   // Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
-  await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), { connect: (output) => tracer.connect(output) });
+  await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), {
+    connect: (output) => tracer.connect(output),
+    debug: debugCommands(tracer),
+  });
 }
 
 /** Which session to start with: pi's --no-session, --session, --continue, else a new one. */

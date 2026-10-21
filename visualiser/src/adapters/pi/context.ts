@@ -1,4 +1,4 @@
-// A Chat Completions request body from edupi -> the neutral context snapshot of the Context tab.
+// edupi's debug_get_context (the exact next Chat Completions request) -> the neutral context snapshot of the Context tab.
 // pi's prompt is one system message built from named sections (packages/coding-agent/src/core/
 // system-prompt.ts); edupi's promptAssembled trace event names them, so the first item shows
 // one part per section: preamble, tools, rules, project_context (AGENTS.md), skills, cwd.
@@ -8,20 +8,17 @@ import type { Json } from "../../view/model";
 
 const approxTokens = (v: Json) => Math.ceil((typeof v === "string" ? v.length : JSON.stringify(v).length) / 4);
 
-// pi's default compaction reserve (packages/coding-agent/src/core/settings-defaults.ts): pi
-// compacts when the context is above the context window minus this.
-export const PI_RESERVE_TOKENS = 16384;
-
 const textOf = (content: Json): string =>
   typeof content === "string" ? content : (content ?? []).map((c: Json) => c.text ?? `[${c.type}]`).join(" ");
 
 const clip = (t: string) => { const flat = t.replace(/\s+/g, " ").trim(); return flat.length > 160 ? `${flat.slice(0, 160)}…` : flat; };
 
 /**
- * body: the request's messages and tools. fragments: promptAssembled's sections, used as the
- * system message's parts when they make up its text. note: shown above the list.
+ * body: the request's messages and tools (edupi's debug_get_context). fragments: promptAssembled's
+ * sections, used as the system message's parts when they make up its text. autoCompactLimit: pi
+ * compacts above it (the context window minus pi's reserveTokens).
  */
-export function piContext(body: Json, fragments: Json[] | null, contextWindow: number, note?: string): ContextSnapshot {
+export function piContext(body: Json, fragments: Json[] | null, contextWindow: number, autoCompactLimit: number): ContextSnapshot {
   const messages: Json[] = body.messages ?? [];
   // The path each tool call read, so a tool output that is a SKILL.md can be named.
   const readPaths: Record<string, string> = {};
@@ -43,7 +40,7 @@ export function piContext(body: Json, fragments: Json[] | null, contextWindow: n
   return {
     items,
     tools: { names: tools.map((t) => t.function?.name ?? t.type), tokens: tools.length ? approxTokens(tools) : 0 },
-    contextWindow, autoCompactLimit: contextWindow - PI_RESERVE_TOKENS, note,
+    contextWindow, autoCompactLimit,
   };
 }
 

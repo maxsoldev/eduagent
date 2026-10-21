@@ -3,6 +3,7 @@
 // optional `id`. Each command gets one {type: "response", command, id, success} line. Every
 // session event goes out as its own line. Lines are handled concurrently, so a slow command does
 // not block a later one, and clients match responses by id.
+import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { toJsonEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -20,9 +21,18 @@ function takeOverStdout(): (line: string, done?: () => void) => void {
   };
 }
 
+/** edupi only: the teaching extras' debug_ commands (step mode, get context). pi has none. */
+export interface DebugCommands {
+  setStepMode(enabled: boolean, breakpoints?: string[]): { enabled: boolean; breakpoints: string[] };
+  continue(): void;
+  getContext(session: AgentSession): Promise<object>;
+}
+
 export interface RpcModeOptions {
   /** edupi: gets the protocol line writer, so the tracer can send trace messages on stdout. */
   connect?: (output: (message: object) => void) => void;
+  /** edupi: answers the debug_ commands; without it they are unknown, as in pi. */
+  debug?: DebugCommands;
 }
 
 export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcModeOptions = {}): Promise<never> {
@@ -52,6 +62,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 
   const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
     const id = command.id;
+    const unknown = (type: string) => error(id, type, `Unknown command: ${type}`);
 
     switch (command.type) {
       case "prompt": {
@@ -139,9 +150,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
         return success(id, "compact", result);
       }
 
+      // edupi's teaching extras (not in pi): step mode and the context inspector.
+      case "debug_set_step_mode": {
+        if (!options.debug) return unknown(command.type);
+        return success(id, "debug_set_step_mode", options.debug.setStepMode(command.enabled, command.breakpoints));
+      }
+
+      case "debug_continue": {
+        if (!options.debug) return unknown(command.type);
+        options.debug.continue();
+        return success(id, "debug_continue");
+      }
+
+      case "debug_get_context": {
+        if (!options.debug) return unknown(command.type);
+        return success(id, "debug_get_context", await options.debug.getContext(session));
+      }
+
       default: {
-        const unknownCommand = command as { type: string };
-        return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
+        return unknown((command as { type: string }).type);
       }
     }
   };

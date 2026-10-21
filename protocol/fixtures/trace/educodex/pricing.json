@@ -1,0 +1,21 @@
+{
+  "method": "trace/pricing",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "model": "openai/gpt-6-luna",
+    "pricing": {
+      "model": "openai/gpt-6-luna",
+      "perMillionTokens": {
+        "prompt": 0.1,
+        "completion": 0.5,
+        "cache_read": 0.01,
+        "cache_write": 0.125
+      },
+      "longContext": null,
+      "longContextFromTokens": null
+    },
+    "source": "GET /models",
+    "_seq": 2,
+    "_ts": 1792599293.98
+  }
+}
