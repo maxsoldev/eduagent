@@ -2,7 +2,7 @@
 // the Agent that every mode drives. It builds the system prompt before each run, turns a prompt into a
 // run (or queues it while one is active), forwards the Agent's events plus its own (agent_settled,
 // queue_update, compaction_start/end), saves finished messages, compacts (by hand, at the threshold,
-// after an overflow) and answers get_state.
+// after an overflow) and answers get_state. The methods are in pi's order.
 import { readFileSync } from "node:fs";
 import type { Agent } from "../../agent/agent.ts";
 import type { AgentContext, AgentEvent, AgentMessage, QueueMode } from "../../agent/types.ts";
@@ -17,7 +17,7 @@ import type {
 	ToolResultMessage,
 } from "../../ai/types.ts";
 import { isContextOverflow, isRecoverableLength } from "../../ai/utils/overflow.ts";
-import { getCurrentSystemMessage } from "../../ai/utils/transcript.ts";
+import { contentText, getCurrentSystemMessage } from "../../ai/utils/transcript.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import {
 	type CompactionPreparation,
@@ -98,17 +98,22 @@ export class AgentSession {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
+	readonly resourceLoader: DefaultResourceLoader;
 	private readonly _getApiKey: (provider: string) => string | undefined;
 	private readonly _probe: Probe | undefined;
 	private _eventListeners: AgentSessionEventListener[] = [];
+	private _unsubscribeAgent: () => void;
+
+	// Run state
 	private _isAgentRunActive = false; // from _startRun until agent_settled
 	private _agentRunAbortRequested = false; // agent_settled reports it as `aborted`
 	private _idleWaiters: (() => void)[] = []; // resolved after agent_settled
+
 	// The texts of the queued messages, for queue_update. The messages themselves are in the Agent.
 	private _steeringMessages: string[] = [];
 	private _followUpMessages: string[] = [];
-	private _unsubscribeAgent: () => void;
-	readonly resourceLoader: DefaultResourceLoader;
+
+	// System prompt state
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _skillsReported = false;
 
@@ -128,54 +133,56 @@ export class AgentSession {
 		this._getApiKey = config.getApiKey;
 		this.resourceLoader = config.resourceLoader;
 		this._probe = config.probe;
+
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
-		// pi's _installAgentNextTurnRefresh: each later turn gets the rebuilt context and the current model and level.
-		this.agent.prepareNextTurn = async ({ context }) => ({
-			context: (await this._compactBeforeNextAssistantResponse(context)).context,
-			model: this.agent.state.model,
-			thinkingLevel: this.agent.state.thinkingLevel,
-		});
+		this._installAgentNextTurnRefresh();
 		this._refreshFinalizedContext(); // records the entry of each restored message
 		this._rebuildSystemPrompt(this.agent.state.tools.map((tool) => tool.name));
 		this._probe?.sessionStarted?.({ sessionId: this.sessionId });
 	}
 
-	/** Gathers the prompt's inputs: cwd, skills, AGENTS.md files, SYSTEM.md, APPEND_SYSTEM.md, tool snippets and guidelines. */
-	private _rebuildSystemPrompt(toolNames: string[]): void {
-		const toolSnippets: Record<string, string> = {};
-		const toolGuidelines: Record<string, string[]> = {};
-		for (const name of toolNames) {
-			const contribution = toolSystemPromptContributions[name];
-			if (!contribution) continue; // tools without a snippet are not listed
-			toolSnippets[name] = contribution.snippet;
-			toolGuidelines[name] = [...contribution.guidelines];
+	/** Whether the context, as the session file gives it, is above the model's compaction threshold. */
+	private _exceedsCompactionThreshold(model: Model, projection: SessionProjection): boolean {
+		if (model.contextWindow <= 0) return false;
+		return shouldCompact(
+			estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens,
+			model.contextWindow,
+			this.settingsManager.getCompactionSettings(),
+		);
+	}
+
+	/**
+	 * Before each later model call of a run (after tool results): compact if the context is above
+	 * the threshold. The next turn then starts from the context rebuilt from the session file.
+	 */
+	private async _compactBeforeNextAssistantResponse(context: AgentContext): Promise<AgentContext> {
+		const projection = this.sessionManager.buildSessionProjection();
+		if (!this._exceedsCompactionThreshold(this.model, projection))
+			return { ...context, messages: projection.messages };
+		await this._runAutoCompaction("threshold", false);
+		return { ...context, messages: this.sessionManager.buildSessionProjection().messages };
+	}
+
+	/** Each later turn of a run gets the rebuilt context and the current model and thinking level. */
+	private _installAgentNextTurnRefresh(): void {
+		this.agent.prepareNextTurn = async ({ context }) => ({
+			context: await this._compactBeforeNextAssistantResponse(context),
+			model: this.agent.state.model,
+			thinkingLevel: this.agent.state.thinkingLevel,
+		});
+	}
+
+	// =========================================================================
+	// Event Subscription
+	// =========================================================================
+
+	/** After compaction or an omission, the Agent's messages are rebuilt from the session file. */
+	private _refreshFinalizedContext(): void {
+		const projection = this.sessionManager.buildSessionProjection();
+		for (const entry of projection.entries) {
+			for (const message of entry.messages) this._entryIdsByMessage.set(message, entry.sourceEntry.id);
 		}
-		const append = this.resourceLoader.getAppendSystemPrompt();
-		this._baseSystemPromptOptions = {
-			cwd: this.resourceLoader.cwd,
-			skills: this.resourceLoader.getSkills().skills,
-			contextFiles: this.resourceLoader.getAgentsFiles().agentsFiles,
-			customPrompt: this.resourceLoader.getSystemPrompt(),
-			appendSystemPrompt: append.length > 0 ? append.join("\n\n") : "",
-			selectedTools: toolNames,
-			toolSnippets,
-			toolGuidelines,
-		};
-	}
-
-	/** Stops the session's work, stops listening to the Agent and drops the listeners (the session is being replaced). */
-	dispose(): void {
-		this.abortCompaction();
-		this.agent.abort();
-		this._unsubscribeAgent();
-		this._eventListeners = [];
-	}
-
-	subscribe(listener: AgentSessionEventListener): () => void {
-		this._eventListeners.push(listener);
-		return () => {
-			this._eventListeners = this._eventListeners.filter((l) => l !== listener);
-		};
+		this.agent.state.messages = projection.messages;
 	}
 
 	private _emit(event: AgentSessionEvent): void {
@@ -190,21 +197,26 @@ export class AgentSession {
 		});
 	}
 
+	private _resolveIdleWaitIfIdle(): void {
+		if (!this.isIdle) return;
+		for (const resolve of this._idleWaiters.splice(0)) resolve();
+	}
+
+	private _emitAgentSettled(): void {
+		this._isAgentRunActive = false;
+		this._emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
+		this._resolveIdleWaitIfIdle();
+	}
+
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
 		// An abort that came while the run was starting (e.g. during the compaction before the
 		// prompt) stops it here. The loop awaits agent_start before the first request.
 		if (event.type === "agent_start" && this._agentRunAbortRequested) this.agent.abort();
+
 		// A queued message that starts leaves its queue first, so a client sees the queue change before the message.
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false; // a new user message allows a new overflow recovery
-			const content = event.message.content;
-			const messageText =
-				typeof content === "string"
-					? content
-					: content
-							.filter((c): c is TextContent => c.type === "text")
-							.map((c) => c.text)
-							.join("");
+			const messageText = contentText(event.message.content, "");
 			if (messageText) {
 				const steeringIndex = this._steeringMessages.indexOf(messageText);
 				if (steeringIndex !== -1) {
@@ -224,49 +236,62 @@ export class AgentSession {
 
 		// Each finished message becomes a "message" entry, child of the last entry.
 		if (event.type === "message_end") {
-			const role = event.message.role;
-			if (role === "system" || role === "user" || role === "assistant" || role === "toolResult") {
-				this._entryIdsByMessage.set(event.message, this.sessionManager.appendMessage(event.message));
+			const message = event.message;
+			if (
+				message.role === "system" ||
+				message.role === "user" ||
+				message.role === "assistant" ||
+				message.role === "toolResult"
+			) {
+				this._entryIdsByMessage.set(message, this.sessionManager.appendMessage(message));
 			}
-			if (event.message.role === "assistant") {
-				this._lastAssistantMessage = event.message;
-				if (event.message.stopReason !== "error" && event.message.stopReason !== "length")
+			if (message.role === "assistant") {
+				this._lastAssistantMessage = message;
+				if (message.stopReason !== "error" && message.stopReason !== "length")
 					this._overflowRecoveryAttempted = false;
 			}
 		}
 		if (event.type === "turn_end") this._lastAssistantToolResults = event.toolResults;
 	};
 
-	/** Whether the context, as the session file gives it, is above the model's compaction threshold. */
-	private _exceedsCompactionThreshold(model: Model, projection: SessionProjection): boolean {
-		if (model.contextWindow <= 0) return false;
-		return shouldCompact(
-			estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens,
-			model.contextWindow,
-			this.settingsManager.getCompactionSettings(),
-		);
-	}
-
-	/**
-	 * Before each later model call of a run (after tool results): compact if the context is above
-	 * the threshold. The next turn then starts from the context rebuilt from the session file.
-	 */
-	private async _compactBeforeNextAssistantResponse(context: AgentContext): Promise<{ context: AgentContext }> {
-		const projection = this.sessionManager.buildSessionProjection();
-		if (!this._exceedsCompactionThreshold(this.model, projection))
-			return { context: { ...context, messages: projection.messages } };
-		await this._runAutoCompaction("threshold", false);
-		return { context: { ...context, messages: this.sessionManager.buildSessionProjection().messages } };
-	}
-
-	/** After compaction or an omission, the Agent's messages are rebuilt from the session file. */
-	private _refreshFinalizedContext(): void {
-		const projection = this.sessionManager.buildSessionProjection();
-		for (const entry of projection.entries) {
-			for (const message of entry.messages) this._entryIdsByMessage.set(message, entry.sourceEntry.id);
+	/** Leaves the failed reply (and its tool results) out of the context with context_edit entries. */
+	private _omitRecoveryAttempt(message: AssistantMessage, toolResults: AgentMessage[] = []): void {
+		for (const target of [message, ...toolResults]) {
+			const targetId = this._entryIdsByMessage.get(target);
+			if (!targetId) continue;
+			const entry = this.sessionManager.getEntry(this.sessionManager.appendContextEdit(targetId, null));
+			if (entry) this._emit({ type: "entry_appended", entry });
 		}
-		this.agent.state.messages = projection.messages;
+		this._refreshFinalizedContext();
 	}
+
+	private _findLastAssistantMessage(): AssistantMessage | undefined {
+		const messages = this.agent.state.messages;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") return msg;
+		}
+		return undefined;
+	}
+
+	subscribe(listener: AgentSessionEventListener): () => void {
+		this._eventListeners.push(listener);
+		return () => {
+			this._eventListeners = this._eventListeners.filter((l) => l !== listener);
+		};
+	}
+
+	/** Stops the session's work, stops listening to the Agent and drops the listeners (the session is being replaced). */
+	dispose(): void {
+		this.abortCompaction();
+		this.agent.abort();
+		this._unsubscribeAgent();
+		this._eventListeners = [];
+	}
+
+	// =========================================================================
+	// Read-only State Access
+	// =========================================================================
 
 	get model(): Model {
 		return this.agent.state.model;
@@ -274,27 +299,6 @@ export class AgentSession {
 
 	get thinkingLevel(): ThinkingLevel {
 		return this.agent.state.thinkingLevel;
-	}
-
-	/** The levels the current model supports (only "off" without reasoning). */
-	getAvailableThinkingLevels(): ThinkingLevel[] {
-		return getSupportedThinkingLevels(this.model);
-	}
-
-	/**
-	 * Sets the thinking level, clamped to what the model supports. Only a real change is saved as
-	 * a thinking_level_change entry and announced with thinking_level_changed. The next model call uses it.
-	 */
-	setThinkingLevel(level: ThinkingLevel): void {
-		const effectiveLevel = this.getAvailableThinkingLevels().includes(level)
-			? level
-			: clampThinkingLevel(this.model, level);
-		const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
-		this.agent.state.thinkingLevel = effectiveLevel;
-		if (isChanging) {
-			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-			this._emit({ type: "thinking_level_changed", level: effectiveLevel });
-		}
 	}
 
 	get isStreaming(): boolean {
@@ -308,6 +312,10 @@ export class AgentSession {
 
 	get isCompacting(): boolean {
 		return this._compactionAbortController !== undefined || this._autoCompactionAbortController !== undefined;
+	}
+
+	get messages(): AgentMessage[] {
+		return this.agent.state.messages;
 	}
 
 	get steeringMode(): QueueMode {
@@ -327,118 +335,33 @@ export class AgentSession {
 		return this.sessionManager.getSessionId();
 	}
 
-	get messages(): AgentMessage[] {
-		return this.agent.state.messages;
-	}
-
-	/** Steering plus follow-up messages that wait for the loop. */
-	get pendingMessageCount(): number {
-		return this._steeringMessages.length + this._followUpMessages.length;
-	}
-
-	get autoCompactionEnabled(): boolean {
-		return this.settingsManager.getCompactionEnabled();
+	/** Gathers the prompt's inputs: cwd, skills, AGENTS.md files, SYSTEM.md, APPEND_SYSTEM.md, tool snippets and guidelines. */
+	private _rebuildSystemPrompt(toolNames: string[]): void {
+		const toolSnippets: Record<string, string> = {};
+		const toolGuidelines: Record<string, string[]> = {};
+		for (const name of toolNames) {
+			const contribution = toolSystemPromptContributions[name];
+			if (!contribution) continue; // tools without a snippet are not listed
+			toolSnippets[name] = contribution.snippet;
+			toolGuidelines[name] = [...contribution.guidelines];
+		}
+		const appendSystemPrompt = this.resourceLoader.getAppendSystemPrompt();
+		this._baseSystemPromptOptions = {
+			cwd: this.resourceLoader.cwd,
+			skills: this.resourceLoader.getSkills().skills,
+			contextFiles: this.resourceLoader.getAgentsFiles().agentsFiles,
+			customPrompt: this.resourceLoader.getSystemPrompt(),
+			appendSystemPrompt: appendSystemPrompt.length > 0 ? appendSystemPrompt.join("\n\n") : "",
+			selectedTools: toolNames,
+			toolSnippets,
+			toolGuidelines,
+		};
 	}
 
 	/**
-	 * Sends a prompt. While a run is active it needs a streamingBehavior and is queued. Before a run
-	 * starts it checks the model's API key; after preflightResult("started"), failures are events.
+	 * Diffs the sections the model has (replayed from the transcript) with the wanted ones. Returns
+	 * a system message with the changed sections, or undefined when the prompt is unchanged.
 	 */
-	async prompt(text: string, options?: PromptOptions): Promise<void> {
-		// Only a manual compaction refuses; during an automatic one a run is active, so the prompt is queued.
-		if (this._compactionAbortController !== undefined) {
-			throw new Error(
-				"Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.",
-			);
-		}
-		text = this._expandSkillCommand(text); // pi also expands prompt templates here
-		if (this.isStreaming) {
-			if (!options?.streamingBehavior) {
-				throw new Error(
-					"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
-				);
-			}
-			if (options.streamingBehavior === "followUp") this._queueFollowUp(text, options.images);
-			else this._queueSteer(text, options.images);
-			options.preflightResult?.("queued");
-			return;
-		}
-		if (!this._getApiKey(this.model.provider)) {
-			throw new Error(
-				`No API key found for ${this.model.provider}.\n\nSet OPENROUTER_API_KEY in the environment or in the repo-root .env file.`,
-			);
-		}
-		await this._startRun(text, options?.images ?? [], () => options?.preflightResult?.("started"));
-	}
-
-	/** Queues a steering message: it goes in after the current turn's tools, before the next model call. */
-	async steer(text: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
-		this._queueSteer(this._expandSkillCommand(text), images);
-		return "queued";
-	}
-
-	/** Queues a follow-up message: it runs when the agent has no more tool calls or steering messages. */
-	async followUp(text: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
-		this._queueFollowUp(this._expandSkillCommand(text), images);
-		return "queued";
-	}
-
-	private _queueSteer(text: string, images?: ImageContent[]): void {
-		this._steeringMessages.push(text);
-		this._emitQueueUpdate();
-		this.agent.steer({ role: "user", content: [{ type: "text", text }, ...(images ?? [])], timestamp: Date.now() });
-	}
-
-	private _queueFollowUp(text: string, images?: ImageContent[]): void {
-		this._followUpMessages.push(text);
-		this._emitQueueUpdate();
-		this.agent.followUp({
-			role: "user",
-			content: [{ type: "text", text }, ...(images ?? [])],
-			timestamp: Date.now(),
-		});
-	}
-
-	/** Aborts the active run (stream and tools) and any compaction, and resolves once idle. The queues stay. */
-	async abort(): Promise<void> {
-		if (this._isAgentRunActive) this._agentRunAbortRequested = true;
-		this.abortCompaction();
-		this.agent.abort();
-		await this.waitForIdle();
-	}
-
-	/** Resolves once the session is idle: after agent_settled, or when a compaction outside a run ends. */
-	waitForIdle(): Promise<void> {
-		if (this.isIdle) return Promise.resolve();
-		return new Promise((resolve) => this._idleWaiters.push(resolve));
-	}
-
-	private _resolveIdleWaitIfIdle(): void {
-		if (!this.isIdle) return;
-		for (const resolve of this._idleWaiters.splice(0)) resolve();
-	}
-
-	/**
-	 * `/skill:name args` becomes the skill's SKILL.md body (without frontmatter) in a <skill> block,
-	 * then the args. Unknown skills pass through unchanged. This also works for skills hidden from the model.
-	 */
-	private _expandSkillCommand(text: string): string {
-		if (!text.startsWith("/skill:")) return text;
-		const spaceIndex = text.indexOf(" ");
-		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
-		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
-		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
-		if (!skill) return text;
-		try {
-			const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
-			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-			return args ? `${skillBlock}\n\n${args}` : skillBlock;
-		} catch {
-			return text; // pi reports the read error to extensions and sends the text as typed
-		}
-	}
-
-	/** Diffs the sections the model has (replayed from the transcript) with the wanted ones. */
 	private _preparePromptAndToolLoadout(options: BuildSystemPromptOptions): SystemMessage | undefined {
 		const sections = buildSystemPromptSections(options);
 		const previous = getCurrentSystemMessage(this.agent.state.messages)?.sections;
@@ -473,6 +396,10 @@ export class AgentSession {
 			customPromptFiles: loader.getPromptFiles(),
 		});
 	}
+
+	// =========================================================================
+	// Prompting
+	// =========================================================================
 
 	/**
 	 * One run: compact first if needed, the system prompt update and the user message, the Agent's
@@ -518,8 +445,8 @@ export class AgentSession {
 		const messages: AgentMessage[] = [
 			{ role: "user", content: [{ type: "text", text }, ...images], timestamp: Date.now() },
 		];
-		const update = this._preparePromptAndToolLoadout(this._baseSystemPromptOptions);
-		if (update) messages.unshift(update);
+		const updateMessage = this._preparePromptAndToolLoadout(this._baseSystemPromptOptions);
+		if (updateMessage) messages.unshift(updateMessage);
 		return messages;
 	}
 
@@ -533,19 +460,127 @@ export class AgentSession {
 		return this._checkCompaction(message, true, toolResults);
 	}
 
-	private _findLastAssistantMessage(): AssistantMessage | undefined {
-		const messages = this.agent.state.messages;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") return msg;
+	/**
+	 * Sends a prompt. While a run is active it needs a streamingBehavior and is queued. Before a run
+	 * starts it checks the model's API key; after preflightResult("started"), failures are events.
+	 */
+	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		// Only a manual compaction refuses; during an automatic one a run is active, so the prompt is queued.
+		if (this._compactionAbortController !== undefined) {
+			throw new Error(
+				"Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.",
+			);
 		}
-		return undefined;
+		const expandedText = this._expandSkillCommand(text); // pi also expands prompt templates here
+
+		if (this.isStreaming) {
+			if (!options?.streamingBehavior) {
+				throw new Error(
+					"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+				);
+			}
+			if (options.streamingBehavior === "followUp") this._queueFollowUp(expandedText, options.images);
+			else this._queueSteer(expandedText, options.images);
+			options.preflightResult?.("queued");
+			return;
+		}
+
+		if (!this._getApiKey(this.model.provider)) {
+			throw new Error(
+				`No API key found for ${this.model.provider}.\n\nSet OPENROUTER_API_KEY in the environment or in the repo-root .env file.`,
+			);
+		}
+		await this._startRun(expandedText, options?.images ?? [], () => options?.preflightResult?.("started"));
 	}
 
-	private _emitAgentSettled(): void {
-		this._isAgentRunActive = false;
-		this._emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
-		this._resolveIdleWaitIfIdle();
+	/**
+	 * `/skill:name args` becomes the skill's SKILL.md body (without frontmatter) in a <skill> block,
+	 * then the args. Unknown skills pass through unchanged. This also works for skills hidden from the model.
+	 */
+	private _expandSkillCommand(text: string): string {
+		if (!text.startsWith("/skill:")) return text;
+		const spaceIndex = text.indexOf(" ");
+		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
+		if (!skill) return text;
+		try {
+			const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
+			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+			return args ? `${skillBlock}\n\n${args}` : skillBlock;
+		} catch {
+			return text; // pi reports the read error to extensions and sends the text as typed
+		}
+	}
+
+	/** Queues a steering message: it goes in after the current turn's tools, before the next model call. */
+	async steer(text: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
+		this._queueSteer(this._expandSkillCommand(text), images);
+		return "queued";
+	}
+
+	/** Queues a follow-up message: it runs when the agent has no more tool calls or steering messages. */
+	async followUp(text: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
+		this._queueFollowUp(this._expandSkillCommand(text), images);
+		return "queued";
+	}
+
+	private _queueSteer(text: string, images?: ImageContent[]): void {
+		this._steeringMessages.push(text);
+		this._emitQueueUpdate();
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }, ...(images ?? [])];
+		this.agent.steer({ role: "user", content, timestamp: Date.now() });
+	}
+
+	private _queueFollowUp(text: string, images?: ImageContent[]): void {
+		this._followUpMessages.push(text);
+		this._emitQueueUpdate();
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }, ...(images ?? [])];
+		this.agent.followUp({ role: "user", content, timestamp: Date.now() });
+	}
+
+	/** Steering plus follow-up messages that wait for the loop. */
+	get pendingMessageCount(): number {
+		return this._steeringMessages.length + this._followUpMessages.length;
+	}
+
+	/** Aborts the active run (stream and tools) and any compaction, and resolves once idle. The queues stay. */
+	async abort(): Promise<void> {
+		if (this._isAgentRunActive) this._agentRunAbortRequested = true;
+		this.abortCompaction();
+		this.agent.abort();
+		await this.waitForIdle();
+	}
+
+	/** Resolves once the session is idle: after agent_settled, or when a compaction outside a run ends. */
+	waitForIdle(): Promise<void> {
+		if (this.isIdle) return Promise.resolve();
+		return new Promise((resolve) => this._idleWaiters.push(resolve));
+	}
+
+	// =========================================================================
+	// Thinking Level Management
+	// =========================================================================
+
+	/**
+	 * Sets the thinking level, clamped to what the model supports. Only a real change is saved as
+	 * a thinking_level_change entry and announced with thinking_level_changed. The next model call uses it.
+	 */
+	setThinkingLevel(level: ThinkingLevel): void {
+		const effectiveLevel = this.getAvailableThinkingLevels().includes(level)
+			? level
+			: clampThinkingLevel(this.model, level);
+		const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
+		this.agent.state.thinkingLevel = effectiveLevel;
+		if (isChanging) {
+			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+			this._emit({ type: "thinking_level_changed", level: effectiveLevel });
+		}
+	}
+
+	/** The levels the current model supports (only "off" without reasoning). */
+	getAvailableThinkingLevels(): ThinkingLevel[] {
+		return getSupportedThinkingLevels(this.model);
 	}
 
 	// =========================================================================
@@ -576,7 +611,10 @@ export class AgentSession {
 		);
 	}
 
-	/** Saves the summary as a compaction entry and rebuilds the Agent's messages from it. */
+	/**
+	 * edupi: the steps compact() and _runAutoCompaction() share after the summary (pi repeats
+	 * them in both). Saves the compaction entry and rebuilds the Agent's messages from it.
+	 */
 	private _saveCompaction(compacted: CompactionResult, reason: CompactionReason): CompactionResult {
 		const { summary, firstKeptEntryId, tokensBefore, usage, details } = compacted;
 		this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, undefined, usage);
@@ -587,13 +625,17 @@ export class AgentSession {
 		return result;
 	}
 
+	private _clearManualCompactionState(): void {
+		this._compactionAbortController = undefined;
+		this._resolveIdleWaitIfIdle();
+	}
+
 	/** Manual compaction (RPC `compact`, pi's /compact). A running turn is aborted first. Never retries. */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		await this.abort();
 		this._compactionAbortController = new AbortController();
 		this._emit({ type: "compaction_start", reason: "manual" });
 		try {
-			const model = this.model;
 			const pathEntries = this.sessionManager.getBranch();
 			const preparation = prepareCompaction(pathEntries, this.settingsManager.getCompactionSettings());
 			if (!preparation) {
@@ -601,14 +643,16 @@ export class AgentSession {
 				if (lastEntry?.type === "compaction") throw new Error("Already compacted");
 				throw new Error("Nothing to compact (session too small)");
 			}
+
 			const result = await this._runDefaultCompaction(
 				preparation,
-				model,
+				this.model,
 				customInstructions,
 				this._compactionAbortController.signal,
 				"manual",
 			);
 			if (this._compactionAbortController.signal.aborted) throw new Error("Compaction cancelled");
+
 			const compactionResult = this._saveCompaction(result, "manual");
 			this._clearManualCompactionState(); // compaction_end listeners may send a prompt: be idle first
 			this._emit({
@@ -635,11 +679,6 @@ export class AgentSession {
 		} finally {
 			this._clearManualCompactionState();
 		}
-	}
-
-	private _clearManualCompactionState(): void {
-		this._compactionAbortController = undefined;
-		this._resolveIdleWaitIfIdle();
 	}
 
 	/** Cancels a running compaction (manual or automatic). */
@@ -697,7 +736,8 @@ export class AgentSession {
 			return this._runAutoCompaction("overflow", willRetry);
 		}
 
-		// Case 3: threshold. Without a usable usage (an error, or zero), estimate the context instead.
+		// Case 3: threshold. After a context edit the reply's usage no longer matches the context, and an
+		// error or zero usage gives no number: estimate the context then. Else use the reply's usage.
 		let contextTokens: number;
 		const projection = this.sessionManager.buildSessionProjection();
 		const directContextTokens = calculateContextTokens(assistantMessage.usage);
@@ -706,11 +746,9 @@ export class AgentSession {
 		} else if (assistantMessage.stopReason === "error" || directContextTokens === 0) {
 			const messages = this.agent.state.messages;
 			const estimate = estimateContextTokens(messages);
-			if (
-				estimate.lastUsageIndex !== null &&
-				this._isBeforeCompaction(messages[estimate.lastUsageIndex], compactionEntry)
-			)
-				return false;
+			// The estimate starts from the last usage; a usage from before the compaction is stale.
+			const usageMessage = estimate.lastUsageIndex === null ? undefined : messages[estimate.lastUsageIndex];
+			if (usageMessage && this._isBeforeCompaction(usageMessage, compactionEntry)) return false;
 			contextTokens = estimate.tokens;
 		} else {
 			contextTokens = directContextTokens;
@@ -732,20 +770,9 @@ export class AgentSession {
 		return messageIndex < branch.indexOf(compactionEntry);
 	}
 
-	/** Leaves the failed reply (and its tool results) out of the context with context_edit entries. */
-	private _omitRecoveryAttempt(message: AssistantMessage, toolResults: AgentMessage[] = []): void {
-		for (const target of [message, ...toolResults]) {
-			const targetId = this._entryIdsByMessage.get(target);
-			if (!targetId) continue;
-			const entry = this.sessionManager.getEntry(this.sessionManager.appendContextEdit(targetId, null));
-			if (entry) this._emit({ type: "entry_appended", entry });
-		}
-		this._refreshFinalizedContext();
-	}
-
 	/** Threshold or overflow compaction. Returns whether the run should continue (the overflow retry). */
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
-		let abortController: AbortController | undefined;
+		let abortController: AbortController | undefined; // set once compaction_start is sent
 		try {
 			const preparation = prepareCompaction(
 				this.sessionManager.getBranch(),
@@ -764,6 +791,7 @@ export class AgentSession {
 				reason,
 			);
 			abortController.signal.throwIfAborted();
+
 			const result = this._saveCompaction(compactResult, reason);
 			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
 			return willRetry;
@@ -783,5 +811,9 @@ export class AgentSession {
 			if (this._autoCompactionAbortController === abortController) this._autoCompactionAbortController = undefined;
 			this._resolveIdleWaitIfIdle();
 		}
+	}
+
+	get autoCompactionEnabled(): boolean {
+		return this.settingsManager.getCompactionEnabled();
 	}
 }

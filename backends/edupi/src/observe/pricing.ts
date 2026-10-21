@@ -74,7 +74,7 @@ export interface CostTotal {
 	billedUsd?: number;
 }
 
-/** Running sums over the process (all sessions), as educodex's add_totals. */
+/** Running sums, as educodex's add_totals. The Tracer starts a new total for each session. */
 export function addTotals(total: CostTotal | undefined, last: CostBreakdown): CostTotal {
 	const sum = <T extends object>(a: T | undefined, b: T): T =>
 		Object.fromEntries(

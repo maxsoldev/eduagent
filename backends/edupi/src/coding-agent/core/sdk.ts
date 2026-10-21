@@ -49,11 +49,11 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 	model ??= options.modelRegistry.find("openrouter", DEFAULT_MODEL_ID)!;
 
 	// The session's level, else pi's default; then clamped to what the model supports.
-	let thinkingLevel: ThinkingLevel =
+	const sessionLevel: ThinkingLevel =
 		hasExistingSession && hasThinkingEntry
 			? (existingSession.thinkingLevel as ThinkingLevel)
 			: DEFAULT_THINKING_LEVEL;
-	thinkingLevel = clampThinkingLevel(model, thinkingLevel);
+	const thinkingLevel = clampThinkingLevel(model, sessionLevel);
 
 	// pi's default coding tools, working in the session's directory.
 	const cwd = options.cwd ?? sessionManager.getCwd();
