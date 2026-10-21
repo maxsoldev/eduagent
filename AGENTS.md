@@ -8,7 +8,7 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 |---|---|
 | `backends/educodex/` | educodex, the Codex backend (Python): `src/educodex/`, `tests/`, `scripts/`, `examples/`, `spikes/`, `pyproject.toml`, `uv.lock` |
 | `backends/edupi/` | edupi, the pi backend (TypeScript, run with tsx): `src/ai/`, `src/agent/`, `src/coding-agent/` mirror pi's packages; `test/` (vitest over stdio, with the faux provider); `bin/edupi.mjs` |
-| `visualiser/` | The shared web UI (React, Vite, Playwright tests in `e2e/`) |
+| `visualiser/` | The visualiser, the shared web UI (React, Vite, Playwright tests in `e2e/`). It imports type-only from `@eduagent/edupi` and `@eduagent/launcher` (`launcher/src/api.ts`) |
 | `launcher/` | Serves the visualiser and starts one stdio backend per viewer (TypeScript, tsx). Backend list in `backends.json`; `backends.local.json` is git-ignored; `backends.test.json` is for Playwright |
 | `docs/guide/<backend>/` | The guide, one section per backend (`docs/guide/educodex/`, `docs/guide/edupi/`) |
 | `docs/design.md` | educodex design |
@@ -44,7 +44,8 @@ Guide links use the pinned commit.
 
 - Each file starts with the pi file it mirrors at `16f5f0af4`. Folders and file names follow pi's packages (`packages/ai/src` → `src/ai`, `packages/agent/src` → `src/agent`, `packages/coding-agent/src` → `src/coding-agent`).
 - The core is `src/ai/`, `src/agent/` and `src/coding-agent/core/`. It never imports `src/observe/`, `src/coding-agent/modes/`, `src/coding-agent/cli/` or `main.ts` (`backends/edupi/test/layers.test.ts`).
-- Dependencies are pi's own only: the OpenAI SDK (pointed at OpenRouter), and later typebox, diff and yaml.
+- Dependencies are pi's own only: the OpenAI SDK (pointed at OpenRouter), typebox, diff and yaml. The one exception is `tsx`, a runtime dependency so that `bin/edupi.mjs` runs the TypeScript sources with no build step (pi ships built JavaScript).
+- The visualiser imports edupi's wire types (`exports` in `backends/edupi/package.json`: `rpc-types`, `json-event`, `ai-types`, `agent-types`). Keep those files free of runtime imports the browser cannot load; type-only imports are fine.
 - `edupi --mode rpc` speaks pi's RPC protocol unchanged. Test it over stdio with `startEdupi(script)` in `backends/edupi/test/rpc-client.ts`; `--faux script.json` replaces OpenRouter with the faux provider, `--faux-log file` records each request body.
 
 ## Commands
