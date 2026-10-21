@@ -209,15 +209,7 @@ export class Agent {
 			}
 			throw new Error("Cannot continue from message role: assistant");
 		}
-		await this.runWithLifecycle(async (signal) => {
-			await runAgentLoopContinue(
-				this.createContextSnapshot(),
-				this.createLoopConfig(),
-				(event) => this.processEvents(event),
-				signal,
-				this.streamFunction,
-			);
-		});
+		await this.runContinuation();
 	}
 
 	private normalizePromptInput(
@@ -246,6 +238,19 @@ export class Agent {
 		});
 	}
 
+	private async runContinuation(): Promise<void> {
+		await this.runWithLifecycle(async (signal) => {
+			await runAgentLoopContinue(
+				this.createContextSnapshot(),
+				this.createLoopConfig(),
+				(event) => this.processEvents(event),
+				signal,
+				this.streamFunction,
+			);
+		});
+	}
+
+	/** Copies, so the loop's pushes do not touch the state; the state grows from message_end events. */
 	private createContextSnapshot(): AgentContext {
 		return { messages: this._state.messages.slice(), tools: this._state.tools.slice() };
 	}
@@ -274,6 +279,7 @@ export class Agent {
 		};
 	}
 
+	/** One run: sets the run state, runs the loop, and always clears the state when it ends. */
 	private async runWithLifecycle(executor: (signal: AbortSignal) => Promise<void>): Promise<void> {
 		if (this.activeRun) throw new Error("Agent is already processing.");
 		const abortController = new AbortController();

@@ -120,6 +120,7 @@ const PRICED = [
 		context_length: 200000,
 		top_provider: { context_length: 200000, max_completion_tokens: 32000 },
 		pricing: { prompt: "0.000001", completion: "0.000008", input_cache_read: "0.0000001" },
+		supported_parameters: ["tools"], // pi lists only models with tool support
 	},
 ];
 

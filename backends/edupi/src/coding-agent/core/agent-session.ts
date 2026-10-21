@@ -65,7 +65,8 @@ export type AgentSessionEvent =
 
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
-export type PromptDisposition = "handled" | "queued" | "started";
+export type QueuedInputDisposition = "handled" | "queued";
+export type PromptDisposition = QueuedInputDisposition | "started";
 
 export interface PromptOptions {
 	images?: ImageContent[];
@@ -128,7 +129,12 @@ export class AgentSession {
 		this.resourceLoader = config.resourceLoader;
 		this._probe = config.probe;
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
-		this.agent.prepareNextTurn = ({ context }) => this._compactBeforeNextAssistantResponse(context);
+		// pi's _installAgentNextTurnRefresh: each later turn gets the rebuilt context and the current model and level.
+		this.agent.prepareNextTurn = async ({ context }) => ({
+			context: (await this._compactBeforeNextAssistantResponse(context)).context,
+			model: this.agent.state.model,
+			thinkingLevel: this.agent.state.thinkingLevel,
+		});
 		this._refreshFinalizedContext(); // records the entry of each restored message
 		this._rebuildSystemPrompt(this.agent.state.tools.map((tool) => tool.name));
 		this._probe?.sessionStarted?.({ sessionId: this.sessionId });
@@ -157,8 +163,10 @@ export class AgentSession {
 		};
 	}
 
-	/** Stops listening to the Agent and drops the listeners (the session is being replaced). */
+	/** Stops the session's work, stops listening to the Agent and drops the listeners (the session is being replaced). */
 	dispose(): void {
+		this.abortCompaction();
+		this.agent.abort();
 		this._unsubscribeAgent();
 		this._eventListeners = [];
 	}
@@ -183,6 +191,9 @@ export class AgentSession {
 	}
 
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		// An abort that came while the run was starting (e.g. during the compaction before the
+		// prompt) stops it here. The loop awaits agent_start before the first request.
+		if (event.type === "agent_start" && this._agentRunAbortRequested) this.agent.abort();
 		// A queued message that starts leaves its queue first, so a client sees the queue change before the message.
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false; // a new user message allows a new overflow recovery
@@ -290,6 +301,11 @@ export class AgentSession {
 		return this._isAgentRunActive;
 	}
 
+	/** No active run and no compaction. */
+	get isIdle(): boolean {
+		return !this._isAgentRunActive && !this.isCompacting;
+	}
+
 	get isCompacting(): boolean {
 		return this._compactionAbortController !== undefined || this._autoCompactionAbortController !== undefined;
 	}
@@ -329,12 +345,13 @@ export class AgentSession {
 	 * starts it checks the model's API key; after preflightResult("started"), failures are events.
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
-		text = this._expandSkillCommand(text); // pi expands /skill:name and prompt templates first
-		if (this.isCompacting) {
+		// Only a manual compaction refuses; during an automatic one a run is active, so the prompt is queued.
+		if (this._compactionAbortController !== undefined) {
 			throw new Error(
 				"Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.",
 			);
 		}
+		text = this._expandSkillCommand(text); // pi also expands prompt templates here
 		if (this.isStreaming) {
 			if (!options?.streamingBehavior) {
 				throw new Error(
@@ -355,14 +372,14 @@ export class AgentSession {
 	}
 
 	/** Queues a steering message: it goes in after the current turn's tools, before the next model call. */
-	async steer(text: string, images?: ImageContent[]): Promise<PromptDisposition> {
-		this._queueSteer(text, images);
+	async steer(text: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
+		this._queueSteer(this._expandSkillCommand(text), images);
 		return "queued";
 	}
 
 	/** Queues a follow-up message: it runs when the agent has no more tool calls or steering messages. */
-	async followUp(text: string, images?: ImageContent[]): Promise<PromptDisposition> {
-		this._queueFollowUp(text, images);
+	async followUp(text: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
+		this._queueFollowUp(this._expandSkillCommand(text), images);
 		return "queued";
 	}
 
@@ -382,17 +399,23 @@ export class AgentSession {
 		});
 	}
 
-	/** Aborts the active run (stream and tools) and resolves once it has settled. The queues stay. */
+	/** Aborts the active run (stream and tools) and any compaction, and resolves once idle. The queues stay. */
 	async abort(): Promise<void> {
 		if (this._isAgentRunActive) this._agentRunAbortRequested = true;
+		this.abortCompaction();
 		this.agent.abort();
 		await this.waitForIdle();
 	}
 
-	/** Resolves after the active run's agent_settled; at once when idle. */
+	/** Resolves once the session is idle: after agent_settled, or when a compaction outside a run ends. */
 	waitForIdle(): Promise<void> {
-		if (!this._isAgentRunActive) return Promise.resolve();
+		if (this.isIdle) return Promise.resolve();
 		return new Promise((resolve) => this._idleWaiters.push(resolve));
+	}
+
+	private _resolveIdleWaitIfIdle(): void {
+		if (!this.isIdle) return;
+		for (const resolve of this._idleWaiters.splice(0)) resolve();
 	}
 
 	/**
@@ -463,6 +486,7 @@ export class AgentSession {
 			messages = await this._prepareRun(text, images);
 		} catch (error) {
 			this._isAgentRunActive = false;
+			this._resolveIdleWaitIfIdle();
 			throw error;
 		}
 		onStarted?.();
@@ -521,7 +545,7 @@ export class AgentSession {
 	private _emitAgentSettled(): void {
 		this._isAgentRunActive = false;
 		this._emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
-		for (const resolve of this._idleWaiters.splice(0)) resolve();
+		this._resolveIdleWaitIfIdle();
 	}
 
 	// =========================================================================
@@ -586,7 +610,7 @@ export class AgentSession {
 			);
 			if (this._compactionAbortController.signal.aborted) throw new Error("Compaction cancelled");
 			const compactionResult = this._saveCompaction(result, "manual");
-			this._compactionAbortController = undefined;
+			this._clearManualCompactionState(); // compaction_end listeners may send a prompt: be idle first
 			this._emit({
 				type: "compaction_end",
 				reason: "manual",
@@ -598,7 +622,7 @@ export class AgentSession {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const aborted = this._compactionAbortController?.signal.aborted ?? false;
-			this._compactionAbortController = undefined;
+			this._clearManualCompactionState();
 			this._emit({
 				type: "compaction_end",
 				reason: "manual",
@@ -609,8 +633,19 @@ export class AgentSession {
 			});
 			throw error;
 		} finally {
-			this._compactionAbortController = undefined;
+			this._clearManualCompactionState();
 		}
+	}
+
+	private _clearManualCompactionState(): void {
+		this._compactionAbortController = undefined;
+		this._resolveIdleWaitIfIdle();
+	}
+
+	/** Cancels a running compaction (manual or automatic). */
+	abortCompaction(): void {
+		this._compactionAbortController?.abort();
+		this._autoCompactionAbortController?.abort();
 	}
 
 	// The automatic cases, checked before a prompt and after each run. Returns whether the run goes on.
@@ -746,6 +781,7 @@ export class AgentSession {
 			return false;
 		} finally {
 			if (this._autoCompactionAbortController === abortController) this._autoCompactionAbortController = undefined;
+			this._resolveIdleWaitIfIdle();
 		}
 	}
 }
