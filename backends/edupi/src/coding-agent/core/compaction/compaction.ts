@@ -107,7 +107,7 @@ interface ContextUsageEstimate {
 }
 
 /** The last reported usage plus an estimate of every message after it (or an estimate of all). */
-export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
+function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
 	const index = messages.findLastIndex((message) => getAssistantUsage(message) !== undefined);
 	let tokens = index >= 0 ? calculateContextTokens(getAssistantUsage(messages[index])!) : 0;
 	for (let i = index + 1; i < messages.length; i++) tokens += estimateTokens(messages[i]);

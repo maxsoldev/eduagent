@@ -39,8 +39,3 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 	}
 	return false;
 }
-
-/** A length stop below the model's output limit: maybe context pressure, worth one compact and retry. */
-export function isRecoverableLength(message: AssistantMessage, desiredMaxOutput: number): boolean {
-	return message.stopReason === "length" && desiredMaxOutput > 0 && message.usage.output < desiredMaxOutput;
-}

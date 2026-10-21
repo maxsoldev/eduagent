@@ -20,8 +20,3 @@ export function getAgentDir(): string {
 	if (envDir) return resolve(envDir); // pi also expands a leading ~
 	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
-
-/** The sessions directory: one subfolder per working directory. */
-export function getSessionsDir(): string {
-	return join(getAgentDir(), "sessions");
-}
