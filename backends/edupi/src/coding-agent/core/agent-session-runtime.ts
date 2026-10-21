@@ -34,9 +34,8 @@ export class AgentSessionRuntime {
 		return { cancelled: false };
 	}
 
-	/** Aborts the active run first, so it ends (and is saved) in the old file. */
+	/** Aborts the active run first, so it ends (and is saved) in the old file. pi also disposes the old session. */
 	private async teardownCurrent(): Promise<void> {
 		await this._session.abort();
-		this._session.dispose();
 	}
 }

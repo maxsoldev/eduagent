@@ -2,7 +2,7 @@
 // session events in the JSON and RPC modes. Only message_update changes: the cumulative partial
 // message is dropped (message_start and the deltas rebuild it), the usage so far stays, and
 // toolcall_start gets the tool call's id and name.
-import type { AssistantMessageEvent, Usage } from "../../ai/types.ts";
+import type { AssistantMessage, AssistantMessageEvent, ToolCall, Usage } from "../../ai/types.ts";
 import type { AgentSessionEvent } from "../core/agent-session.ts";
 
 type WithoutPartial<T> = T extends { partial: unknown } ? Omit<T, "partial"> : T;
@@ -17,9 +17,7 @@ export type JsonAgentSessionEvent =
 
 function toJsonAssistantMessageEvent(event: AssistantMessageEvent): JsonAssistantMessageEvent {
 	if (event.type === "toolcall_start") {
-		const toolCall = event.partial.content[event.contentIndex];
-		if (toolCall?.type !== "toolCall")
-			throw new Error(`toolcall_start content at index ${event.contentIndex} is not a tool call`);
+		const toolCall = event.partial.content[event.contentIndex] as ToolCall;
 		const { partial: _partial, ...deltaEvent } = event;
 		return { ...deltaEvent, id: toolCall.id, toolName: toolCall.name };
 	}
@@ -30,10 +28,9 @@ function toJsonAssistantMessageEvent(event: AssistantMessageEvent): JsonAssistan
 
 export function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent {
 	if (event.type !== "message_update") return event;
-	if (event.message.role !== "assistant") throw new Error("message_update message is not an assistant message");
 	return {
 		type: "message_update",
-		usage: event.message.usage,
+		usage: (event.message as AssistantMessage).usage, // only assistant messages stream
 		assistantMessageEvent: toJsonAssistantMessageEvent(event.assistantMessageEvent),
 	};
 }

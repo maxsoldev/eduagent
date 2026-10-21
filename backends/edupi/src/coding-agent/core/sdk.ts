@@ -39,7 +39,6 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 	const { sessionManager } = options;
 	const existingSession = sessionManager.buildSessionContext();
 	const hasExistingSession = existingSession.messages.length > 0;
-	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
 	// pi looks the session's model up in its model registry. edupi knows only OpenRouter models.
 	let model = options.model;
@@ -49,10 +48,7 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 	model ??= options.modelRegistry.find("openrouter", DEFAULT_MODEL_ID)!;
 
 	// The session's level, else pi's default; then clamped to what the model supports.
-	const sessionLevel: ThinkingLevel =
-		hasExistingSession && hasThinkingEntry
-			? (existingSession.thinkingLevel as ThinkingLevel)
-			: DEFAULT_THINKING_LEVEL;
+	const sessionLevel = hasExistingSession ? (existingSession.thinkingLevel as ThinkingLevel) : DEFAULT_THINKING_LEVEL;
 	const thinkingLevel = clampThinkingLevel(model, sessionLevel);
 
 	// pi's default coding tools, working in the session's directory.
@@ -88,9 +84,7 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 	});
 
 	// Record the settings, so a reopened session restores them.
-	if (hasExistingSession) {
-		if (!hasThinkingEntry) sessionManager.appendThinkingLevelChange(thinkingLevel);
-	} else {
+	if (!hasExistingSession) {
 		sessionManager.appendModelChange(model.provider, model.id);
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}

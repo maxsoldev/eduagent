@@ -26,20 +26,24 @@ export interface DebugCommands {
 	getContext(session: AgentSession): Promise<RpcDebugContext>;
 }
 
+/** edupi only: the teaching extras' hooks into RPC mode. */
 export interface RpcModeOptions {
-	/** edupi: gets the protocol line writer, so the tracer can send trace messages on stdout. */
-	connect?: (output: (message: object) => void) => void;
-	/** edupi: answers the debug_ commands; without it they are unknown, as in pi. */
-	debug?: DebugCommands;
+	/** Gets the protocol line writer, so the tracer can send trace messages on stdout. */
+	connect: (output: (message: object) => void) => void;
+	/** Answers the debug_ commands. */
+	debug: DebugCommands;
 }
 
-export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcModeOptions = {}): Promise<never> {
+/** The text of a thrown value. */
+const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcModeOptions): Promise<never> {
 	const writeRawStdout = takeOverStdout();
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 
 	const output = (obj: RpcResponse | object) => writeRawStdout(serializeJsonLine(obj));
-	options.connect?.(output);
+	options.connect(output);
 
 	const success = (id: string | undefined, command: string, data?: object | null): RpcResponse => {
 		if (data === undefined) return { id, type: "response", command, success: true } as RpcResponse;
@@ -60,7 +64,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 
 	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
 		const id = command.id;
-		const unknown = (type: string) => error(id, type, `Unknown command: ${type}`);
 
 		switch (command.type) {
 			case "prompt": {
@@ -123,8 +126,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 			}
 
 			case "new_session": {
-				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-				const result = await runtimeHost.newSession(options);
+				const result = await runtimeHost.newSession();
 				if (!result.cancelled) rebindSession();
 				return success(id, "new_session", result);
 			}
@@ -150,23 +152,21 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 
 			// edupi's teaching extras (not in pi): step mode and the context inspector.
 			case "debug_set_step_mode": {
-				if (!options.debug) return unknown(command.type);
 				return success(id, "debug_set_step_mode", options.debug.setStepMode(command.enabled, command.breakpoints));
 			}
 
 			case "debug_continue": {
-				if (!options.debug) return unknown(command.type);
 				options.debug.continue();
 				return success(id, "debug_continue");
 			}
 
 			case "debug_get_context": {
-				if (!options.debug) return unknown(command.type);
 				return success(id, "debug_get_context", await options.debug.getContext(session));
 			}
 
 			default: {
-				return unknown((command as { type: string }).type);
+				const type = (command as { type: string }).type;
+				return error(id, type, `Unknown command: ${type}`);
 			}
 		}
 	};
@@ -176,13 +176,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 		try {
 			parsed = JSON.parse(line);
 		} catch (parseError: unknown) {
-			output(
-				error(
-					undefined,
-					"parse",
-					`Failed to parse command: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				),
-			);
+			output(error(undefined, "parse", `Failed to parse command: ${errorMessage(parseError)}`));
 			return;
 		}
 		const command = parsed as RpcCommand;
@@ -190,20 +184,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 			const response = await handleCommand(command);
 			if (response) output(response);
 		} catch (commandError: unknown) {
-			output(
-				error(
-					command.id,
-					command.type,
-					commandError instanceof Error ? commandError.message : String(commandError),
-				),
-			);
+			output(error(command.id, command.type, errorMessage(commandError)));
 		}
 	};
 
-	// The client closes stdin to end the session. SIGTERM (the launcher) exits with 143 and SIGHUP with 129, as in pi.
+	// The client closes stdin to end the session. SIGTERM (the launcher) exits with 143, as in pi.
 	process.stdin.on("end", () => writeRawStdout("", () => process.exit(0))); // flush stdout first
 	process.on("SIGTERM", () => process.exit(143));
-	if (process.platform !== "win32") process.on("SIGHUP", () => process.exit(129));
 	attachJsonlLineReader(process.stdin, (line) => {
 		void handleInputLine(line);
 	});

@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import type { Agent } from "../../agent/agent.ts";
 import type { AgentContext, AgentEvent, AgentMessage, QueueMode } from "../../agent/types.ts";
-import { clampThinkingLevel, getSupportedThinkingLevels } from "../../ai/models.ts";
+import { clampThinkingLevel } from "../../ai/models.ts";
 import type {
 	AssistantMessage,
 	ImageContent,
@@ -16,7 +16,7 @@ import type {
 	ThinkingLevel,
 	ToolResultMessage,
 } from "../../ai/types.ts";
-import { isContextOverflow, isRecoverableLength } from "../../ai/utils/overflow.ts";
+import { isContextOverflow } from "../../ai/utils/overflow.ts";
 import { contentText, getCurrentSystemMessage } from "../../ai/utils/transcript.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import {
@@ -24,7 +24,6 @@ import {
 	type CompactionResult,
 	calculateContextTokens,
 	compact,
-	estimateContextTokens,
 	estimateProjectedContextTokens,
 	estimateTokens,
 	prepareCompaction,
@@ -37,7 +36,6 @@ import {
 	getLatestCompactionEntry,
 	type SessionEntry,
 	type SessionManager,
-	type SessionProjection,
 } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import { type BuildSystemPromptOptions, buildSystemPromptSections, diffSystemPromptSections } from "./system-prompt.ts";
@@ -88,12 +86,6 @@ export interface AgentSessionConfig {
 	probe?: Probe;
 }
 
-function estimateMessagesTokens(messages: AgentMessage[]): number {
-	let tokens = 0;
-	for (const message of messages) tokens += estimateTokens(message);
-	return tokens;
-}
-
 export class AgentSession {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
@@ -102,7 +94,6 @@ export class AgentSession {
 	private readonly _getApiKey: (provider: string) => string | undefined;
 	private readonly _probe: Probe | undefined;
 	private _eventListeners: AgentSessionEventListener[] = [];
-	private _unsubscribeAgent: () => void;
 
 	// Run state
 	private _isAgentRunActive = false; // from _startRun until agent_settled
@@ -134,21 +125,11 @@ export class AgentSession {
 		this.resourceLoader = config.resourceLoader;
 		this._probe = config.probe;
 
-		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+		this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentNextTurnRefresh();
 		this._refreshFinalizedContext(); // records the entry of each restored message
 		this._rebuildSystemPrompt(this.agent.state.tools.map((tool) => tool.name));
 		this._probe?.sessionStarted?.({ sessionId: this.sessionId });
-	}
-
-	/** Whether the context, as the session file gives it, is above the model's compaction threshold. */
-	private _exceedsCompactionThreshold(model: Model, projection: SessionProjection): boolean {
-		if (model.contextWindow <= 0) return false;
-		return shouldCompact(
-			estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens,
-			model.contextWindow,
-			this.settingsManager.getCompactionSettings(),
-		);
 	}
 
 	/**
@@ -157,7 +138,8 @@ export class AgentSession {
 	 */
 	private async _compactBeforeNextAssistantResponse(context: AgentContext): Promise<AgentContext> {
 		const projection = this.sessionManager.buildSessionProjection();
-		if (!this._exceedsCompactionThreshold(this.model, projection))
+		const tokens = estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens;
+		if (!shouldCompact(tokens, this.model.contextWindow, this.settingsManager.getCompactionSettings()))
 			return { ...context, messages: projection.messages };
 		await this._runAutoCompaction("threshold", false);
 		return { ...context, messages: this.sessionManager.buildSessionProjection().messages };
@@ -209,10 +191,6 @@ export class AgentSession {
 	}
 
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
-		// An abort that came while the run was starting (e.g. during the compaction before the
-		// prompt) stops it here. The loop awaits agent_start before the first request.
-		if (event.type === "agent_start" && this._agentRunAbortRequested) this.agent.abort();
-
 		// A queued message that starts leaves its queue first, so a client sees the queue change before the message.
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false; // a new user message allows a new overflow recovery
@@ -247,8 +225,7 @@ export class AgentSession {
 			}
 			if (message.role === "assistant") {
 				this._lastAssistantMessage = message;
-				if (message.stopReason !== "error" && message.stopReason !== "length")
-					this._overflowRecoveryAttempted = false;
+				if (message.stopReason !== "error") this._overflowRecoveryAttempted = false;
 			}
 		}
 		if (event.type === "turn_end") this._lastAssistantToolResults = event.toolResults;
@@ -266,12 +243,7 @@ export class AgentSession {
 	}
 
 	private _findLastAssistantMessage(): AssistantMessage | undefined {
-		const messages = this.agent.state.messages;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") return msg;
-		}
-		return undefined;
+		return this.agent.state.messages.findLast((msg) => msg.role === "assistant");
 	}
 
 	subscribe(listener: AgentSessionEventListener): () => void {
@@ -279,14 +251,6 @@ export class AgentSession {
 		return () => {
 			this._eventListeners = this._eventListeners.filter((l) => l !== listener);
 		};
-	}
-
-	/** Stops the session's work, stops listening to the Agent and drops the listeners (the session is being replaced). */
-	dispose(): void {
-		this.abortCompaction();
-		this.agent.abort();
-		this._unsubscribeAgent();
-		this._eventListeners = [];
 	}
 
 	// =========================================================================
@@ -504,13 +468,9 @@ export class AgentSession {
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
 		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
 		if (!skill) return text;
-		try {
-			const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
-			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-			return args ? `${skillBlock}\n\n${args}` : skillBlock;
-		} catch {
-			return text; // pi reports the read error to extensions and sends the text as typed
-		}
+		const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
+		const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+		return args ? `${skillBlock}\n\n${args}` : skillBlock;
 	}
 
 	/** Queues a steering message: it goes in after the current turn's tools, before the next model call. */
@@ -567,20 +527,13 @@ export class AgentSession {
 	 * a thinking_level_change entry and announced with thinking_level_changed. The next model call uses it.
 	 */
 	setThinkingLevel(level: ThinkingLevel): void {
-		const effectiveLevel = this.getAvailableThinkingLevels().includes(level)
-			? level
-			: clampThinkingLevel(this.model, level);
+		const effectiveLevel = clampThinkingLevel(this.model, level); // a supported level stays as it is
 		const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
 		this.agent.state.thinkingLevel = effectiveLevel;
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 			this._emit({ type: "thinking_level_changed", level: effectiveLevel });
 		}
-	}
-
-	/** The levels the current model supports (only "off" without reasoning). */
-	getAvailableThinkingLevels(): ThinkingLevel[] {
-		return getSupportedThinkingLevels(this.model);
 	}
 
 	// =========================================================================
@@ -619,7 +572,8 @@ export class AgentSession {
 		const { summary, firstKeptEntryId, tokensBefore, usage, details } = compacted;
 		this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, undefined, usage);
 		this._refreshFinalizedContext();
-		const estimatedTokensAfter = estimateMessagesTokens(this.sessionManager.buildSessionProjection().messages);
+		const messagesAfter = this.sessionManager.buildSessionProjection().messages;
+		const estimatedTokensAfter = messagesAfter.reduce((tokens, message) => tokens + estimateTokens(message), 0);
 		const result = { summary, firstKeptEntryId, tokensBefore, estimatedTokensAfter, usage, details };
 		void this._probe?.compacted?.({ reason, ...result, messages: this.agent.state.messages });
 		return result;
@@ -676,8 +630,6 @@ export class AgentSession {
 				errorMessage: aborted ? undefined : `Compaction failed: ${message}`,
 			});
 			throw error;
-		} finally {
-			this._clearManualCompactionState();
 		}
 	}
 
@@ -688,8 +640,8 @@ export class AgentSession {
 	}
 
 	// The automatic cases, checked before a prompt and after each run. Returns whether the run goes on.
-	// 1. Overflow with retry: the provider refused the context (or a length stop came early): drop the
-	//    failed reply, compact, and continue the run once.
+	// 1. Overflow with retry: the provider refused the context: drop the failed reply, compact, and
+	//    continue the run once.
 	// 2. Overflow without retry: the reply succeeded but its input exceeded the window. Compact.
 	// 3. Threshold: the context is above contextWindow - reserveTokens. Compact, no retry.
 	private async _checkCompaction(
@@ -711,16 +663,13 @@ export class AgentSession {
 		if (this._isBeforeCompaction(assistantMessage, compactionEntry)) return false;
 
 		// Cases 1 and 2: context overflow.
-		const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
-		const recoverableLength = sameModel && isRecoverableLength(assistantMessage, model.maxTokens);
-		if (contextOverflow || recoverableLength) {
+		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 			if (!willRetry) return this._runAutoCompaction("overflow", false);
 
 			if (this._overflowRecoveryAttempted) {
-				const errorMessage = contextOverflow
-					? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."
-					: "Truncated response recovery failed after one compact-and-retry attempt.";
+				const errorMessage =
+					"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.";
 				this._emit({
 					type: "compaction_end",
 					reason: "overflow",
@@ -738,20 +687,11 @@ export class AgentSession {
 
 		// Case 3: threshold. After a context edit the reply's usage no longer matches the context, and an
 		// error or zero usage gives no number: estimate the context then. Else use the reply's usage.
-		let contextTokens: number;
 		const projection = this.sessionManager.buildSessionProjection();
-		const directContextTokens = calculateContextTokens(assistantMessage.usage);
-		if (projection.entries.some((entry) => entry.sourceEntry.type === "context_edit")) {
+		let contextTokens = calculateContextTokens(assistantMessage.usage);
+		const hasContextEdit = projection.entries.some((entry) => entry.sourceEntry.type === "context_edit");
+		if (hasContextEdit || assistantMessage.stopReason === "error" || contextTokens === 0) {
 			contextTokens = estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens;
-		} else if (assistantMessage.stopReason === "error" || directContextTokens === 0) {
-			const messages = this.agent.state.messages;
-			const estimate = estimateContextTokens(messages);
-			// The estimate starts from the last usage; a usage from before the compaction is stale.
-			const usageMessage = estimate.lastUsageIndex === null ? undefined : messages[estimate.lastUsageIndex];
-			if (usageMessage && this._isBeforeCompaction(usageMessage, compactionEntry)) return false;
-			contextTokens = estimate.tokens;
-		} else {
-			contextTokens = directContextTokens;
 		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) return this._runAutoCompaction("threshold", false);
 		return false;
@@ -764,10 +704,8 @@ export class AgentSession {
 	private _isBeforeCompaction(message: AgentMessage, compactionEntry: CompactionEntry | null): boolean {
 		if (!compactionEntry) return false;
 		const branch = this.sessionManager.getBranch();
-		const entryId = this._entryIdsByMessage.get(message);
-		const messageIndex = entryId ? branch.findIndex((entry) => entry.id === entryId) : -1;
-		if (messageIndex < 0) return message.timestamp <= new Date(compactionEntry.timestamp).getTime();
-		return messageIndex < branch.indexOf(compactionEntry);
+		const entryId = this._entryIdsByMessage.get(message); // every message of the context has one
+		return branch.findIndex((entry) => entry.id === entryId) < branch.indexOf(compactionEntry);
 	}
 
 	/** Threshold or overflow compaction. Returns whether the run should continue (the overflow retry). */
@@ -808,7 +746,7 @@ export class AgentSession {
 			}
 			return false;
 		} finally {
-			if (this._autoCompactionAbortController === abortController) this._autoCompactionAbortController = undefined;
+			this._autoCompactionAbortController = undefined;
 			this._resolveIdleWaitIfIdle();
 		}
 	}
