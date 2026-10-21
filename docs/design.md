@@ -41,10 +41,16 @@ With `openai/gpt-6-luna` on OpenRouter:
 ## Architecture
 
 ```
-┌────────────┐ ┌─────────────┐ ┌─────────┐
-│ React web  │ │ Textual TUI │ │ CLI     │   clients
-└─────┬──────┘ └──────┬──────┘ └─────┬───┘
-      │ WebSocket     │ stdio (JSONL)│ in-process
+┌────────────┐
+│ React web  │
+└─────┬──────┘
+      │ WebSocket
+┌─────┴──────┐
+│ launcher   │                               one process per viewer
+└─────┬──────┘ ┌─────────────┐ ┌─────────┐
+      │        │ Textual TUI │ │ CLI     │   clients
+      │        └──────┬──────┘ └─────┬───┘
+      │ stdio (JSONL) │ stdio (JSONL)│ in-process
 ┌─────┴───────────────┴──────┐       │
 │ app_server                 │       │       JSON-RPC lite; maps core events → notifications
 └─────────────┬──────────────┘       │
@@ -92,7 +98,7 @@ Everything educodex adds for teaching lives in `observe/`. The core calls a `Pro
 | `core/memories/` | Read path, citations, `/memory-update` (phase 1 + phase-2 sub-agent), `/memory-drop` | `memories/`, `ext/memories/`, `state/` (memories tables) |
 | `observe/tracer.py` | `trace/*` events (a `Probe` subclass) | – (educodex only) |
 | `observe/pricing.py`, `observe/stepper.py` | Request costs; step mode | – (educodex only) |
-| `app_server/` | JSON-RPC lite over WebSocket and stdio | `app-server/`, `app-server-protocol/`, `app-server-transport/` |
+| `app_server/` | JSON-RPC lite over stdio | `app-server/`, `app-server-protocol/`, `app-server-transport/` |
 | `testing/fake_model.py` | Scripted Responses SSE for tests and offline demos | – |
 | `cli.py`, `tui.py` | Terminal clients | `cli/`, `tui/` |
 
@@ -148,7 +154,7 @@ Tools that can run in parallel share a read lock; the rest take the write lock, 
 
 ## App-server protocol
 
-JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over stdio or as one message per WebSocket frame. The WebSocket only accepts loopback origins.
+JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over stdio (Codex's default transport). The web UI reaches it through the launcher, which turns each WebSocket frame into one line and accepts only loopback origins.
 
 | Kind | Codex v2 methods (same names) |
 |---|---|

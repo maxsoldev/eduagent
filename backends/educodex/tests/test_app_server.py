@@ -83,3 +83,28 @@ def test_skills_list_skill_input_and_memory_methods(app_server, workspace, tmp_p
     (home / "memories" / "MEMORY.md").write_text("x")
     assert server.request("memory/reset")["result"] == {}
     assert not (home / "memories").exists()
+
+
+def _start(workspace, tmp_path, *flags):
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "EDUCODEX_HOME": str(tmp_path / "home"), "OPENROUTER_API_KEY": "test"}
+    return subprocess.run([sys.executable, "-m", "educodex.cli", "app-server", *flags], cwd=workspace, env=env,
+                          input=json.dumps({"id": 1, "method": "initialize", "params": {}}) + "\n",
+                          capture_output=True, text=True, timeout=15)
+
+
+def test_stdio_is_the_default_transport(workspace, tmp_path):
+    # As in Codex: `app-server` without --listen speaks JSONL on stdin/stdout.
+    done = _start(workspace, tmp_path)
+    reply = json.loads(done.stdout.splitlines()[0])
+    assert reply["id"] == 1 and reply["result"]["userAgent"].startswith("educodex/")
+
+
+def test_other_listen_urls_are_refused(workspace, tmp_path):
+    done = _start(workspace, tmp_path, "--listen", "ws://127.0.0.1:8765")
+    assert done.returncode != 0
+    assert "unsupported --listen URL `ws://127.0.0.1:8765`" in done.stderr
+    assert done.stdout == ""

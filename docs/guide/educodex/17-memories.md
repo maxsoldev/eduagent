@@ -220,10 +220,11 @@ mkdir -p /tmp/memory-proj && cd /tmp/memory-proj && git init -q
    uv run --project /path/to/educodex educodex exec --cwd . "Create notes.md with a short to-do list. Also remember: I always want British spelling."
    ```
 
-2. **Run the write path.** Start the web UI with memories on and type `/memory-update`:
+2. **Run the write path.** Start the web UI with memories on and type `/memory-update`. Add this entry to `launcher/backends.local.json` ([the web UI](README.md#the-web-ui)), start the launcher, and pick **educodex-memories** with the same directory as in step 1:
 
-   ```bash
-   uv run --project /path/to/educodex educodex app-server --memories --cwd .
+   ```json
+   { "name": "educodex-memories", "harness": "Codex", "protocol": "codex-app-server",
+     "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--memories"] }
    ```
 
    In the **Timeline**, follow `Memory: session logs chosen`, `Memory: phase-1 request` (open it to see the filtered conversation and the JSON schema), `Memory: extracted`, `Memory: phase 2 starts` and the `Memory agent step` rows. The chat shows one memory card with the results.

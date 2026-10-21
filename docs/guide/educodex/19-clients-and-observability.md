@@ -136,7 +136,7 @@ Because each viewer has its own process, two browser tabs never share threads. O
 
 ### TUI over stdio ([`tui.py`](../../../backends/educodex/src/educodex/tui.py))
 
-The Textual TUI starts `educodex app-server --listen stdio://` as a child process and speaks JSONL over its pipes. It is the same protocol as the web UI, only over a different transport:
+The Textual TUI starts `educodex app-server --listen stdio://` (the default transport) as a child process and speaks JSONL over its pipes. It is the same protocol as the web UI, only over a different transport:
 
 ```python
 while line := await self.proc.stdout.readline():
@@ -238,7 +238,7 @@ It is used in three places:
 - **Untyped clients.** The web UI uses `any` for payloads. Codex clients use generated types.
 - **Simple reconnects.** `thread/read` with `includeTrace` returns the whole event log. Codex has thread resume, history paging and lossless event queues.
 - **One fake-model script per thread.** Each `thread/start` creates a fresh `FakeModel`, so "new thread" restarts the script. A manual compaction also uses up one scripted response.
-- **The launcher is not part of Codex.** Codex's clients start `codex app-server` themselves (stdio), or connect to its WebSocket listener. educodex needs the launcher only because a browser cannot start a process.
+- **The launcher is not part of Codex.** Codex's clients start `codex app-server` themselves (stdio), or connect to its WebSocket or Unix socket listener (chapter 18). educodex needs the launcher only because a browser cannot start a process.
 - **The TUI is minimal:** no diff view, no history browsing, five slash commands (Codex has about 60), and a hint line instead of a selectable list.
 
 ## Try it
@@ -246,7 +246,7 @@ It is used in three places:
 1. **Web UI, offline:** add a fake-model entry to `launcher/backends.local.json` (the launcher reads it next to `backends.json`):
    ```json
    { "backends": [{ "name": "educodex-demo", "harness": "Codex", "protocol": "codex-app-server",
-     "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://",
+     "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server",
                  "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"] }] }
    ```
    ```bash

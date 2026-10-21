@@ -1,5 +1,5 @@
 """Command line: `educodex exec "task"` runs one turn and prints every step;
-`educodex app-server` serves the JSON-RPC protocol for the web UI / TUI.
+`educodex app-server` serves the JSON-RPC protocol over stdio for the launcher (web UI) and the TUI.
 """
 
 import argparse
@@ -149,8 +149,8 @@ def main(argv: list[str] | None = None) -> None:
     p_exec.add_argument("-v", "--verbose", action="store_true", help="also print raw JSON and deltas")
     common(p_exec)
 
-    p_srv = sub.add_parser("app-server", help="serve JSON-RPC lite over WebSocket (and the web UI) or stdio")
-    p_srv.add_argument("--listen", default="ws://127.0.0.1:8765", help="ws://HOST:PORT or stdio://")
+    p_srv = sub.add_parser("app-server", help="serve JSON-RPC lite over stdio (JSONL on stdin/stdout)")
+    p_srv.add_argument("--listen", default="stdio://", help="transport URL; only stdio:// (the Codex default)")
     common(p_srv)
 
     p_tui = sub.add_parser("tui", help="terminal UI that talks to an app server over stdio")
