@@ -8,10 +8,12 @@ import type {
 	AgentContext,
 	AgentEvent,
 	AgentLoopConfig,
+	AgentLoopTurnUpdate,
 	AgentMessage,
 	AgentProbe,
 	AgentState,
 	AgentTool,
+	PrepareNextTurnContext,
 	QueueMode,
 	StreamFn,
 	ThinkingLevel,
@@ -95,7 +97,10 @@ export class Agent {
 	public toolExecution: ToolExecutionMode;
 	public probe?: AgentProbe;
 	/** Before each later turn of a run; the session sets it (pi: prepareNextTurnWithContext). */
-	public prepareNextTurn?: AgentLoopConfig["prepareNextTurn"];
+	public prepareNextTurn?: (
+		turn: PrepareNextTurnContext,
+		signal?: AbortSignal,
+	) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
 
 	constructor(options: AgentOptions) {
 		this._state = {
@@ -263,7 +268,9 @@ export class Agent {
 			},
 			getFollowUpMessages: async () => this.followUpQueue.drain(),
 			probe: this.probe,
-			prepareNextTurn: this.prepareNextTurn,
+			prepareNextTurn: this.prepareNextTurn
+				? async (turn) => await this.prepareNextTurn?.(turn, this.signal)
+				: undefined,
 		};
 	}
 
