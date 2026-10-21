@@ -51,6 +51,10 @@ An `abort` also ends a pause: the probe gets the run's abort signal. The aborted
 
 `tokens` and `autoCompactLimit` are the two numbers pi's threshold rule compares (chapter 07): the context size from the last reply's usage plus estimates for the messages after it, and `contextWindow - reserveTokens` (16384 by default, from `settings.json`). The context bar draws them, so you can watch a session get close to compaction.
 
+### The loop's decision: `loopIteration`
+
+After each model reply, right after pi's `turn_end`, the loop calls `probe.loopIteration`. The tracer sends `loopIteration {iteration, needsFollowUp, tokens, stopReason, decision}`, the same event as educodex's ([educodex chapter 04](../educodex/04-agentic-loop.md)). `needsFollowUp` is true when the reply called tools. `decision` is `continue` when the loop calls the model again: for tool results, or for steering messages that wait (chapter 02). A follow-up message can still start a new inner loop after a `stop`. `tokens` is the reply's `usage.totalTokens`, the number pi's threshold rule starts from.
+
 ### Cost: pi's usage, regrouped
 
 pi already prices every response: its provider multiplies the usage by the model's prices (`Model.cost`, USD per million tokens, from OpenRouter's model list in edupi; chapter 01). edupi's tracer regroups these numbers into educodex's shapes, so the cost panel reads both backends:
@@ -64,10 +68,10 @@ The summary request of a compaction goes through the same provider, so it has a 
 
 | File | What |
 |---|---|
-| [`src/agent/types.ts`](../../../backends/edupi/src/agent/types.ts) | `AgentProbe.checkpoint(name, info, signal)` and the `Checkpoint` names |
-| [`src/agent/agent-loop.ts`](../../../backends/edupi/src/agent/agent-loop.ts) | The three `checkpoint` calls: in `streamAssistantResponse`, after `toolDispatch`, and in `emitToolExecutionEnd` |
+| [`src/agent/types.ts`](../../../backends/edupi/src/agent/types.ts) | `AgentProbe.checkpoint(name, info, signal)` and the `Checkpoint` names; `AgentProbe.loopIteration` |
+| [`src/agent/agent-loop.ts`](../../../backends/edupi/src/agent/agent-loop.ts) | The three `checkpoint` calls: in `streamAssistantResponse`, after `toolDispatch`, and in `emitToolExecutionEnd`; `loopIteration` after each `turn_end` in `runLoop` |
 | [`src/observe/stepper.ts`](../../../backends/edupi/src/observe/stepper.ts) | `Stepper`: breakpoints, one pause at a time, release on continue, step mode off or abort |
-| [`src/observe/tracer.ts`](../../../backends/edupi/src/observe/tracer.ts) | `Tracer.checkpoint` (`paused`, `resumed`), `pricing`, `cost`; `sessionStarted` resets the total |
+| [`src/observe/tracer.ts`](../../../backends/edupi/src/observe/tracer.ts) | `Tracer.checkpoint` (`paused`, `resumed`), `loopIteration`, `pricing`, `cost`; `sessionStarted` resets the total |
 | [`src/observe/pricing.ts`](../../../backends/edupi/src/observe/pricing.ts) | pi's `usage.cost` in educodex's cost shapes |
 | [`src/observe/debug.ts`](../../../backends/edupi/src/observe/debug.ts) | The `debug_` commands; `getContext` builds the next body |
 | [`src/coding-agent/modes/rpc/rpc-mode.ts`](../../../backends/edupi/src/coding-agent/modes/rpc/rpc-mode.ts) | The `debug_` cases; `main.ts` passes `debugCommands(tracer)` in |
@@ -102,13 +106,12 @@ Codex has no step mode either; both are educodex's and edupi's own. The two back
 ## Where edupi is simpler
 
 - **Breakpoints only at the three checkpoints.** No pause before a compaction's summary request, as in educodex.
-- **No `loopIteration` event.** educodex sends the loop's decision after each model call; edupi's loop decisions are pi's own events (`turn_end`, `agent_end`, chapter 02).
 - **No prompt cache in the faux provider.** Its usage has no cached tokens, so offline the cost panel shows 0% read from cache. A real OpenRouter model reports them.
 - **One rate per kind.** pi's `Model.cost` has no long-context prices, so `pricing.longContext` is always `null`.
 
 ## Try it
 
-1. **In the viewer:** add `"stepMode"` to an `edupi-faux` entry's capabilities (see the [README](README.md#the-web-ui)) and use `examples/faux/step.json`, which prices the model and runs one `bash` call. Tick **step mode**, send a message, and open the **Context** tab while it is paused. Press **Continue** and watch the tab change after each step. The cost panel and the header badge show the prices from the script's model list.
+1. **In the viewer:** add `"stepMode"` to an `edupi-faux` entry's capabilities (see the [README](README.md#the-visualiser)) and use `examples/faux/step.json`, which prices the model and runs one `bash` call. Tick **step mode**, send a message, and open the **Context** tab while it is paused. Press **Continue** and watch the tab change after each step. The cost panel and the header badge show the prices from the script's model list.
 2. **Over stdio:**
    ```bash
    node bin/edupi.mjs --mode rpc --faux examples/faux/step.json

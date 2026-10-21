@@ -185,7 +185,7 @@ jq -r '.type + " " + (.payload.type // "")' "$f" | sort | uniq -c
 
 Then run the Python snippet above on it. Compare the counts with an educodex file and look for the extra line types from the table.
 
-The web UI writes logs too: [start the launcher](README.md#the-web-ui), pick **educodex** (or **educodex-demo** offline), send a message, then open the newest file. The **Context** tab shows the same items the `response_item` lines contain. The `path` in the `thread/started` notification (**Protocol** tab) tells you which file it is.
+The visualiser writes logs too: [start the launcher](README.md#the-visualiser), pick **educodex** (or **educodex-demo** offline), send a message, then open the newest file. The **Context** tab shows the same items the `response_item` lines contain. The `path` in the `thread/started` notification (**Protocol** tab) tells you which file it is.
 
 Run the replay test:
 

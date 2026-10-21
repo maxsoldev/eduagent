@@ -1,0 +1,15 @@
+{
+  "method": "trace/loopIteration",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "needsFollowUp": true,
+    "tokens": 9492,
+    "autoCompactLimit": 244800,
+    "contextWindow": 272000,
+    "decision": "continue",
+    "_seq": 24,
+    "_ts": 1792596370.21
+  }
+}

@@ -7,7 +7,7 @@ import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { toJsonEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type { RpcCommand, RpcDebugContext, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
 
 /**
  * Keeps stdout for protocol lines only: anything else that writes to stdout (console.log) goes
@@ -25,7 +25,7 @@ function takeOverStdout(): (line: string, done?: () => void) => void {
 export interface DebugCommands {
   setStepMode(enabled: boolean, breakpoints?: string[]): { enabled: boolean; breakpoints: string[] };
   continue(): void;
-  getContext(session: AgentSession): Promise<object>;
+  getContext(session: AgentSession): Promise<RpcDebugContext>;
 }
 
 export interface RpcModeOptions {

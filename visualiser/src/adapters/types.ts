@@ -2,14 +2,14 @@
 // native messages to ViewActions (tested on recorded transcripts), and a client that sends
 // commands in the native form. The UI talks only to this interface.
 import type { ComponentType } from "react";
-import type { Capabilities } from "../view/capabilities";
+import type { Capabilities, Capability } from "../view/capabilities";
 import type { CtxCat } from "../components/ContextBar";
 import type { Explainer } from "../view/explain";
 import type { Approval, Entry, Json, NativePart, ViewAction } from "../view/model";
 
 export type SkillInfo = { name: string; description: string; shortDescription?: string | null; path: string; scope: string };
 // needs: the capability this command depends on (hidden without it).
-export type Command = { name: string; description: string; needs?: string };
+export type Command = { name: string; description: string; needs?: Capability };
 export type Option = { value: string; label: string };
 // model, effort and cwd are shared; adapters may keep more keys (Codex: approvalPolicy, sandbox).
 export type Settings = { model: string; effort: string; cwd: string; [key: string]: string };

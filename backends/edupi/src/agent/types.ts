@@ -53,6 +53,17 @@ export interface AgentProbe extends ProviderProbe {
    * settles. signal is the run's abort signal, so an abort also ends the wait.
    */
   checkpoint?(name: Checkpoint, info: Record<string, unknown>, signal?: AbortSignal): void | Promise<void>;
+  /** A turn ended (after turn_end): does the loop call the model again? (educodex's loopIteration) */
+  loopIteration?(iteration: LoopIteration): void | Promise<void>;
+}
+
+/** The loop's decision after one model reply. iteration counts the model calls of this run. */
+export interface LoopIteration {
+  iteration: number;
+  /** The reply called tools, so the model must see their results. */
+  needsFollowUp: boolean;
+  message: AssistantMessage;
+  decision: "continue" | "stop";
 }
 
 /** The loop's step-mode checkpoints (the same names as educodex's). */

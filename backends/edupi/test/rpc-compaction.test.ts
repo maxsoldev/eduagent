@@ -146,7 +146,7 @@ test("compaction follows real pi: a split turn, then the update prompt with the 
   // The q4 request is pi's. Only the system prompt differs: edupi has no <docs> section, and its cwd is this test's.
   const q4 = JSON.parse(readFileSync(join(FIXTURES, "session-compact.q4-request.json"), "utf8")).messages;
   expect(requests[6]).toEqual([
-    { role: "developer", content: q4[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace("/private/tmp/pi-try/cwd", dir) },
+    { role: "developer", content: q4[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace(piEntries[0].cwd, dir) },
     ...q4.slice(1),
   ]);
 });

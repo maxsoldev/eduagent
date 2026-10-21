@@ -1,11 +1,11 @@
 // The pi adapter's client half: sends pi RPC commands (packages/coding-agent/src/modes/rpc/rpc-types.ts).
 // Incoming messages go through the pi mapping (mapping.ts) into the view model.
 import type { Adapter, AdapterOptions, Command, SkillInfo } from "../types";
-import type { Json } from "../../view/model";
+import type { PiMessage, RpcSessionState, ThinkingLevel } from "./protocol";
 import { PiRpcClient } from "./rpc";
 import { createPiMapping } from "./mapping";
 import { piExplainer } from "./explain";
-import { piContext } from "./context";
+import { type Fragment, piContext } from "./context";
 
 // pi's own descriptions (packages/coding-agent/src/core/slash-commands.ts). In pi a skill is the
 // slash command /skill:<name>; here it is picked with $, as for Codex.
@@ -20,21 +20,21 @@ const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
 export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
   const map = createPiMapping();
   // edupi's promptAssembled trace event names the prompt's sections, for the Context tab.
-  let fragments: Json[] | null = null;
-  const watch = (m: Json) => {
-    if (m.type === "trace" && m.name === "promptAssembled") fragments = m.fragments;
+  let fragments: Fragment[] | null = null;
+  const watch = (m: PiMessage) => {
+    if (m.type === "trace" && m.name === "promptAssembled") fragments = m.fragments as Fragment[];
   };
   const rpc = new PiRpcClient(url, {
     onMessage: (message) => { watch(message); map(message).forEach(dispatch); },
     onWire: (direction, message) => dispatch({ type: "wire", direction, message }),
     onStatus: (status, reason) => dispatch({ type: "status", status, reason }),
   });
-  let state: Json = null; // the last get_state reply
+  let state: RpcSessionState | null = null; // the last get_state reply
   let resumed = false; // connect found a session with messages: the first startSession keeps it
 
   async function setLevel(effort: string) {
     if (effort && effort !== state?.thinkingLevel) {
-      await rpc.command("set_thinking_level", { level: effort });
+      await rpc.command("set_thinking_level", { level: effort as ThinkingLevel });
       state = await rpc.command("get_state");
     }
   }
@@ -53,7 +53,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
       await rpc.connect();
       state = await rpc.command("get_state");
       const { messages } = await rpc.command("get_messages");
-      resumed = messages.some((m: Json) => m.role !== "system");
+      resumed = messages.some((m) => m.role !== "system");
       return { models: state.model ? [{ value: state.model.id, label: state.model.name ?? state.model.id }] : [] };
     },
     async startSession(s) {
@@ -71,7 +71,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
       await setLevel(s.effort);
       const message = skills.length ? `/skill:${skills[0].name} ${text}` : text; // pi expands one /skill: per prompt
       await rpc.command("prompt", { message });
-      state = { ...state, messageCount: (state?.messageCount ?? 0) + 1 };
+      if (state) state = { ...state, messageCount: state.messageCount + 1 };
     },
     async interrupt() { await rpc.command("abort"); }, // the reply comes once the run has settled
     // Both reply "queued" at once; queue_update events show the queues, and the message starts later.
@@ -80,7 +80,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
     async compact(customInstructions) { await rpc.command("compact", customInstructions ? { customInstructions } : {}); },
     async listSkills(): Promise<SkillInfo[]> {
       const { commands } = await rpc.command("get_commands");
-      return commands.filter((c: Json) => c.source === "skill").map((c: Json) => ({
+      return commands.filter((c) => c.source === "skill").map((c) => ({
         name: c.name.slice("skill:".length), description: c.description ?? "", path: c.sourceInfo?.path ?? "", scope: c.sourceInfo?.scope ?? "",
       }));
     },

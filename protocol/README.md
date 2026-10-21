@@ -44,7 +44,7 @@ Every entry has a unique `id`. An adapter sends the same id again to update the 
 | `reasoning` | `summary: string[]`, `streaming` | `reasoning` item, `item/reasoning/summaryTextDelta` | one entry per thinking block: `thinking_start`, `thinking_delta` (into `summary[0]`), then `message_end` |
 | `tool` | `name`, `toolKind: "shell" \| "mcp" \| "other"`, `title`, `arguments`, `output`, `status`, `exitCode?`, `error?`, `streaming`, `part?` | `commandExecution`, `fileChange`, `mcpToolCall` items | `tool_execution_start` / `_update` / `_end` |
 | `compaction` | `streaming`, `reason?` | `contextCompaction` item | `compaction_start` / `compaction_end` (`reason`: manual, threshold, overflow). A `compaction_end` without `result` (failed or cancelled) turns the entry into a `notice` with pi's `errorMessage` |
-| `notice` | `level: "info" \| "error"`, `source: "client" \| "backend"`, `text` | `error` notification; client notes | assistant `message_end` with `stopReason: "error"` (`errorMessage`), failed compaction. Error replies reject the command; the viewer shows them as client notes |
+| `notice` | `level: "info" \| "error"`, `source: "visualiser" \| "backend"`, `text` | `error` notification; visualiser notes | assistant `message_end` with `stopReason: "error"` (`errorMessage`), failed compaction. Error replies reject the command; the viewer shows them as visualiser notes |
 | `native` | `part`, `streaming` | `turn/plan/updated`, `memoryUpdate` item | (none yet) |
 
 - `tool.status` is one of `running`, `completed`, `failed`, `declined`, `aborted`. Codex `inProgress` maps to `running`. pi: `isError` maps to `failed`. pi ends the tools it aborts with an error result, so when a run settles with `aborted: true`, the failed tools of the last assistant message become `aborted`.
@@ -126,11 +126,13 @@ pi's RPC protocol (`pi --mode rpc`, `packages/coding-agent/src/modes/rpc/` at th
 
 edupi speaks the same protocol, so the same adapter serves the `edupi` entries (Playwright: `visualiser/e2e/edupi.spec.ts`).
 
+The wire types come from edupi, a workspace package of the visualiser: `visualiser/src/adapters/pi/protocol.ts` imports pi's `RpcCommand`, `RpcResponse`, `RpcSessionState` and `JsonAgentSessionEvent` from `@eduagent/edupi` (its `exports`: `rpc-types`, `json-event`, `ai-types`, `agent-types`). So `PiRpcClient.command(type, fields)` checks each command's fields and types its reply's `data`. The imports are type-only; nothing from edupi runs in the browser.
+
 Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`, `queues`; `meta.json` has the pi commit), recorded by `visualiser/test/record-pi.mjs`.
 
 ## 4. Capabilities
 
-Capabilities come only from the launcher config entry (`capabilities` in `launcher/backends*.json`, listed by `GET /backends`). Without a capability, the viewer hides its panels and does not send its settings:
+Capabilities come only from the launcher config entry (`capabilities` in `launcher/backends*.json`, listed by `GET /backends`). The names and the `GET /backends` types are in `launcher/src/api.ts`, which the visualiser imports; an unknown name stops the launcher at startup. Without a capability, the viewer hides its panels and does not send its settings. `FEATURES` in `visualiser/src/view/capabilities.ts` says which capabilities each panel needs:
 
 | Capability | Shows |
 |---|---|
@@ -178,6 +180,7 @@ Events that mean the same thing have the same name and the same **shared fields*
 | `modelRequest` | just before the HTTP request to the model | `api` (string: `openai-responses` or `openai-completions`), `url` (string), `body` (object: the exact request body) | `inputTokensEstimate` | |
 | `streamEvent` | for each streamed chunk, raw | `event` (object: one Responses SSE event, or one `chat.completion.chunk`) | (only with `thread/start` `traceSse: true`) | |
 | `modelResponse` | when the stream ended | `usage` (object: the harness's usage record), `seconds` (number) | `eventCounts`, `outputItems`, `cost` (the Codex usage is the Responses `usage`) | `stopReason`, `errorMessage` (on errors), `responseId`, `content` (the assistant content blocks), `cost` (as in the `cost` event; absent without usage); `usage` is pi's `Usage` |
+| `loopIteration` | after each model reply: does the loop call the model again? | `iteration` (number: model calls so far in this turn or run), `needsFollowUp` (boolean: the reply called tools), `tokens` (number: the context size), `decision` (string: `continue` or `stop`) | `autoCompactLimit`, `contextWindow`; `tokens` is the history's estimate | `stopReason`; `tokens` is the reply's `usage.totalTokens`; `decision` is also `continue` when steering messages wait; sent right after pi's `turn_end` |
 | `toolDispatch` | a tool call starts | `tool` (string: the tool name), `callId` (string), `parallel` (boolean: the calls of this reply run at the same time) | `kind` (the Responses item type), `arguments` or `input` (custom tools) | `arguments` (object); sent right after pi's `tool_execution_start` |
 | `toolOutput` | a tool call ended | `tool`, `callId`, `output` (string: the text the model reads), `tokens` (number: bytes / 4, rounded up) | | `isError` (boolean), `durationMs` (absent if the call failed before it ran); sent right after pi's `tool_execution_end` |
 | `promptAssembled` | the prompt for a turn (educodex) or a run (edupi) is built | `fragments` (array of `{kind, role, source, text, tokens, changed}`: one per prompt part, `changed` = new in this turn's request), `firstTurn` (boolean) | `baseInstructions`; fragments are the developer and user context items | fragments are the system prompt's sections (`preamble`, `tools`, `rules`, `addendum`, `project_context`, `skills`, `cwd`); `removed` (section names); sent before `agent_start` |
@@ -193,11 +196,9 @@ Events that mean the same thing have the same name and the same **shared fields*
 - edupi sends a `modelResponse` for failed requests too (`stopReason: "error"`), but only after a `modelRequest`.
 - edupi's summary request goes through the same provider as every request, so `modelRequest`, `streamEvent` and `modelResponse` follow its `compactionRequest`. educodex sends only `compactionRequest` for it. edupi's compaction events come between pi's own `compaction_start` and `compaction_end` events.
 
-Not shared yet: educodex's `loopIteration` (edupi has no such event; pi's own `turn_end` and `agent_end` show the loop's decisions).
-
 ### Backend-only events
 
-- educodex: `toolsRegistered` (`tools`), `historyChanged`, `loopIteration`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `hook`, `mcpToolsListed`, `mcpToolExposed`, `mcpServerFailed`, `skillInjected`, and the memory events.
+- educodex: `toolsRegistered` (`tools`), `historyChanged`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `hook`, `mcpToolsListed`, `mcpToolExposed`, `mcpServerFailed`, `skillInjected`, and the memory events.
 - edupi: `toolsRegistered` (`tools`: the Chat Completions tool specs of the request, as sent). Same name and field as educodex's, so the Tools tab reads both; edupi sends it just before a `modelRequest` whose tools are new for the session.
 
 The visualiser reacts to `pricing`, `cost`, `paused` and `resumed` (view reducer) and reads `modelRequest`, `modelResponse` (Requests tab), `toolsRegistered`, `toolDispatch` and `toolOutput` (Tools tab).

@@ -159,7 +159,7 @@ The Codex side: [`build_initial_context_with_world_state`](https://github.com/op
 
 ## Try it
 
-In the web UI, open **edupi** and send any message. Open the **Context** tab: the first item is the system prompt. Click it to see its parts, one per section. Then open the **Timeline** and click **Prompt assembled**: each fragment has its source and `changed`. Send a second message: the new `promptAssembled` has no changed fragment, and the Protocol tab shows no new `message_start system`.
+In the visualiser, open **edupi** and send any message. Open the **Context** tab: the first item is the system prompt. Click it to see its parts, one per section. Then open the **Timeline** and click **Prompt assembled**: each fragment has its source and `changed`. Send a second message: the new `promptAssembled` has no changed fragment, and the Protocol tab shows no new `message_start system`.
 
 Add an AGENTS.md and see where it goes:
 

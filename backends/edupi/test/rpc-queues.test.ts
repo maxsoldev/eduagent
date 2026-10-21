@@ -1,7 +1,7 @@
 // Seam A: pi's steering and follow-up queues, abort and thinking level over pi's RPC protocol.
 // The faux provider scripts the replies; a slow bash call or a slow stream gives the test time
 // to send commands while the run is active. Expected shapes come from real pi transcripts
-// (eduagent-spec4-notes/samples/pi-rpc-queues-abort.out.jsonl).
+// (visualiser/test/fixtures/pi/queues.out.jsonl and abort.out.jsonl, from visualiser/test/record-pi.mjs).
 import { readFileSync } from "node:fs";
 import { afterEach, expect, test } from "vitest";
 import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";

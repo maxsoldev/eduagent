@@ -145,3 +145,19 @@ test("a new session starts a new cost total", async () => {
   await prompt("Again?");
   expect(traces("cost").map((c) => c.total.requests)).toEqual([1, 1]);
 });
+
+test("each loop iteration is traced after its turn_end, with the loop's decision", async () => {
+  const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "echo hi" } };
+  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Done."] });
+  await prompt("Run echo.");
+
+  const replies = edupi.seen.filter((m) => m.type === "message_end" && m.message.role === "assistant").map((m) => m.message);
+  expect(traces("loopIteration")).toEqual([
+    { type: "trace", name: "loopIteration", iteration: 1, needsFollowUp: true, tokens: replies[0].usage.totalTokens, stopReason: "toolUse", decision: "continue" },
+    { type: "trace", name: "loopIteration", iteration: 2, needsFollowUp: false, tokens: replies[1].usage.totalTokens, stopReason: "stop", decision: "stop" },
+  ]);
+  const order = edupi.seen.map((m) => (m.type === "trace" ? m.name : m.type));
+  const turnEnds = order.flatMap((name, i) => (name === "turn_end" ? [i] : []));
+  const loops = order.flatMap((name, i) => (name === "loopIteration" ? [i] : []));
+  expect(loops.map((i, n) => i > turnEnds[n] && i < (turnEnds[n + 1] ?? order.indexOf("agent_end")))).toEqual([true, true]);
+});

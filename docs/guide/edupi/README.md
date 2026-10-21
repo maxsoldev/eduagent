@@ -15,7 +15,7 @@ Paths in this section are relative to `backends/edupi/`, where edupi's package l
 | **In pi** | The pi code it mirrors, linked at the pinned commit |
 | **How Codex does it differently** | The same job in Codex (and educodex) |
 | **Where edupi is simpler** | What we left out or changed, and why |
-| **Try it** | Something to run, in the web UI or over stdio |
+| **Try it** | Something to run, in the visualiser or over stdio |
 | **Further reading** | Docs and posts |
 
 ## The code
@@ -35,29 +35,29 @@ edupi's folders mirror pi's packages. File names follow pi's wherever a file sur
 
 edupi runs on Node 22.19 or newer with [tsx](https://tsx.is/), with no build step: `bin/edupi.mjs` registers tsx and starts `main()`.
 
-## The web UI
+## The visualiser
 
-edupi speaks only stdio, as `pi --mode rpc` does. To use it in the web UI, start the launcher at the repo root and pick **edupi**:
+edupi speaks only stdio, as `pi --mode rpc` does. To use it in the visualiser, start the launcher at the repo root and pick **edupi**:
 
 ```bash
 (cd ../.. && pnpm install && pnpm build)   # once: build the visualiser
 (cd ../.. && pnpm eduagent)                # then open http://127.0.0.1:8765 and pick edupi
 ```
 
-The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-root `.env`. The default model is `openai/gpt-6-luna`, the same as educodex, so a comparison shows harness differences, not model differences.
+The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-root `.env`. It passes `--approve`: you chose the directory in the picker, so edupi trusts it and loads its `.pi/skills`, `SYSTEM.md` and `APPEND_SYSTEM.md` (chapter 05). The default model is `openai/gpt-6-luna`, the same as educodex, so a comparison shows harness differences, not model differences.
 
 **Offline.** Add an entry with the faux provider to `launcher/backends.local.json` (git-ignored) and restart the launcher. The chapters call it **edupi-faux**:
 
 ```json
 { "backends": [
   { "name": "edupi-faux", "harness": "pi", "protocol": "pi-rpc",
-    "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc",
+    "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--approve",
                 "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
     "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"] }
 ] }
 ```
 
-`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it with `--approve` in a folder that has that skill. `examples/faux/compact.json` has replies for a manual compaction (chapter 07). `examples/faux/step.json` prices the model and runs one command, for step mode, the Context tab and the cost panel (chapter 09).
+`examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it in a folder that has that skill (the entry above already passes `--approve`). `examples/faux/compact.json` has replies for a manual compaction (chapter 07). `examples/faux/step.json` prices the model and runs one command, for step mode, the Context tab and the cost panel (chapter 09).
 
 List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `skills` the `$` list in the composer, `compaction` the compact button and `/compact`, `queues` the steer, follow-up and abort buttons, `stepMode` the step mode toggle, `contextInspector` the Context tab.
 

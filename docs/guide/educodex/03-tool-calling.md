@@ -174,11 +174,11 @@ The `tool call apply_patch` line shows the raw patch text, not JSON. With `-v` y
 uv run educodex exec -v "Create notes.txt containing the word hello"
 ```
 
-In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**):
+In the visualiser ([start the launcher](README.md#the-visualiser) and pick **educodex**):
 - the **Tools** tab shows every spec as sent. Expand `apply_patch` to see the grammar, and `exec_command` to see its JSON Schema;
 - the **Requests** tab shows the call and output items in each later request.
 
-Offline, add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the web UI. It replays a script with function calls (`update_plan`, `exec_command`) and a `custom_tool_call` (`apply_patch`). Read [`examples/fake/demo.json`](../../../backends/educodex/examples/fake/demo.json) to see what the "model" sends.
+Offline, add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the visualiser. It replays a script with function calls (`update_plan`, `exec_command`) and a `custom_tool_call` (`apply_patch`). Read [`examples/fake/demo.json`](../../../backends/educodex/examples/fake/demo.json) to see what the "model" sends.
 
 ## Further reading
 - [Function calling guide](https://platform.openai.com/docs/guides/function-calling): OpenAI's guide, including custom tools and grammars.

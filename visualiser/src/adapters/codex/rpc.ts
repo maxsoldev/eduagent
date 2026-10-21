@@ -2,13 +2,14 @@
 // The server can also send *requests* to us (approvals); we answer them with respond().
 // This is the Codex adapter's transport (adapters/codex/client.ts).
 import type { Direction, Json } from "../../view/model";
+import { openSocket, type SocketStatus } from "../socket";
 
 export type WireMessage = { id?: string | number; method?: string; params?: Json; result?: Json; error?: Json };
 
 type Handlers = {
   onMessage: (message: WireMessage) => void; // notifications and server -> client requests
   onWire: (direction: Direction, message: WireMessage) => void;
-  onStatus: (status: "connecting" | "open" | "closed", reason?: string) => void;
+  onStatus: (status: SocketStatus, reason?: string) => void;
 };
 
 export class RpcClient {
@@ -17,23 +18,14 @@ export class RpcClient {
   private pending = new Map<number, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
   constructor(private url: string, private h: Handlers) {}
 
-  connect(): Promise<void> {
-    this.h.onStatus("connecting");
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.url);
-      this.ws = ws;
-      ws.onopen = () => {
-        this.h.onStatus("open");
-        resolve();
-      };
-      ws.onerror = () => reject(new Error(`cannot connect to ${this.url}`));
-      // The launcher closes with a reason when the backend process exits ("educodex exited with code 1").
-      ws.onclose = (e) => {
-        for (const p of this.pending.values()) p.reject(new Error(e.reason || "connection closed"));
+  async connect(): Promise<void> {
+    this.ws = await openSocket(this.url, {
+      onStatus: this.h.onStatus,
+      onMessage: (message) => this.receive(message as WireMessage),
+      onClose: (reason) => {
+        for (const p of this.pending.values()) p.reject(new Error(reason));
         this.pending.clear();
-        this.h.onStatus("closed", e.reason);
-      };
-      ws.onmessage = (e) => this.receive(JSON.parse(e.data));
+      },
     });
   }
 

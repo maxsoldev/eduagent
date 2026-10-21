@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer } from "ws";
+import type { BackendList } from "./api.ts";
 import type { Backend } from "./config.ts";
 import { pipe } from "./pipe.ts";
 
@@ -37,9 +38,9 @@ export function createLauncher(opts: LauncherOptions) {
     if (!isLoopback(req.headers.host)) return send(res, 403, "text/plain", "forbidden host"); // DNS rebinding
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname === "/backends") {
-      const backends = opts.backends.map(({ name, harness, protocol, description, capabilities }) =>
-        ({ name, harness, protocol, description, capabilities }));
-      return send(res, 200, "application/json", JSON.stringify({ cwd: opts.cwd, backends }));
+      const list: BackendList = { cwd: opts.cwd, backends: opts.backends.map(({ name, harness, protocol, description, capabilities }) =>
+        ({ name, harness, protocol, description, capabilities })) };
+      return send(res, 200, "application/json", JSON.stringify(list));
     }
     if (url.pathname.startsWith("/guide/")) return guide(res, opts.guideDir, url.pathname);
     return visualiser(res, opts.visualiserDir, url.pathname);

@@ -2,7 +2,7 @@
 // (explanations, the next request). Tabs for missing capabilities are not shown.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Adapter, ContextSnapshot } from "../adapters/types";
-import type { Capabilities } from "../view/capabilities";
+import { type Capabilities, type Feature, shows } from "../view/capabilities";
 import type { Json, TimelineEvent, View } from "../view/model";
 import { CATEGORY_COLORS, type Category, type Explainer } from "../view/explain";
 import type { Links as HarnessLinks } from "../view/harness";
@@ -14,12 +14,9 @@ import { cacheStatus, nextRequestCost, pct, uncachedCost, usd } from "../cost";
 
 const TABS = ["Timeline", "Context", "Requests", "Tools", "Guardrails", "Protocol"] as const;
 type Tab = (typeof TABS)[number];
-// Which capability each tab needs (Timeline and Protocol show native messages, so they always stay).
-const shownTab = (t: Tab, caps: Capabilities) =>
-  t === "Context" ? caps.has("contextInspector")
-  : t === "Requests" || t === "Tools" ? caps.has("trace")
-  : t === "Guardrails" ? caps.has("trace") && (caps.has("approvals") || caps.has("sandbox"))
-  : true;
+// The feature each tab is (Timeline and Protocol show native messages, so they always stay).
+const TAB_FEATURE: Partial<Record<Tab, Feature>> = { Context: "contextTab", Requests: "requestsTab", Tools: "toolsTab", Guardrails: "guardrailsTab" };
+const shownTab = (t: Tab, caps: Capabilities) => !TAB_FEATURE[t] || shows(caps, TAB_FEATURE[t]);
 
 type Props = { view: View; adapter: Adapter | null; capabilities: Capabilities; links: HarnessLinks };
 
@@ -43,7 +40,7 @@ export function Inspector({ view, adapter, capabilities, links }: Props) {
         {tab === "Timeline" && <Timeline events={view.events} sessionId={view.sessionId} ex={ex} links={links} />}
         {tab === "Context" && <ContextView view={view} adapter={adapter} links={links} />}
         {tab === "Requests" && <Requests key={view.sessionId} events={sessionEvents} ex={ex} links={links} />}
-        {tab === "Tools" && <Tools events={sessionEvents} ex={ex} links={links} mcp={capabilities.has("mcp")} />}
+        {tab === "Tools" && <Tools events={sessionEvents} ex={ex} links={links} mcp={shows(capabilities, "mcpServers")} />}
         {tab === "Guardrails" && <Guardrails events={sessionEvents} ex={ex} links={links} />}
         {tab === "Protocol" && <Protocol wire={view.wire} adapter={adapter} />}
       </div>

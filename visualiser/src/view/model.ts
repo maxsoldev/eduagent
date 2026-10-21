@@ -17,7 +17,7 @@ export type Entry =
   | { kind: "tool"; id: string; name: string; toolKind: "shell" | "mcp" | "other"; title: string; arguments: Json;
       output: string; status: ToolStatus; exitCode?: number | null; error?: string; streaming: boolean; part?: NativePart }
   | { kind: "compaction"; id: string; streaming: boolean; reason?: string }
-  | { kind: "notice"; id: string; level: "info" | "error"; source: "client" | "backend"; text: string }
+  | { kind: "notice"; id: string; level: "info" | "error"; source: "visualiser" | "backend"; text: string }
   | { kind: "native"; id: string; part: NativePart; streaming: boolean };
 
 export type TurnStatus = "running" | "completed" | "interrupted" | "failed";
@@ -62,7 +62,7 @@ export type ViewAction =
   | { type: "event"; event: Omit<TimelineEvent, "seq" | "ts"> & { seq?: number; ts?: number } }
   | { type: "approval"; approval: Approval }
   | { type: "approvalResolved"; id: string | number }
-  | { type: "notice"; level: "info" | "error"; source: "client" | "backend"; text: string }
+  | { type: "notice"; level: "info" | "error"; source: "visualiser" | "backend"; text: string }
   | { type: "queue"; steering: string[]; followUp: string[] }; // the full queues after a change
 
 let localSeq = 1_000_000;

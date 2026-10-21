@@ -19,13 +19,10 @@ export function debugCommands(tracer: Tracer): DebugCommands {
   };
 }
 
-/**
- * The next request, built the way the agent loop builds it (agent-loop.ts streamAssistantResponse,
- * then streamSimple): the Agent's messages, its model and thinking level. While step mode is paused
- * at beforeModelRequest, this is the body that is sent next. When idle, the next prompt adds its
- * user message (and a system message if the prompt's sections changed).
- * tokens and autoCompactLimit are the numbers pi's threshold rule compares (AgentSession._checkCompaction).
- */
+// The next request, built as the loop builds it (streamAssistantResponse, then streamSimple). Paused at
+// beforeModelRequest, it is the body sent next; when idle, the next prompt adds its user message (and
+// a system message if the prompt's sections changed). tokens and autoCompactLimit are the numbers
+// pi's threshold rule compares (AgentSession._checkCompaction).
 async function getContext(session: AgentSession) {
   const { agent, sessionManager, settingsManager } = session;
   const model = agent.state.model;

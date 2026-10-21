@@ -135,7 +135,7 @@ It is a `user` message, not `developer`: a skill is content from the user's worl
 
 ### 5. Clients: the `$` list and `skills/list`
 
-The web UI and the TUI list skills when you type `$`, like Codex's TUI. They get the list from the app-server method `skills/list` (same name and shape as Codex):
+The visualiser and the TUI list skills when you type `$`, like Codex's TUI. They get the list from the app-server method `skills/list` (same name and shape as Codex):
 
 ```json
 {"id": 7, "method": "skills/list", "params": {"cwds": ["/Users/me/project"]}}
@@ -144,7 +144,7 @@ The web UI and the TUI list skills when you type `$`, like Codex's TUI. They get
               "scope": "repo", "enabled": true, "pluginId": null}]}]}}
 ```
 
-When you pick a skill, the web UI inserts `$deploy` into the text and sends a skill input item with the path next to the text, as Codex's TUI does. `/skills` prints the list into the chat.
+When you pick a skill, the visualiser inserts `$deploy` into the text and sends a skill input item with the path next to the text, as Codex's TUI does. `/skills` prints the list into the chat.
 
 ## In Codex
 
@@ -206,7 +206,7 @@ Codex also reads an optional `agents/openai.yaml` next to `SKILL.md`. It holds a
 
 3. Use it implicitly: run it again with `"Write me a poem about this project"` and no `$`. Now there is no injection. Watch for a tool call that reads `.agents/skills/haiku/SKILL.md`: the model found the skill in the catalog.
 
-4. In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex** with the directory `/tmp/skills-demo`), type `$` in the message box. The list shows `$haiku` (repo) and `$skill-creator` (system). In **Context**, the developer message is labelled `developer: skills + permissions + collaboration mode`. Expand it to see the catalog.
+4. In the visualiser ([start the launcher](README.md#the-visualiser) and pick **educodex** with the directory `/tmp/skills-demo`), type `$` in the message box. The list shows `$haiku` (repo) and `$skill-creator` (system). In **Context**, the developer message is labelled `developer: skills + permissions + collaboration mode`. Expand it to see the catalog.
 
 5. Ask for a new skill: `"Use $skill-creator to make a skill that formats commit messages"`. Then type `$` again: the new skill is in the list, because skills are scanned on every turn.
 

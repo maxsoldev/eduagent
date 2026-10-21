@@ -97,6 +97,8 @@ Files in `<cwd>/.pi` (skills, `SYSTEM.md`, `APPEND_SYSTEM.md`, settings, extensi
 
 So `pi --mode rpc` in a new repo ignores `.pi/skills`, but loads the home's skills. AGENTS.md files do not need trust (chapter 03): pi's docs say to treat them as untrusted input.
 
+**In the viewer.** The shipped `edupi` entry in `launcher/backends.json` passes `--approve`. You pick the directory in the launcher's backend picker yourself, so that choice is the trust decision, and the project's `.pi/skills` load. Remove `--approve` from the entry (in `launcher/backends.local.json`) to see pi's RPC default, where only the home's skills load.
+
 ## In edupi
 
 | File | Mirrors (pi) | What it does |
@@ -120,7 +122,7 @@ export function formatSkillsForPrompt(skills: Skill[], fileReadTool: "read" | "b
 
 **Teaching extras.** When the first prompt of a session is assembled, the session calls the probe hook `skillsLoaded`, and the tracer sends the shared trace event `skillsLoaded` (`protocol/README.md` section 6): the scanned `roots` with their scope, each skill (`name`, `description`, `path`, `scope`, `disableModelInvocation`), the warnings as `errors`, and `projectTrusted`. pi loads the skills when the session starts; edupi reports them with the first prompt, when the viewer listens. In the viewer, the `$` list in the composer comes from `get_commands`; picking a skill sends `/skill:<name> <your text>`. In the **Context** tab, a tool output that read a `SKILL.md` is labelled `tool output: SKILL.md`.
 
-The tests in [`test/rpc-system-prompt.test.ts`](../../../backends/edupi/test/rpc-system-prompt.test.ts) check the list in the request body for skills in both folders, an untrusted and a trusted project, `trust.json`, an opted-out skill and a skill without description; a scripted read of a `SKILL.md` (the lazy load); `get_commands` and `/skill:name`.
+The tests in [`test/rpc-system-prompt.test.ts`](../../../backends/edupi/test/rpc-system-prompt.test.ts) check the list in the request body for skills in both folders, an untrusted and a trusted project, `trust.json`, an opted-out skill and a skill without description; a scripted read of a `SKILL.md` (the lazy load); `get_commands` and `/skill:name`. [`test/launcher-entry.test.ts`](../../../backends/edupi/test/launcher-entry.test.ts) starts the shipped launcher entry and checks that it lists a project skill.
 
 ## In pi
 
@@ -167,7 +169,7 @@ printf -- '---\nname: release\ndescription: Cut a release.\ndisable-model-invoca
   > /tmp/edupi-skills/.pi/skills/release/SKILL.md
 ```
 
-Open **edupi** in the web UI in `/tmp/edupi-skills` and ask *"Write me a poem about rain."* In the **Timeline**, **Skills loaded** shows one skill and "project not trusted": the launcher entry has no `--approve`, so `.pi/skills` was skipped. The model calls `read` on `haiku/SKILL.md`, then answers. The **Context** tab shows the `skills` part of the system prompt and the `tool output: SKILL.md`.
+Open **edupi** in the visualiser in `/tmp/edupi-skills` and ask *"Write me a poem about rain."* In the **Timeline**, **Skills loaded** shows one skill and "project not trusted": the launcher entry has no `--approve`, so `.pi/skills` was skipped. The model calls `read` on `haiku/SKILL.md`, then answers. The **Context** tab shows the `skills` part of the system prompt and the `tool output: SKILL.md`.
 
 To trust the project, add `"--approve"` to the entry's `command` in `launcher/backends.local.json`, or save a decision:
 

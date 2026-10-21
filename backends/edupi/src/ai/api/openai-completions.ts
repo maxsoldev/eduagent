@@ -30,6 +30,7 @@ import type {
 import { clampThinkingLevel } from "../models.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
+import { transformMessages } from "./transform-messages.ts";
 import { collapseSystemMessages, getCurrentTools, getSystemMessageText } from "../utils/transcript.ts";
 
 /** pi's resolved OpenRouter compat values (detectCompat); edupi has no other provider. */
@@ -277,7 +278,8 @@ export function convertMessages(model: Model, transcript: TranscriptContext, com
   // Reasoning models take the harness's instructions as "developer", as in the Responses API.
   const instructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";
 
-  for (const msg of context.messages) {
+  // pi's transformMessages: no errored or aborted replies, and every tool call gets a result.
+  for (const msg of transformMessages(context.messages, model)) {
     if (msg.role === "system") {
       const text = getSystemMessageText(msg);
       if (text.length > 0) params.push({ role: instructionRole, content: text });

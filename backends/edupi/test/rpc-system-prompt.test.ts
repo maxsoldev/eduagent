@@ -26,7 +26,7 @@ function put(path: string, text: string) {
 
 const firstRequest = () => edupi.requests()[0].body.messages as Message[];
 
-// Real pi's prompt text up to its <docs> section (samples/pi-rpc-prompt-and-tools).
+// Real pi's prompt text up to its <docs> section (fixtures/pi/session-prompt-and-tools.jsonl).
 const BASE = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 <tools>

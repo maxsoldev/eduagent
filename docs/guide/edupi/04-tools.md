@@ -193,7 +193,7 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 
 ## Try it
 
-In the web UI, open **edupi** (with a real model) and ask: *"Create notes.txt with three lines, then read it back, then change the second line."* Watch the **Timeline**: `tool_execution_start`, `tool_execution_update` (for bash), `tool_execution_end`, then the `toolResult` messages. Open the **Tools** tab to see the four specs and each call's output. The edit card in the chat shows the diff.
+In the visualiser, open **edupi** (with a real model) and ask: *"Create notes.txt with three lines, then read it back, then change the second line."* Watch the **Timeline**: `tool_execution_start`, `tool_execution_update` (for bash), `tool_execution_end`, then the `toolResult` messages. Open the **Tools** tab to see the four specs and each call's output. The edit card in the chat shows the diff.
 
 Ask for two slow commands at once: *"Run `sleep 2; echo a` and `sleep 1; echo b` as two separate bash calls in one reply."* The `tool_execution_end` of `b` comes first; the `toolResult` of `a` still comes first.
 

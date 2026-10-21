@@ -4,18 +4,24 @@
 // Event types: packages/coding-agent/src/core/agent-session.ts (AgentSessionEvent) and
 // packages/agent/src/types.ts (AgentEvent) at the pinned commit.
 import type { Entry, Json, ToolStatus, ViewAction } from "../../view/model";
+import type { AgentMessage, AgentToolResult, ImageContent, PiMessage, RpcResponse, TextContent, ToolResultMessage } from "./protocol";
 
 export const PROTOCOL = "pi-rpc";
 
-const text = (content: Json): string =>
-  typeof content === "string" ? content : (content ?? []).filter((c: Json) => c.type === "text").map((c: Json) => c.text).join("\n");
+type Content = string | readonly { type: string; text?: string }[] | undefined;
+const text = (content: Content): string =>
+  typeof content === "string" ? content : (content ?? []).flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n");
+
+/** A tool call as the tool events show it; history() builds the same from a toolCall block and its result. */
+type ToolEvent = { toolCallId: string; toolName: string; args?: Json;
+  result?: AgentToolResult<Json> | ToolResultMessage | { content: (TextContent | ImageContent)[] } };
 
 /**
  * Makes a mapping from one incoming pi message to view actions. pi events carry no session,
  * turn or message ids, so the mapping keeps a little state: the current session id (from the
  * get_state reply), the open turn and the message being streamed.
  */
-export function createPiMapping(): (message: Json) => ViewAction[] {
+export function createPiMapping(): (message: PiMessage) => ViewAction[] {
   let sessionId: string | undefined;
   let turn = 0, message = 0, compaction = 0;
   let turnId: string | undefined;
@@ -24,7 +30,7 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
   let batch: Extract<Entry, { kind: "tool" }>[] = []; // the tool calls of the last assistant message
   const msgId = () => `${sessionId ?? "pi"}-m${message}`;
 
-  return (m: Json) => {
+  return (m: PiMessage) => {
     if (m.type === "response") return response(m);
     if (m.type === "trace") { // edupi's teaching extras: {type: "trace", name, ...payload} (protocol/README.md section 6)
       const { type: _, name, ...data } = m;
@@ -32,7 +38,7 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
     }
     const { type, ...data } = m;
     const out: ViewAction[] = [{ type: "event", event: { name: type, trace: false, sessionId, data } }];
-    switch (type) {
+    switch (m.type) {
       case "agent_start":
         if (!turnId) out.push({ type: "turnStarted", id: (turnId = `${sessionId ?? "pi"}-t${++turn}`) });
         break;
@@ -49,7 +55,7 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
         break;
       case "message_update": {
         const e = m.assistantMessageEvent;
-        const id = `${msgId()}-c${e.contentIndex}`;
+        const id = `${msgId()}-c${"contentIndex" in e ? e.contentIndex : 0}`;
         if (e.type === "text_start") out.push({ type: "entry", entry: { kind: "assistant", id, text: "", streaming: true } });
         if (e.type === "text_delta") out.push({ type: "append", id, field: "text", delta: e.delta });
         if (e.type === "thinking_start") out.push({ type: "entry", entry: { kind: "reasoning", id, summary: [""], streaming: true } });
@@ -71,7 +77,7 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
         out.push(toolEntry(m, text(m.result?.content), m.isError ? "failed" : "completed"));
         break;
       case "queue_update": // the full steering and follow-up queues, as texts
-        out.push({ type: "queue", steering: m.steering, followUp: m.followUp });
+        out.push({ type: "queue", steering: [...m.steering], followUp: [...m.followUp] });
         break;
       case "compaction_start": // reason: manual, threshold or overflow
         out.push({ type: "entry", entry: { kind: "compaction", id: `${sessionId ?? "pi"}-k${++compaction}`, streaming: true, reason: m.reason } });
@@ -88,13 +94,14 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
 
   // pi's tools: bash is a shell tool; read, edit and write work on one path. A finished edit
   // carries its diff in result.details (for the user, not the model): it becomes a pi part.
-  function toolEntry(m: Json, output: string, status: ToolStatus): ViewAction {
+  function toolEntry(m: ToolEvent, output: string, status: ToolStatus): ViewAction {
     const args = (tools[m.toolCallId] ??= m.args ?? {});
-    const diff = m.toolName === "edit" ? m.result?.details?.diff : undefined;
+    const result: Json = m.result; // details and structuredContent are each tool's own
+    const diff = m.toolName === "edit" ? result?.details?.diff : undefined;
     const entry: Entry = { kind: "tool", id: m.toolCallId, name: m.toolName, toolKind: m.toolName === "bash" ? "shell" : "other",
       title: args.command ?? args.path ?? m.toolName, arguments: args, output, status, streaming: status === "running",
-      exitCode: m.result?.structuredContent?.exit_code,
-      ...(typeof diff === "string" ? { part: { protocol: PROTOCOL, type: "editDiff", data: { path: args.path, diff, firstChangedLine: m.result.details.firstChangedLine } } } : {}) };
+      exitCode: result?.structuredContent?.exit_code,
+      ...(typeof diff === "string" ? { part: { protocol: PROTOCOL, type: "editDiff", data: { path: args.path, diff, firstChangedLine: result.details.firstChangedLine } } } : {}) };
     batch = [...batch.filter((t) => t.id !== entry.id), entry];
     return { type: "entry", entry };
   }
@@ -102,18 +109,19 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
   // Replies to our own commands. get_state tells which session this process holds;
   // get_messages gives the conversation so far (a session that was already in progress); it
   // fills only an empty chat, so a later get_messages does not repeat the turns.
-  function response(m: Json): ViewAction[] {
-    if (m.command === "get_state" && m.success && m.data.sessionId !== sessionId)
+  function response(m: RpcResponse): ViewAction[] {
+    if (!m.success) return [];
+    if (m.command === "get_state" && m.data.sessionId !== sessionId)
       return [{ type: "session", id: (sessionId = m.data.sessionId) }];
-    if (m.command === "get_messages" && m.success && turn === 0) return history(m.data.messages);
+    if (m.command === "get_messages" && turn === 0) return history(m.data.messages);
     return [];
   }
 
   // Past messages as finished turns: each user message starts one. A tool call and its result
   // (a later toolResult message) become one tool entry.
-  function history(messages: Json[]): ViewAction[] {
+  function history(messages: AgentMessage[]): ViewAction[] {
     const out: ViewAction[] = [];
-    const results = new Map(messages.filter((x) => x.role === "toolResult").map((x) => [x.toolCallId, x]));
+    const results = new Map(messages.flatMap((x) => (x.role === "toolResult" ? [[x.toolCallId, x] as const] : [])));
     let open: string | undefined;
     const close = () => { if (open) out.push({ type: "turnEnded", id: open, status: "completed" }); open = undefined; };
     for (const msg of messages) {
@@ -121,7 +129,7 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
       message++;
       out.push(...messageEntries(msg, false));
       if (msg.role !== "assistant") continue;
-      for (const c of msg.content as Json[]) {
+      for (const c of msg.content) {
         if (c.type !== "toolCall") continue;
         const result = results.get(c.id);
         out.push(toolEntry({ toolCallId: c.id, toolName: c.name, args: c.arguments, result }, text(result?.content),
@@ -133,10 +141,10 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
   }
 
   // User messages become one entry; an assistant message one entry per text block.
-  function messageEntries(msg: Json, streaming: boolean): ViewAction[] {
+  function messageEntries(msg: AgentMessage, streaming: boolean): ViewAction[] {
     if (msg.role === "user") return [{ type: "entry", entry: { kind: "user", id: msgId(), text: text(msg.content), skills: [] } }];
     if (msg.role !== "assistant") return [];
-    const content = msg.content as Json[];
+    const content = msg.content;
     if (!streaming && content.some((c) => c.type === "toolCall")) batch = [];
     const entries = content.flatMap((c, i): ViewAction[] => {
       const id = `${msgId()}-c${i}`;

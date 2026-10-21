@@ -1,15 +1,11 @@
 // The backend list: launcher/backends.json, plus an optional git-ignored backends.local.json next to it.
 // Each entry says what to run (command, env) and what the visualiser may show (harness, protocol, capabilities).
 import { existsSync, readFileSync } from "node:fs";
+import { type BackendInfo, CAPABILITIES } from "./api.ts";
 
-export type Backend = {
-  name: string; // also the WebSocket path: /backends/<name>
-  harness: string; // the harness it re-implements, e.g. "Codex"
-  protocol: string; // the native protocol it speaks; the visualiser picks its adapter by this
-  description?: string;
+export type Backend = BackendInfo & {
   command: string[]; // argv, run without a shell
   env?: Record<string, string>;
-  capabilities: string[]; // features the visualiser may show, e.g. "approvals", "stepMode"
 };
 
 /** Reads `file` and `<file>.local.json`. A local entry replaces the shared entry with the same name. */
@@ -33,6 +29,8 @@ function read(file: string): Backend[] {
     if (!/^[a-z0-9-]+$/.test(b.name)) throw new Error(`${file}: backend name "${b.name}" must be lowercase letters, digits or "-"`);
     if (!Array.isArray(b.command) || !b.command.length) throw new Error(`${file}: backend "${b.name}" needs a "command" list`);
     b.capabilities ??= [];
+    const unknown = b.capabilities.filter((c: string) => !(CAPABILITIES as readonly string[]).includes(c));
+    if (unknown.length) throw new Error(`${file}: backend "${b.name}" has unknown capabilities: ${unknown.join(", ")}`);
   }
   return backends;
 }

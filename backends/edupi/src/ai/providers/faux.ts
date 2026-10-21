@@ -1,11 +1,8 @@
 // Mirrors pi packages/ai/src/providers/faux.ts (pinned 16f5f0af4): a scripted model for tests.
-// You queue assistant messages; each model request takes the next one and streams it back in
-// small random chunks, as a real model would.
-// Unlike pi's faux provider, which replaces the whole API, edupi's fakes only the HTTP endpoint:
-// it is a `fetch` for the OpenAI SDK that answers with Chat Completions SSE chunks. So the real
-// openai-completions code runs in tests too, and every request body can be recorded. It also
-// answers OpenRouter's GET /models with the models of the script, so model metadata (context
-// window, prices) comes from the faux provider in tests.
+// Each model request takes the next queued assistant message and streams it in small random chunks.
+// Unlike pi's (which replaces the whole API), edupi's faux is a `fetch` for the OpenAI SDK: it
+// answers with Chat Completions SSE chunks, so the real openai-completions code runs and each body
+// is recorded. GET /models answers with the script's models (context window, prices).
 import { readFileSync } from "node:fs";
 import type { AssistantMessage, JsonObject, StopReason, TextContent, ThinkingContent, ToolCall } from "../types.ts";
 import type { OpenRouterModel } from "./openrouter.ts";
@@ -174,14 +171,11 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
   };
 }
 
-/**
- * Reads a faux script file: `{"models"?: [...], "tokensPerSecond"?: n, "responses": [...]}`.
- * `models` is the GET /models list (OpenRouter's fields); tokensPerSecond slows the stream down.
- * A response is a string (one text reply), `{"content": string | blocks, "stopReason"?: ...}`
- * (the arguments of fauxAssistantMessage), or `{"error": {"status"?, "message"}}`, an HTTP error
- * (a context overflow, for example). A block is `{"type": "text", "text"}`,
- * `{"type": "thinking", "thinking"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
- */
+// Reads a faux script: `{"models"?: [OpenRouter list items], "tokensPerSecond"?: n, "responses": [...]}`.
+// A response is a text string, `{"content": string | blocks, "stopReason"?}` (fauxAssistantMessage's
+// arguments) or `{"error": {"status"?, "message"}}` (an HTTP error, e.g. a context overflow).
+// Blocks: `{"type": "text", "text"}`, `{"type": "thinking", "thinking"}`,
+// `{"type": "toolCall", "id", "name", "arguments"}`.
 export function loadFauxScript(path: string): { models: OpenRouterModel[]; tokensPerSecond?: number; responses: FauxResponse[] } {
   const script = JSON.parse(readFileSync(path, "utf8"));
   type Step = string | FauxError | { content: string | FauxContentBlock[]; stopReason?: StopReason };

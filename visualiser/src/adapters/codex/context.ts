@@ -3,8 +3,7 @@
 import type { CtxCat } from "../../components/ContextBar";
 import type { ContextSnapshot } from "../types";
 import type { Json } from "../../view/model";
-
-export const approxTokens = (v: Json) => Math.ceil(JSON.stringify(v).length / 4);
+import { approxTokens, clip } from "../context";
 
 export function codexContext(ctx: Json): ContextSnapshot {
   const input: Json[] = ctx.request.input;
@@ -54,6 +53,5 @@ function preview(item: Json): string {
   const raw = item.content?.map((p: Json) => p.text ?? "").join(" ")
     ?? (item.type.endsWith("call") ? `${item.name ?? ""}(${item.arguments ?? item.input ?? ""})` : null)
     ?? (typeof item.output === "string" ? item.output : item.summary?.map((p: Json) => p.text).join(" ")) ?? "";
-  const flat = String(raw).replace(/\s+/g, " ").trim();
-  return flat.length > 160 ? flat.slice(0, 160) + "…" : flat;
+  return clip(String(raw));
 }

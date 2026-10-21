@@ -64,9 +64,18 @@ importers:
         specifier: ^19.0.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@eduagent/edupi':
+        specifier: workspace:*
+        version: link:../backends/edupi
+      '@eduagent/launcher':
+        specifier: workspace:*
+        version: link:../launcher
       '@playwright/test':
         specifier: ^1.50.0
         version: 1.64.0
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
       '@types/react':
         specifier: ^19.0.0
         version: 19.3.0

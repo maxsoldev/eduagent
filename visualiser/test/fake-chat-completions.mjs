@@ -1,13 +1,7 @@
-// A fake OpenAI-compatible Chat Completions server. It replays scripted replies as SSE, so the
-// real pi can run with no API key and no network model call (see test/record-pi.mjs).
-//
-// A script is a list of replies, used in order (the last one repeats):
-//   {"text": ["Hel", "lo"], "delayMs": 50}           streamed text pieces
-//   {"reasoning": ["Thin", "king"], "text": [...]}    reasoning pieces (delta.reasoning) before the text
-//   {"toolCalls": [{"id", "name", "arguments"}]}      tool calls (finish_reason "tool_calls")
-//   {"error": {"status": 400, "message": "..."}}      an HTTP error
-//   "promptTokens": N                                 the reported prompt tokens (default 100)
-//
+// A fake Chat Completions server: replays scripted replies as SSE, so the real pi runs with no API key.
+// A script is a list of replies, used in order (the last one repeats). A reply has "text" pieces (and
+// "delayMs" between them), "reasoning" pieces (delta.reasoning, before the text), "toolCalls"
+// [{id, name, arguments}], or "error" {status, message}; "promptTokens" sets the usage (default 100).
 // CLI: node fake-chat-completions.mjs <port> <script.json> [requests-log.jsonl]
 import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";

@@ -2,10 +2,10 @@
 // Completions endpoint and records each request.
 import { afterEach, expect, test } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startEdupi, type RpcClient } from "./rpc-client.ts";
+import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -109,4 +109,37 @@ test("a model OpenRouter does not list gets pi's defaults for custom models", as
   const { model } = (await edupi.command("get_state")).data;
   expect(model).toMatchObject({ id: "someone/new-model", name: "someone/new-model", reasoning: false,
     contextWindow: 128000, maxTokens: 16384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } });
+});
+
+// pi's transformMessages (packages/ai/src/api/transform-messages.ts) cleans the transcript before each request.
+test("an aborted reply is left out of later requests, even with a half-streamed tool call", async () => {
+  const write = { type: "toolCall", id: "call_w", name: "write", arguments: { path: "notes.txt", content: "a long text ".repeat(40) } };
+  edupi = startEdupi({ tokensPerSecond: 20, responses: [{ content: [write], stopReason: "toolUse" }, "Hello."] });
+  edupi.sendLine(JSON.stringify({ type: "prompt", message: "Write notes." }));
+  await edupi.until((m) => m.type === "message_update" && m.assistantMessageEvent.type === "toolcall_delta");
+  await edupi.command("abort");
+  const aborted = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
+  expect(aborted).toMatchObject({ stopReason: "aborted", content: [{ type: "toolCall", id: "call_w" }] });
+
+  await prompt("Say hello instead.");
+  const messages = edupi.requests()[1].body.messages;
+  const text = (m: Message) => (Array.isArray(m.content) ? m.content.map((c: Message) => c.text).join("") : m.content ?? "");
+  expect(messages.map((m: Message) => [m.role, m.role === "system" ? "" : text(m)])).toEqual([
+    ["system", ""], ["user", "Write notes."], ["user", "Say hello instead."],
+  ]);
+});
+
+test("a tool call without a result gets pi's synthetic error result before the next user message", async () => {
+  // A real pi session that stopped while its two tool calls ran: the file ends at the tool-call reply.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+  const lines = readFileSync(new URL("./fixtures/pi/session-prompt-and-tools.jsonl", import.meta.url), "utf8").trim().split("\n");
+  const file = join(dir, "session.jsonl");
+  writeFileSync(file, lines.slice(0, lines.findIndex((l) => l.includes('"toolResult"'))).join("\n") + "\n");
+  edupi = startEdupi({ responses: ["Sorry, starting over."] }, ["--session", file], { dir });
+
+  await prompt("Are you there?");
+  const calls = JSON.parse(lines.find((l) => l.includes('"toolUse"'))!).message.content.map((c: Message) => c.id);
+  const messages = edupi.requests()[0].body.messages;
+  expect(messages.slice(-4).map((m: Message) => [m.role, m.tool_calls?.map((c: Message) => c.id) ?? m.tool_call_id, m.role === "tool" ? m.content : undefined]))
+    .toEqual([["assistant", calls, undefined], ["tool", calls[0], "No result provided"], ["tool", calls[1], "No result provided"], ["user", undefined, undefined]]);
 });

@@ -142,7 +142,7 @@ The effort can be set per thread or per turn (`--effort low|medium|high` on the 
 uv run educodex exec --effort high "Is 2^89-1 prime? One sentence why."
 ```
 
-The dim `reasoning:` line is the summary. Run it again with `--effort low` and compare. The token counts per request (`output_tokens_details.reasoning_tokens`) are in the session log as `token_count` events (chapter 16), and in the web UI's `trace/modelResponse` events.
+The dim `reasoning:` line is the summary. Run it again with `--effort low` and compare. The token counts per request (`output_tokens_details.reasoning_tokens`) are in the session log as `token_count` events (chapter 16), and in the visualiser's `trace/modelResponse` events.
 
 Look at the raw spike output:
 
@@ -152,14 +152,14 @@ python3 -m json.tool spikes/out/reasoning.json | less
 
 Find `encrypted_content`, `summary`, and in `usage` the `output_tokens_details.reasoning_tokens`. To rerun the spike: `uv run --with httpx spikes/probe_openrouter.py`.
 
-In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**):
+In the visualiser ([start the launcher](README.md#the-visualiser) and pick **educodex**):
 - **Chat**: reasoning summaries stream in before the answer.
 - **Context** tab: the reasoning items sit in history between the user message and the tool calls. They are part of the next request.
 - **Timeline** tab: `trace/modelResponse` has the `usage`, including `reasoning_tokens`.
 - **Requests** tab: open the second request of a turn and find the reasoning item from the first response inside `input`, `encrypted_content` and all.
 - **Protocol** tab: the `item/reasoning/summaryTextDelta` notifications.
 
-Offline: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the web UI. The script replays reasoning items with a fake `encrypted_content`, and `exec` prints their summaries as dim `reasoning:` lines.
+Offline: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the visualiser. The script replays reasoning items with a fake `encrypted_content`, and `exec` prints their summaries as dim `reasoning:` lines.
 
 Run the round-trip test:
 

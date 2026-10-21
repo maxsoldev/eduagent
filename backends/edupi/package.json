@@ -10,6 +10,12 @@
   "bin": {
     "edupi": "bin/edupi.mjs"
   },
+  "exports": {
+    "./rpc-types": "./src/coding-agent/modes/rpc/rpc-types.ts",
+    "./json-event": "./src/coding-agent/modes/json-event.ts",
+    "./ai-types": "./src/ai/types.ts",
+    "./agent-types": "./src/agent/types.ts"
+  },
   "scripts": {
     "start": "node bin/edupi.mjs --mode rpc",
     "typecheck": "tsc --noEmit",

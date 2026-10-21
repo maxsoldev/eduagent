@@ -181,7 +181,7 @@ uv run educodex exec "Run: touch .git/educodex-test"
 uv run educodex exec "Run: env | grep CODEX_SANDBOX"
 ```
 
-**4. See the full policy in the web UI.** [Start the launcher](README.md#the-web-ui), pick **educodex**, set the sandbox mode in the controls and run a command. The **Guardrails** tab shows each `trace/policyDecision`, the `trace/sandboxCommand` with its `-D` parameters and policy text, and any `trace/sandboxDenied`. Offline: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo**; the scripted `ls -la` and `python3 hello.py` run under Seatbelt.
+**4. See the full policy in the visualiser.** [Start the launcher](README.md#the-visualiser), pick **educodex**, set the sandbox mode in the controls and run a command. The **Guardrails** tab shows each `trace/policyDecision`, the `trace/sandboxCommand` with its `-D` parameters and policy text, and any `trace/sandboxDenied`. Offline: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo**; the scripted `ls -la` and `python3 hello.py` run under Seatbelt.
 
 **5. Run Seatbelt by hand** (macOS):
 

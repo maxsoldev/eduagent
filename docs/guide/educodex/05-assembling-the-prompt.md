@@ -151,12 +151,12 @@ uv run educodex exec --cwd /tmp/agents-demo "Say hi"
 
 A new `agents_md` user fragment appears, and the answer comes in French. Use `-v` to print the full request body.
 
-In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**):
+In the visualiser ([start the launcher](README.md#the-visualiser) and pick **educodex**):
 1. Send a message. Open the **Context** tab: every `input` item, colour-coded by source (base / permissions / AGENTS.md / env / user / model / tool), with token counts. The bar is zoomed to the used part so small items are visible; untick **zoom to used** to see it against the whole context window, with the auto-compact marker.
 2. Change the sandbox dropdown (say, to `read-only`) and send another message.
 3. Open the **Requests** tab on request #2. It says how many items were appended and whether earlier items stayed unchanged ✓. The new permissions and `<environment_context>` messages sit at the end; item 01 is untouched.
 
-Offline: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the web UI. The prompt assembly lines and the Context and Requests tabs work the same, because the prompt is built locally.
+Offline: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the visualiser. The prompt assembly lines and the Context and Requests tabs work the same, because the prompt is built locally.
 
 ### Watching the cache pay off
 

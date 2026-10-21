@@ -1,8 +1,7 @@
-// Mirrors pi packages/ai/src/utils/transcript.ts and text.ts (pinned 16f5f0af4). In pi the system
-// prompt and the tools the model may call live inside the transcript, on system messages:
-// `sections` patch the prompt by name, toolsAdded and toolsRemoved change the tools. Replaying
-// those changes in order gives the current tool set and the current system message (the request
-// starts with it; a compaction entry stores it).
+// Mirrors pi packages/ai/src/utils/transcript.ts and text.ts (pinned 16f5f0af4). pi keeps the system
+// prompt and the model's tools on system messages in the transcript: `sections` patch the prompt by
+// name, toolsAdded and toolsRemoved change the tools. Replayed in order, they give the current tools
+// and system message (the request starts with it; a compaction entry stores it).
 // edupi leaves out the per-API tool placement (pi's Kimi-style mid-conversation tool messages).
 import type { ImageContent, Message, SystemMessage, TextContent, ThinkingContent, Tool, ToolCall, ToolReference, TranscriptContext } from "../types.ts";
 

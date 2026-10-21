@@ -50,6 +50,8 @@ const TRACE: Record<string, Info> = {
     text: "One raw Chat Completions chunk. pi turns each delta into a message_update event." },
   modelResponse: { title: "Model response", category: "model", chapter: "01", source: PROVIDER,
     text: "The stream ended. usage is pi's Usage, parsed from the last chunk; stopReason comes from finish_reason." },
+  loopIteration: { title: "Loop decision", category: "loop", chapter: "02", source: LOOP,
+    text: "After the turn: continue if the reply called tools (needsFollowUp) or steering messages wait, else stop. tokens is the reply's usage.totalTokens. edupi only: pi has no such event." },
   compactionRequest: { title: "Compaction request", category: "memory", chapter: "07", source: COMPACTION,
     text: "The summary request: pi's summarizer system prompt and one user message, the older conversation as text plus the checkpoint prompt (or the update prompt with the previous summary). A split turn makes a second request for the turn's first part." },
   compacted: { title: "Context compacted", category: "memory", chapter: "07", source: COMPACTION,
@@ -100,6 +102,7 @@ function summary(e: TimelineEvent): string {
     case "toolOutput": return e.trace ? `${p.tool}${p.isError ? " · error" : ""} → ${p.tokens} tok` : "";
     case "promptAssembled": return e.trace ? p.fragments.map((f: Json) => `${f.kind}${f.changed ? "+" : ""}`).join(" · ") : "";
     case "skillsLoaded": return e.trace ? `${p.skills.length} skills in ${p.roots.length} folders${p.projectTrusted ? "" : " · project not trusted"}${p.errors.length ? ` · ${p.errors.length} warnings` : ""}` : "";
+    case "loopIteration": return e.trace ? `needsFollowUp=${p.needsFollowUp} → ${p.decision}` : "";
     case "modelRequest": return e.trace ? `${p.body.messages.length} messages · ${p.body.model}` : "";
     case "paused": case "resumed": return e.trace ? `${p.breakpoint}${p.info?.tool ? ` · ${p.info.tool}` : ""}` : "";
     case "pricing": return e.trace ? (p.pricing ? `input $${p.pricing.perMillionTokens.prompt}/M · cached $${p.pricing.perMillionTokens.cache_read}/M · output $${p.pricing.perMillionTokens.completion}/M` : "no pricing") : "";

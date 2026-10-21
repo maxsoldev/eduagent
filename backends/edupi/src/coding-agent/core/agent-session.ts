@@ -1,12 +1,8 @@
-// Mirrors pi packages/coding-agent/src/core/agent-session.ts (pinned 16f5f0af4): the coding
-// agent's session around the Agent. Every mode (pi's TUI, print, JSON, RPC) drives an
-// AgentSession. It turns a prompt into a run, forwards the Agent's events with the session's
-// own events added (agent_settled, queue_update, compaction_start/end), saves each finished
-// message to the session file, compacts the context (by hand, at the threshold, after an
-// overflow), and answers the state questions of get_state. While a run is active, new user text
-// goes into the Agent's steering or follow-up queue; the session keeps the texts for queue_update.
-// Before each run it builds the system prompt from the resource loader's files and puts the
-// changed sections into the transcript.
+// Mirrors pi packages/coding-agent/src/core/agent-session.ts (pinned 16f5f0af4): the session around
+// the Agent that every mode drives. It builds the system prompt before each run, turns a prompt into a
+// run (or queues it while one is active), forwards the Agent's events plus its own (agent_settled,
+// queue_update, compaction_start/end), saves finished messages, compacts (by hand, at the threshold,
+// after an overflow) and answers get_state.
 import { readFileSync } from "node:fs";
 import type { Agent } from "../../agent/agent.ts";
 import type { AgentContext, AgentEvent, AgentMessage, QueueMode } from "../../agent/types.ts";
@@ -533,14 +529,11 @@ export class AgentSession {
     }
   }
 
-  /**
-   * The automatic cases, checked before a prompt and after each run:
-   * 1. Overflow with retry: the provider refused the context (or a length stop came early).
-   *    Drop the failed reply from the context, compact, and continue the run once.
-   * 2. Overflow without retry: the reply succeeded but its input exceeded the window. Compact.
-   * 3. Threshold: the context is above contextWindow - reserveTokens. Compact, no retry.
-   * Returns whether the run should continue.
-   */
+  // The automatic cases, checked before a prompt and after each run. Returns whether the run goes on.
+  // 1. Overflow with retry: the provider refused the context (or a length stop came early): drop the
+  //    failed reply, compact, and continue the run once.
+  // 2. Overflow without retry: the reply succeeded but its input exceeded the window. Compact.
+  // 3. Threshold: the context is above contextWindow - reserveTokens. Compact, no retry.
   private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true,
     toolResults: AgentMessage[] = []): Promise<boolean> {
     const settings = this.settingsManager.getCompactionSettings();

@@ -147,7 +147,7 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 - `trace/compactionRequest` with the exact request body, and `trace/compacted` with token counts before and after plus the whole new history;
 - a `compacted` line in the rollout file with `message` and `replacement_history`, the same fields Codex writes. Replay uses it to rebuild history (chapter 16).
 
-**Manual compaction.** The web UI's **compact** button and the `/compact` command (web UI and TUI) call `thread/compact/start` ([`app_server/processor.py`](../../../backends/educodex/src/educodex/app_server/processor.py)). Like Codex, the server replies `{}` right away. `Session.start_compaction` then runs `run_compact(ctx, reason="manual")` as the session's task, the same slot a turn uses, so a compaction and a turn can never overlap. It is refused while a turn is running. Progress arrives as `item/started` / `item/completed` for the `contextCompaction` item.
+**Manual compaction.** The visualiser's **compact** button and the `/compact` command (visualiser and TUI) call `thread/compact/start` ([`app_server/processor.py`](../../../backends/educodex/src/educodex/app_server/processor.py)). Like Codex, the server replies `{}` right away. `Session.start_compaction` then runs `run_compact(ctx, reason="manual")` as the session's task, the same slot a turn uses, so a compaction and a turn can never overlap. It is refused while a turn is running. Progress arrives as `item/started` / `item/completed` for the `contextCompaction` item.
 
 **Remote compaction, for reference.** The module docstring describes what Codex does instead: a normal `/responses` request whose input ends in a `compaction_trigger` item, answered with one encrypted `compaction` item. The older `/responses/compact` endpoint is gone.
 
@@ -172,7 +172,7 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 
 ## Try it
 
-1. [Start the launcher](README.md#the-web-ui), open http://127.0.0.1:8765 and pick **educodex**.
+1. [Start the launcher](README.md#the-visualiser), open http://127.0.0.1:8765 and pick **educodex**.
 2. Have a short conversation, then press **compact**. In the **Timeline**, click *Compaction request*: it is the full history plus the summary prompt, with `"tools": []`. Then click *History compacted* and read `newHistory`.
 3. Open the **Context** tab and untick *zoom to used*. The bar now spans the whole context window, with a marker at the auto-compact limit. After compaction you will see the "compaction summary" item at the end.
 4. Offline, over stdio. The fake model returns the next scripted response as the "summary", so a two-response script is enough:
