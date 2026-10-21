@@ -114,6 +114,8 @@ pi's RPC protocol (`pi --mode rpc`, `packages/coding-agent/src/modes/rpc/` at th
 - **Replies** (`type: "response"`) are not timeline events; the client matches them by `id`.
 - **Commands sent:** `get_state`, `new_session`, `prompt`, `abort`, `compact`, `set_thinking_level`, `get_commands` (skills: `source: "skill"`, name `skill:<name>`). A prompt with a `$skill` becomes `/skill:<name> <text>`, which pi expands. Steering and follow-up (`steer`, `follow_up`) are not sent yet.
 
+edupi speaks the same protocol, so the same adapter serves the `edupi` entries (Playwright: `visualiser/e2e/edupi.spec.ts`).
+
 Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`; `meta.json` has the pi commit), recorded by `visualiser/test/record-pi.mjs`.
 
 ## 4. Capabilities
