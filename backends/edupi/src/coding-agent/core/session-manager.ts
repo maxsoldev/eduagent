@@ -4,17 +4,7 @@
 // branch, where each entry's parent is the entry before it. The context for the model is not
 // stored: it is rebuilt from the entries (buildSessionContext).
 import { randomUUID } from "node:crypto";
-import {
-	appendFileSync,
-	closeSync,
-	existsSync,
-	mkdirSync,
-	openSync,
-	readdirSync,
-	readFileSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { AgentMessage } from "../../agent/types.ts";
 import type { Message, SystemMessage, Usage } from "../../ai/types.ts";
@@ -23,7 +13,7 @@ import { uuidv7 } from "../../ai/utils/uuid.ts";
 import { getAgentDir } from "../config.ts";
 import { createCompactionSummaryMessage } from "./messages.ts";
 
-export const CURRENT_SESSION_VERSION = 3;
+const CURRENT_SESSION_VERSION = 3;
 
 export interface SessionHeader {
 	type: "session";
@@ -91,7 +81,7 @@ export type SessionEntry =
 	| ContextEditEntry;
 
 /** A line of a session file: the header or an entry. */
-export type FileEntry = SessionHeader | SessionEntry;
+type FileEntry = SessionHeader | SessionEntry;
 
 /** What the model sees, rebuilt from the entries, plus the settings in force. */
 export interface SessionContext {
@@ -120,18 +110,12 @@ function generateId(byId: { has(id: string): boolean }): string {
 	return randomUUID(); // fallback if somehow every short id collides
 }
 
-/** One entry per line. Malformed lines are skipped, as in pi. */
-export function parseSessionEntries(content: string): FileEntry[] {
-	const entries: FileEntry[] = [];
-	for (const line of content.trim().split("\n")) {
-		if (!line.trim()) continue;
-		try {
-			entries.push(JSON.parse(line) as FileEntry);
-		} catch {
-			// Skip malformed lines
-		}
-	}
-	return entries;
+/** One entry per line. */
+function parseSessionEntries(content: string): FileEntry[] {
+	return content
+		.split("\n")
+		.filter((line) => line.trim())
+		.map((line) => JSON.parse(line) as FileEntry);
 }
 
 export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
@@ -144,7 +128,6 @@ export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEnt
 
 /** The path from the root to the leaf: walk parentId up from the leaf, then reverse. */
 function buildSessionPath(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
-	if (leafId === null) return []; // a leaf of null means "before the first entry"
 	const byId = new Map(entries.map((e) => [e.id, e]));
 	const leaf = (leafId ? byId.get(leafId) : undefined) ?? entries[entries.length - 1];
 	const path: SessionEntry[] = [];
@@ -174,18 +157,7 @@ function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "
 
 /** The messages one entry adds to the context. Setting entries add none. */
 export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage[] {
-	if (entry.type === "message") {
-		const message = entry.message;
-		// Files are read without validation; a hand-edited one can have messages with null content.
-		if (message.role === "system" && message.content == null) return [{ ...message, content: "" }];
-		if (
-			(message.role === "user" || message.role === "assistant" || message.role === "toolResult") &&
-			message.content == null
-		) {
-			return [{ ...message, content: [] }];
-		}
-		return [message];
-	}
+	if (entry.type === "message") return [entry.message];
 	if (entry.type === "compaction") {
 		const summary = createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
 		return entry.systemMessage ? [entry.systemMessage, summary] : [summary];
@@ -198,7 +170,7 @@ export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage
  * latest compaction, the entries from its firstKeptEntryId up to it (without system messages,
  * the compaction brings its own), then every entry after it. Older entries are left out.
  */
-export function buildContextEntries(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
+function buildContextEntries(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
 	const path = buildSessionPath(entries, leafId);
 	let compaction: CompactionEntry | undefined;
 	for (const entry of path) if (entry.type === "compaction") compaction = entry;
@@ -266,50 +238,11 @@ function getDefaultSessionDirPath(cwd: string, agentDir: string = getAgentDir())
 	return join(resolve(agentDir), "sessions", safePath);
 }
 
-/** The default session dir for a cwd, created if missing. */
-export function getDefaultSessionDir(cwd: string, agentDir: string = getAgentDir()): string {
-	const sessionDir = getDefaultSessionDirPath(cwd, agentDir);
-	if (!existsSync(sessionDir)) mkdirSync(sessionDir, { recursive: true });
-	return sessionDir;
-}
-
-/**
- * Reads a session file. A file whose first entry is not a header gives no entries. A last line
- * without its newline gets one, so the next append starts a new line.
- */
-export function loadEntriesFromFile(filePath: string): FileEntry[] {
-	if (!existsSync(filePath)) return [];
-	const content = readFileSync(filePath, "utf8");
-	const entries = parseSessionEntries(content);
-	if (entries.length === 0) return entries;
-	const header = entries[0];
-	if (header.type !== "session" || typeof (header as { id?: unknown }).id !== "string") return [];
-	if (content && !content.endsWith("\n")) appendFileSync(filePath, "\n");
+/** Reads a session file. Its first line must be a session header. */
+function loadEntriesFromFile(filePath: string): FileEntry[] {
+	const entries = parseSessionEntries(readFileSync(filePath, "utf8"));
+	if (entries[0]?.type !== "session") throw new Error(`Session file is not a valid edupi session: ${filePath}`);
 	return entries;
-}
-
-/** The header, if the file's first entry is one. Unreadable files count as no session. */
-function readSessionHeader(filePath: string): SessionHeader | null {
-	try {
-		const first = parseSessionEntries(readFileSync(filePath, "utf8"))[0];
-		return first?.type === "session" && typeof first.id === "string" ? first : null;
-	} catch {
-		return null;
-	}
-}
-
-/** The session file in the dir that was changed last. Files that are not sessions are skipped. */
-export function findMostRecentSession(sessionDir: string): string | null {
-	try {
-		const files = readdirSync(sessionDir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.map((f) => join(sessionDir, f))
-			.map((path) => ({ path, mtime: statSync(path).mtimeMs }))
-			.sort((a, b) => b.mtime - a.mtime);
-		return files.find(({ path }) => readSessionHeader(path))?.path ?? null;
-	} catch {
-		return null; // no dir, or a file went away while we looked
-	}
 }
 
 /**
@@ -319,52 +252,35 @@ export function findMostRecentSession(sessionDir: string): string | null {
  */
 export class SessionManager {
 	private sessionId = "";
-	private sessionFile: string | undefined;
+	private sessionFile = "";
 	private sessionDir: string;
 	private cwd: string;
-	private persist: boolean;
 	private flushed = false;
 	private fileEntries: FileEntry[] = [];
 	private byId = new Map<string, SessionEntry>();
 	private leafId: string | null = null;
 
-	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined, persist: boolean) {
+	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined) {
 		this.cwd = resolve(cwd);
 		this.sessionDir = sessionDir;
-		this.persist = persist;
-		if (persist && sessionDir && !existsSync(sessionDir)) mkdirSync(sessionDir, { recursive: true });
-		if (sessionFile) this._setSessionFile(sessionFile);
+		mkdirSync(sessionDir, { recursive: true });
+		if (sessionFile) this._setSessionFile(resolve(sessionFile));
 		else this.newSession();
 	}
 
 	private _setSessionFile(sessionFile: string): void {
-		this.sessionFile = resolve(sessionFile);
-		if (existsSync(this.sessionFile)) {
-			const entries = loadEntriesFromFile(this.sessionFile);
-			if (entries.length === 0) {
-				// An empty file gets a header at once; a file that is not a session is an error.
-				const explicitPath = this.sessionFile;
-				if (statSync(explicitPath).size > 0) {
-					throw new Error(`Session file is not a valid edupi session: ${explicitPath}`);
-				}
-				this.newSession();
-				this.sessionFile = explicitPath;
-				this._rewriteFile();
-				this.flushed = true;
-				return;
-			}
-			this._loadEntries(entries);
+		if (existsSync(sessionFile)) {
+			this._loadEntries(loadEntriesFromFile(sessionFile));
 			this.flushed = true;
 		} else {
 			// A missing file starts a new session at that path (pi's --session <new file>).
-			const explicitPath = this.sessionFile;
 			this.newSession();
-			this.sessionFile = explicitPath;
 		}
+		this.sessionFile = sessionFile;
 	}
 
 	/** Starts a fresh session in memory: a new header and id. Returns the file it will write. */
-	newSession(options?: { parentSession?: string }): string | undefined {
+	newSession(options?: { parentSession?: string }): string {
 		this.sessionId = uuidv7();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -379,10 +295,8 @@ export class SessionManager {
 		this.byId.clear();
 		this.leafId = null;
 		this.flushed = false;
-		if (this.persist) {
-			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
-			this.sessionFile = join(this.sessionDir, `${fileTimestamp}_${this.sessionId}.jsonl`);
-		}
+		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+		this.sessionFile = join(this.sessionDir, `${fileTimestamp}_${this.sessionId}.jsonl`);
 		return this.sessionFile;
 	}
 
@@ -410,21 +324,6 @@ export class SessionManager {
 		}
 	}
 
-	/** Writes every entry so far, replacing the file. */
-	private _rewriteFile(): void {
-		if (!this.persist || !this.sessionFile) return;
-		const fd = openSync(this.sessionFile, "w");
-		try {
-			for (const entry of this.fileEntries) writeFileSync(fd, `${JSON.stringify(entry)}\n`);
-		} finally {
-			closeSync(fd);
-		}
-	}
-
-	isPersisted(): boolean {
-		return this.persist;
-	}
-
 	getCwd(): string {
 		return this.cwd;
 	}
@@ -437,7 +336,7 @@ export class SessionManager {
 		return this.sessionId;
 	}
 
-	getSessionFile(): string | undefined {
+	getSessionFile(): string {
 		return this.sessionFile;
 	}
 
@@ -449,15 +348,10 @@ export class SessionManager {
 
 	/** The first conversation message writes every entry so far; after that, one line per entry. */
 	private _persist(entry: SessionEntry): void {
-		if (!this.persist || !this.sessionFile) return;
 		if (!this.flushed) {
 			if (!this._hasConversation()) return;
-			const fd = openSync(this.sessionFile, "wx");
-			try {
-				for (const e of this.fileEntries) writeFileSync(fd, `${JSON.stringify(e)}\n`);
-			} finally {
-				closeSync(fd);
-			}
+			const lines = this.fileEntries.map((e) => `${JSON.stringify(e)}\n`).join("");
+			writeFileSync(this.sessionFile, lines, { flag: "wx" });
 			this.flushed = true;
 		} else {
 			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
@@ -527,36 +421,7 @@ export class SessionManager {
 
 	/** Appends an edit of an earlier message entry's context; null leaves it out of the context. */
 	appendContextEdit(targetId: string, replacement: ContextEditEntry["replacement"]): string {
-		if (
-			replacement !== null &&
-			(typeof replacement !== "object" ||
-				!("content" in replacement) ||
-				(typeof replacement.content !== "string" && !Array.isArray(replacement.content)))
-		) {
-			throw new Error("Context edit replacement must be null or contain string/array content");
-		}
-		const target = this.byId.get(targetId);
-		if (!target) throw new Error(`Entry ${targetId} not found`);
-		if (!this.getBranch().some((entry) => entry.id === targetId)) {
-			throw new Error(`Entry ${targetId} is not on the active branch`);
-		}
-		const editable =
-			target.type === "message" &&
-			(target.message.role === "user" ||
-				target.message.role === "assistant" ||
-				target.message.role === "toolResult");
-		if (!editable) throw new Error(`Entry ${targetId} does not contribute editable model content`);
-		// Assistant and tool result content is always blocks, so a string is stored as one text block.
-		const normalizedReplacement =
-			replacement !== null && target.message.role !== "user" && typeof replacement.content === "string"
-				? { content: [{ type: "text" as const, text: replacement.content }] }
-				: replacement;
-		const entry: ContextEditEntry = {
-			type: "context_edit",
-			...this._entryBase(),
-			targetId,
-			replacement: normalizedReplacement,
-		};
+		const entry: ContextEditEntry = { type: "context_edit", ...this._entryBase(), targetId, replacement };
 		this._appendEntry(entry);
 		return entry.id;
 	}
@@ -578,10 +443,6 @@ export class SessionManager {
 		return buildSessionContext(this.getEntries(), this.leafId);
 	}
 
-	getHeader(): SessionHeader | null {
-		return this.fileEntries.find((e): e is SessionHeader => e.type === "session") ?? null;
-	}
-
 	/** All entries, without the header. */
 	getEntries(): SessionEntry[] {
 		return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
@@ -589,24 +450,12 @@ export class SessionManager {
 
 	/** A new session in <agentDir>/sessions/<cwd folder>/, or in sessionDir. */
 	static create(cwd: string, sessionDir?: string): SessionManager {
-		return new SessionManager(cwd, sessionDir ?? getDefaultSessionDir(cwd), undefined, true);
+		return new SessionManager(cwd, sessionDir ?? getDefaultSessionDirPath(cwd), undefined);
 	}
 
 	/** Opens a session file. Its cwd comes from the header; new sessions go next to the file. */
 	static open(path: string, sessionDir?: string): SessionManager {
-		const header = loadEntriesFromFile(resolve(path)).find((e): e is SessionHeader => e.type === "session");
-		return new SessionManager(header?.cwd ?? process.cwd(), sessionDir ?? resolve(path, ".."), path, true);
-	}
-
-	/** Opens the newest session of this cwd, or starts a new one. */
-	static continueRecent(cwd: string, sessionDir?: string): SessionManager {
-		const dir = sessionDir ?? getDefaultSessionDir(cwd);
-		const mostRecent = findMostRecentSession(dir);
-		return new SessionManager(cwd, dir, mostRecent ?? undefined, true);
-	}
-
-	/** A session that is never written to disk (pi's --no-session). */
-	static inMemory(cwd: string = process.cwd()): SessionManager {
-		return new SessionManager(cwd, "", undefined, false);
+		const header = existsSync(path) ? (loadEntriesFromFile(path)[0] as SessionHeader) : undefined;
+		return new SessionManager(header?.cwd ?? process.cwd(), sessionDir ?? resolve(path, ".."), path);
 	}
 }

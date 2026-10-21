@@ -108,7 +108,10 @@ function loadSkillsFromDirInternal(dir: string, root: SkillRoot, includeRootFile
 }
 
 /** One skill file. A SKILL.md without a description is not loaded; a bad name only warns. */
-function loadSkillFromFile(filePath: string, root: SkillRoot): { skill: Skill | null; diagnostics: ResourceDiagnostic[] } {
+function loadSkillFromFile(
+	filePath: string,
+	root: SkillRoot,
+): { skill: Skill | null; diagnostics: ResourceDiagnostic[] } {
 	const diagnostics: ResourceDiagnostic[] = [];
 	const { frontmatter } = parseFrontmatter<SkillFrontmatter>(readFileSync(filePath, "utf-8"));
 	const description = frontmatter.description;
@@ -134,7 +137,13 @@ function loadSkillFromFile(filePath: string, root: SkillRoot): { skill: Skill | 
 			filePath,
 			baseDir: skillDir,
 			// pi package-manager.ts addAutoDiscoveredResources: source "auto", baseDir = the agent dir or <cwd>/.pi.
-			sourceInfo: { path: filePath, source: "auto", scope: root.scope, origin: "top-level", baseDir: dirname(root.path) },
+			sourceInfo: {
+				path: filePath,
+				source: "auto",
+				scope: root.scope,
+				origin: "top-level",
+				baseDir: dirname(root.path),
+			},
 			disableModelInvocation: frontmatter["disable-model-invocation"] === true,
 		},
 		diagnostics,
@@ -194,7 +203,11 @@ export function loadSkills(roots: SkillRoot[]): LoadSkillsResult {
 		allDiagnostics.push(...result.diagnostics);
 		for (const skill of result.skills) {
 			if (skillMap.has(skill.name)) {
-				collisionDiagnostics.push({ type: "collision", message: `name "${skill.name}" collision`, path: skill.filePath });
+				collisionDiagnostics.push({
+					type: "collision",
+					message: `name "${skill.name}" collision`,
+					path: skill.filePath,
+				});
 			} else {
 				skillMap.set(skill.name, skill);
 			}

@@ -327,7 +327,7 @@ export class AgentSession {
 	}
 
 	/** The session file. It exists once the first message is saved. */
-	get sessionFile(): string | undefined {
+	get sessionFile(): string {
 		return this.sessionManager.getSessionFile();
 	}
 

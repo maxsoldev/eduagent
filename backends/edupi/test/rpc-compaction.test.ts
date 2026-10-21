@@ -248,12 +248,14 @@ test("compact on a session with nothing to summarise ends with pi's error", asyn
 	});
 });
 
-
 test("threshold: after a run whose context passed contextWindow - reserveTokens, edupi compacts before agent_settled", async () => {
 	const long = "x".repeat(400); // 100 estimated tokens
 	// Window 200 after the system prompt, reserve 100: compact 100 tokens after it. keepRecentTokens 101 keeps q2 (1) and its answer (100).
 	edupi = startEdupi(
-		{ models: await tinyModel(200), responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."] },
+		{
+			models: await tinyModel(200),
+			responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."],
+		},
 		[],
 		{ dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 101 } }) },
 	);

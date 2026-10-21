@@ -69,4 +69,3 @@ export async function main(argv: string[]): Promise<void> {
 		debug: debugCommands(tracer),
 	});
 }
-

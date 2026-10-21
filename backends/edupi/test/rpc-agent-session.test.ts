@@ -26,7 +26,6 @@ function dirWithSettings(settings: object): string {
 	return dir;
 }
 
-
 const settledCount = () => edupi.seen.filter((m) => m.type === "agent_settled").length;
 const untilSettled = (count = settledCount() + 1) => edupi.until(() => settledCount() >= count, 15_000);
 const indexOf = (match: (m: Message) => boolean) => edupi.seen.findIndex(match);
