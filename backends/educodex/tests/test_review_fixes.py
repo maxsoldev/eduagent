@@ -193,22 +193,20 @@ async def test_bad_tool_arguments_do_not_crash_the_turn(make_session):
     assert fake.requests[1]["input"][-1]["output"].startswith("failed to parse function arguments")
 
 
-def test_turn_start_while_running_keeps_settings(workspace, tmp_path):
-    slow = [[{"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": "sleep 2"})}],
-            [{"type": "message", "text": "ok"}]]
-    processor = MessageProcessor(Config(cwd=workspace, home=tmp_path / "h", api_key="t", sandbox_mode="read-only"),
-                                 lambda: __import__("educodex.testing.fake_model", fromlist=["FakeModel"]).FakeModel(slow))
-    with TestClient(build_app(processor)) as client, client.websocket_connect("/") as ws:
-        def req(i, method, params):
-            ws.send_text(json.dumps({"id": i, "method": method, "params": params}))
-            while (msg := json.loads(ws.receive_text())).get("id") != i or "method" in msg:
-                pass
-            return msg
-        req(1, "initialize", {})
-        assert req(2, "initialize", {})["error"]["message"] == "Already initialized"
-        tid = req(3, "thread/start", {})["result"]["thread"]["id"]
-        req(4, "turn/start", {"threadId": tid, "input": [{"type": "text", "text": "a"}]})
-        again = req(5, "turn/start", {"threadId": tid, "input": [{"type": "text", "text": "b"}],
-                                      "sandboxPolicy": {"type": "dangerFullAccess"}})
-        assert "already running" in again["error"]["message"]
-        assert processor.threads[tid].session.config.sandbox_mode == "read-only"
+def test_turn_start_while_running_keeps_settings(app_server):
+    exec_call = lambda cmd: {"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": cmd})}  # noqa: E731
+    server = app_server([[exec_call("sleep 2")], [{"type": "message", "text": "ok"}],
+                         [exec_call("ls")], [{"type": "message", "text": "ok"}]], "--sandbox", "read-only")
+    server.request("initialize", {})
+    assert server.request("initialize", {})["error"]["message"] == "Already initialized"
+    tid = server.request("thread/start", {})["result"]["thread"]["id"]
+    server.request("turn/start", {"threadId": tid, "input": [{"type": "text", "text": "a"}]})
+    again = server.request("turn/start", {"threadId": tid, "input": [{"type": "text", "text": "b"}],
+                                          "sandboxPolicy": {"type": "dangerFullAccess"}})
+    assert "already running" in again["error"]["message"]
+    server.until("turn/completed")
+    # The refused turn/start must not have changed the thread's settings.
+    server.request("turn/start", {"threadId": tid, "input": [{"type": "text", "text": "c"}]})
+    while (decision := server.until("trace/policyDecision"))["params"]["command"] != "ls":
+        pass
+    assert decision["params"]["sandboxMode"] == "read-only"

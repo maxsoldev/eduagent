@@ -6,6 +6,7 @@ one callback for questions to the user (approvals), and an optional probe for ob
 """
 
 import asyncio
+import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -82,7 +83,10 @@ class Session:
     async def start(self) -> dict:
         """Connect MCP servers, build the tool list, write the session log header."""
         if self.config.bundled_skills:
-            install_system_skills(self.config.home)
+            try:  # like Codex (ext/skills/src/host_service.rs): log the error, keep the thread
+                install_system_skills(self.config.home)
+            except OSError as err:
+                print(f"failed to install system skills: {err}", file=sys.stderr)
         self.refresh_memory_instructions()
         await self.mcp.start(self)
         self.router = ToolRouter(builtin_handlers(self.config.include_plan_tool, self.model_info.apply_patch_tool_type) + self.mcp.handlers(),
