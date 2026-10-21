@@ -202,6 +202,7 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 - **No summary retries.** pi retries a summary call after a transient network error (`retryAssistantCall`). edupi fails the compaction.
 - **Global settings only.** pi also reads `<cwd>/.pi/settings.json` once the project is trusted, and has per-model overrides (`compaction.modelOverrides`) and `set_auto_compaction`. edupi reads `<home>/settings.json`.
 - **Simpler overflow bookkeeping.** pi checks that the failed reply is still part of the context and has more cases for omissions of omissions. edupi omits the failed reply and its tool results.
+- **No projection guards in `_checkCompaction`.** pi first checks that the reply is still in the projected context (`assistantIsProjected`, `assistantRetainedForExplicitRecovery`). edupi checks the reply as it is.
 - **Entry order, not timestamps.** A reply is "from before the latest compaction" (its usage is stale) if its entry comes before the compaction entry in the session file. pi compares millisecond timestamps; with the fast faux provider both can fall in the same millisecond. A message with no entry yet falls back to pi's timestamp rule.
 
 ## Try it
