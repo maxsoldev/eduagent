@@ -171,7 +171,7 @@ At end of input (the client closed stdin) it disconnects and shuts the threads d
    mkdir -p /tmp/edx && uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/edx
    ```
    ```json
-   {"id":1,"method":"initialize","params":{"clientInfo":{"name":"me","version":"0"},"capabilities":{"optOutNotificationMethods":["trace/historyChanged","trace/sseEvent"]}}}
+   {"id":1,"method":"initialize","params":{"clientInfo":{"name":"me","version":"0"},"capabilities":{"optOutNotificationMethods":["trace/historyChanged","trace/streamEvent"]}}}
    {"method":"initialized"}
    {"id":2,"method":"thread/start","params":{}}
    {"id":3,"method":"turn/start","params":{"threadId":"<thread id from id 2>","input":[{"type":"text","text":"make hello.py"}]}}

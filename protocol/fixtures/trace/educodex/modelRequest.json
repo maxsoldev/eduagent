@@ -1,0 +1,72 @@
+{
+  "method": "trace/modelRequest",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "api": "openai-responses",
+    "url": "https://openrouter.ai/api/v1/responses",
+    "body": {
+      "model": "openai/gpt-6-luna",
+      "input": [
+        {
+          "type": "message",
+          "role": "developer",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "<permissions instructions>\n..."
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Hi?"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "exec_command",
+          "description": "Runs a command in a PTY, returning output or a session ID for ongoing interaction.",
+          "strict": false,
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "cmd": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cmd"
+            ]
+          }
+        }
+      ],
+      "tool_choice": "auto",
+      "parallel_tool_calls": true,
+      "reasoning": {
+        "effort": "medium",
+        "summary": "auto"
+      },
+      "store": false,
+      "stream": true,
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "prompt_cache_key": "019a0000-0000-7000-8000-000000000001",
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "inputTokensEstimate": 2318,
+    "_seq": 11,
+    "_ts": 1792595087.8
+  }
+}

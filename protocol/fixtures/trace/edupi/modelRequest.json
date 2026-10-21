@@ -1,0 +1,26 @@
+{
+  "type": "trace",
+  "name": "modelRequest",
+  "api": "openai-completions",
+  "url": "https://openrouter.ai/api/v1/chat/completions",
+  "body": {
+    "model": "openai/gpt-6-luna",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hi?"
+          }
+        ]
+      }
+    ],
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "store": false,
+    "max_completion_tokens": 16384
+  }
+}

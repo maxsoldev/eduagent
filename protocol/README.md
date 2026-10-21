@@ -9,7 +9,7 @@ Contents:
 3. Adapter interface
 4. Capabilities (which panels a backend entry shows)
 5. Harness links (timeline source and guide links)
-6. Trace events (shared vocabulary, to be completed in ticket #11)
+6. Trace events (shared vocabulary, payload shapes and fixtures)
 
 Code: `visualiser/src/view/model.ts`, `visualiser/src/adapters/types.ts`, `visualiser/src/view/capabilities.ts`, `visualiser/src/view/harness.ts`. If this document and the code disagree, fix one of them.
 
@@ -149,4 +149,53 @@ Each adapter's explanation table gives a source path (relative to the base) and 
 
 ## 6. Trace events
 
-Ticket #11 writes the shared trace vocabulary here: names, payload shapes and JSON fixtures. The visualiser already reads these trace events by name: `modelRequest` (`url`, `body`; `api` picks the request view, `openai-responses` if absent), `modelResponse`, `toolsRegistered` (`tools`), `historyChanged`, `promptAssembled`, `pricing` (`pricing.perMillionTokens`), `cost` (`last`, `total`, `inputItems`), `paused` (`breakpoint`, `info`), `resumed`, and the Codex-only `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `mcpToolsListed`, `mcpToolExposed`.
+Trace events are the teaching extras on top of a native protocol: they show the steps a harness hides (the exact request body, each streamed chunk, prompt assembly, tool dispatch). The real harnesses do not send them. Each backend sends them in its protocol's style:
+
+| Backend | Wire form | Example |
+|---|---|---|
+| educodex | a JSON-RPC lite notification in the `trace/` namespace; `params` is the payload, plus `threadId`, `turnId`, `iteration` (turn events) and `_seq`, `_ts` | `{"method": "trace/modelRequest", "params": {"api": "openai-responses", "url": ..., "body": ...}}` |
+| edupi | a pi-style `type`-tagged line; every other field is the payload | `{"type": "trace", "name": "modelRequest", "api": "openai-completions", "url": ..., "body": ...}` |
+
+Both adapters turn them into the same `TimelineEvent`: `{name: "modelRequest", trace: true, data: payload}` (section 1). So the Inspector reads one name and one set of fields for both backends.
+
+### Shared events
+
+Events that mean the same thing have the same name and the same **shared fields**. A backend may add its own fields to a shared event.
+
+| Name | When | Shared fields | educodex adds | edupi adds |
+|---|---|---|---|---|
+| `modelRequest` | just before the HTTP request to the model | `api` (string: `openai-responses` or `openai-completions`), `url` (string), `body` (object: the exact request body) | `inputTokensEstimate` | |
+| `streamEvent` | for each streamed chunk, raw | `event` (object: one Responses SSE event, or one `chat.completion.chunk`) | (only with `thread/start` `traceSse: true`) | |
+| `modelResponse` | when the stream ended | `usage` (object: the harness's usage record), `seconds` (number) | `eventCounts`, `outputItems`, `cost` (the Codex usage is the Responses `usage`) | `stopReason`, `errorMessage` (on errors), `responseId`, `content` (the assistant content blocks); `usage` is pi's `Usage` |
+
+- `api` picks the request view in the Requests tab: **Chat Completions** messages (`body.messages`: role and content) or **Responses** input items (`body.input`: typed items). A `modelRequest` without `api` is read as `openai-responses`.
+- edupi sends a `modelResponse` for failed requests too (`stopReason: "error"`), but only after a `modelRequest`.
+
+Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `toolDispatch`, `toolOutput`, `loopIteration`, `compactionRequest`, `compacted`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
+
+### Backend-only events
+
+- educodex: `toolsRegistered` (`tools`), `historyChanged`, `pricing` (`pricing.perMillionTokens`), `cost` (`last`, `total`, `inputItems`), `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `hook`, `mcpToolsListed`, `mcpToolExposed`, `mcpServerFailed`, `skillInjected`, and the memory events.
+- edupi: none yet.
+
+The visualiser reacts to `pricing`, `cost`, `paused` and `resumed` (view reducer) and reads `modelRequest`, `modelResponse` (Requests tab) and `toolsRegistered` (Tools tab).
+
+### Fixtures
+
+`protocol/fixtures/trace/` holds one example per backend and shared event, in the native wire form:
+
+| File | What |
+|---|---|
+| `shared.json` | each shared event and the JSON type of each shared field |
+| `educodex/<name>.json` | an educodex notification (`{method, params}`) |
+| `edupi/<name>.json` | an edupi line (`{type: "trace", name, ...}`) |
+
+The rule (`protocol/shape.ts`): a real event **matches** its fixture if it has every key of the fixture with the same JSON type. Objects are checked key by key; arrays by type only; extra keys are allowed. Stream events differ by kind, so a test compares a fixture with a real event of the same kind (a text delta).
+
+Tests that use the fixtures:
+
+- `backends/edupi/test/trace-fixtures.test.ts` (seam A): edupi's events match `edupi/*.json` and `shared.json`.
+- `backends/educodex/tests/test_trace_fixtures.py` (seam A): educodex's events match `educodex/*.json` and `shared.json` (the same rule in Python).
+- `visualiser/test/trace-fixtures.test.ts` (seam C): both adapters turn each fixture into a trace event with the shared name and fields.
+
+When a payload changes, change the fixture, this section and both backends' tests together.

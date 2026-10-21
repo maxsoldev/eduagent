@@ -6,6 +6,7 @@ import type { StreamFn } from "../agent/types.ts";
 import { streamSimple } from "../ai/api/openai-completions.ts";
 import { fauxProvider, loadFauxScript } from "../ai/providers/faux.ts";
 import { OPENROUTER_API_KEY_ENV, openRouterModel } from "../ai/providers/openrouter.ts";
+import { Tracer } from "../observe/tracer.ts";
 import { type Args, parseArgs } from "./cli/args.ts";
 import { AgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import { createAgentSession } from "./core/sdk.ts";
@@ -29,12 +30,15 @@ export async function main(argv: string[]): Promise<void> {
     fetch = faux.fetch;
   }
   const getApiKey = (provider: string) => (parsed.faux ? "faux" : provider === "openrouter" ? process.env[OPENROUTER_API_KEY_ENV] || undefined : undefined);
-  const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch });
+  // The teaching extras watch the core through its probe hooks; the core does not know them.
+  const tracer = new Tracer();
+  const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
   const cwd = process.cwd();
   const createRuntime = (sessionManager: SessionManager) => createAgentSession({ sessionManager, model, streamFn, getApiKey });
   const session = createRuntime(createSessionManager(parsed, cwd));
-  await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime));
+  // The tracer lives in streamFn, which every session from createRuntime shares, so it survives new_session.
+  await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), { connect: (output) => tracer.connect(output) });
 }
 
 /** Which session to start with: pi's --no-session, --session, --continue, else a new one. */

@@ -14,7 +14,7 @@ const EXPLAIN: Record<string, Info> = {
     text: "New items were appended to the conversation history. The whole history is resent on every request." },
   "trace/modelRequest": { title: "Model request", category: "model", chapter: "02", source: "core/src/client.rs",
     text: "POST /responses with the full history. store=false means the server keeps nothing; base instructions are the first developer message." },
-  "trace/sseEvent": { title: "SSE event", category: "model", chapter: "02", text: "One raw server-sent event from the streaming response." },
+  "trace/streamEvent": { title: "Stream event (SSE)", category: "model", chapter: "02", text: "One raw server-sent event from the streaming response." },
   "trace/modelResponse": { title: "Model response", category: "model", chapter: "02", source: "core/src/stream_events_utils.rs",
     text: "The streamed reply finished. Output items (reasoning, messages, tool calls) were recorded in history." },
   "trace/loopIteration": { title: "Loop decision", category: "loop", chapter: "04", source: "core/src/session/turn.rs#L424",
@@ -79,7 +79,7 @@ function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
   return EXPLAIN[method(e)] ?? { title: method(e), category: e.trace ? "debug" : "protocol", text: "" };
 }
 
-const NOISY = new Set(["item/agentMessage/delta", "item/commandExecution/outputDelta", "item/reasoning/summaryTextDelta", "trace/sseEvent"]);
+const NOISY = new Set(["item/agentMessage/delta", "item/commandExecution/outputDelta", "item/reasoning/summaryTextDelta", "trace/streamEvent"]);
 
 function summary(e: TimelineEvent): string {
   const p = e.data;

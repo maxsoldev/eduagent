@@ -27,7 +27,7 @@
       "description": "edupi with the faux provider (backends/edupi/examples/faux/demo.json)",
       "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
       "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
-      "capabilities": []
+      "capabilities": ["trace"]
     },
     {
       "name": "pi-replay",

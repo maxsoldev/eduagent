@@ -40,7 +40,7 @@ A plain class whose async methods all do nothing. The core calls `await <probe>.
 | `history_appended(session, items)` | `Session.record` | `trace/historyChanged` |
 | `checkpoint(ctx, name, **info)` | the three current `ctx.breakpoint(...)` sites | Stepper: `trace/paused` / `trace/resumed` and waits |
 | `model_request(ctx, body)` | `run_sampling_request` | `trace/modelRequest` |
-| `sse_event(ctx, data)` | stream loop | `trace/sseEvent` (only if the Tracer's `trace_sse` option is on) |
+| `sse_event(ctx, data)` | stream loop | `trace/streamEvent` (only if the Tracer's `trace_sse` option is on) |
 | `model_response(ctx, body, output_items, usage, event_counts, seconds)` | after the stream | `trace/modelResponse` (with `cost`) and `trace/cost`. Cost totals and pricing state live in the Tracer, not the Session |
 | `loop_iteration(ctx, needs_follow_up, tokens, limit, context_window)` | turn loop | `trace/loopIteration` |
 | `tool_call(ctx, call, item, parallel)` / `tool_output(ctx, call, output)` | `run_tool_calls` | `trace/toolDispatch` / `trace/toolOutput` |

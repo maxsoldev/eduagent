@@ -20,12 +20,18 @@ function takeOverStdout(): (line: string, done?: () => void) => void {
   };
 }
 
-export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
+export interface RpcModeOptions {
+  /** edupi: gets the protocol line writer, so the tracer can send trace messages on stdout. */
+  connect?: (output: (message: object) => void) => void;
+}
+
+export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcModeOptions = {}): Promise<never> {
   const writeRawStdout = takeOverStdout();
   let session = runtimeHost.session;
   let unsubscribe: (() => void) | undefined;
 
   const output = (obj: RpcResponse | object) => writeRawStdout(serializeJsonLine(obj));
+  options.connect?.(output);
 
   const success = (id: string | undefined, command: string, data?: object | null): RpcResponse => {
     if (data === undefined) return { id, type: "response", command, success: true } as RpcResponse;

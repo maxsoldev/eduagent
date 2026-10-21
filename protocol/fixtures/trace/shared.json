@@ -1,0 +1,14 @@
+{
+  "modelRequest": {
+    "api": "string",
+    "url": "string",
+    "body": "object"
+  },
+  "streamEvent": {
+    "event": "object"
+  },
+  "modelResponse": {
+    "usage": "object",
+    "seconds": "number"
+  }
+}
