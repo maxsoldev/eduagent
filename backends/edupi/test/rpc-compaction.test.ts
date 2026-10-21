@@ -15,17 +15,13 @@ afterEach(async () => {
 
 const FIXTURES = new URL("./fixtures/pi/", import.meta.url).pathname;
 
-/** A test dir whose edupi home has this settings.json (and this SYSTEM.md, if given). */
-function dirWithSettings(settings: object, systemPrompt?: string): string {
+/** A test dir whose edupi home has this settings.json. */
+function dirWithSettings(settings: object): string {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
 	mkdirSync(join(dir, "home", "agent"), { recursive: true });
 	writeFileSync(join(dir, "home", "agent", "settings.json"), JSON.stringify(settings));
-	if (systemPrompt) writeFileSync(join(dir, "home", "agent", "SYSTEM.md"), systemPrompt);
 	return dir;
 }
-
-/** The threshold tests use a tiny context window. A one-line SYSTEM.md (it replaces pi's preamble, tools and rules) keeps the prompt small. */
-const SHORT_PROMPT = "Be brief.";
 
 async function prompt(message: string) {
 	const settled = edupi.seen.filter((m) => m.type === "agent_settled").length;
@@ -252,7 +248,13 @@ test("compact on a session with nothing to summarise ends with pi's error", asyn
 	});
 });
 
-/** A model with a tiny context window, as OpenRouter's GET /models would list it. */
+/**
+ * A model with a small context window, as OpenRouter's GET /models would list it. With pi's
+ * reserve (16,384) it compacts above 8,616 tokens: well above pi's full system prompt, and
+ * below one 10,000-token message.
+ */
+const SMALL_WINDOW = 25000;
+const THRESHOLD = SMALL_WINDOW - 16384;
 const tinyModel = (contextLength: number) => [
 	{
 		id: "openai/gpt-6-luna",
@@ -264,21 +266,24 @@ const tinyModel = (contextLength: number) => [
 ];
 
 test("threshold: after a run whose context passed contextWindow - reserveTokens, edupi compacts before agent_settled", async () => {
-	const long = "x".repeat(400); // 100 estimated tokens
-	// Window 200, reserve 100: compact above 100 tokens. keepRecentTokens 101 keeps q2 (1) and its answer (100).
+	const long = "x".repeat(40000); // 10,000 estimated tokens
+	// keepRecentTokens 10,001 keeps q2 (1) and its answer (10,000).
 	edupi = startEdupi(
-		{ models: tinyModel(200), responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."] },
+		{
+			models: tinyModel(SMALL_WINDOW),
+			responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."],
+		},
 		[],
-		{ dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 101 } }, SHORT_PROMPT) },
+		{ dir: dirWithSettings({ compaction: { keepRecentTokens: 10001 } }) },
 	);
 	await edupi.command("get_state");
 	await prompt("q1");
-	expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // a few dozen tokens: below the threshold
+	expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // the prompt and q1: below the threshold
 
 	const start = edupi.seen.length;
 	await prompt("q2");
 	const reply = edupi.seen.filter((m) => m.type === "message_end").at(-1)!.message;
-	expect(reply.usage.totalTokens).toBeGreaterThan(100);
+	expect(reply.usage.totalTokens).toBeGreaterThan(THRESHOLD);
 	const after = edupi.seen
 		.slice(start)
 		.filter((m) => m.type !== "trace" && m.type !== "message_update")
@@ -487,11 +492,11 @@ test("trace events show the summary request body and the context rebuilt from th
 });
 
 test("threshold inside a run: after tool results fill the context, edupi compacts before the next model call", async () => {
-	const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "printf '%400s' | tr ' ' x" } }; // 400 characters of output
-	// Window 200, reserve 100: compact above 100 tokens. The tool result alone is estimated at 100.
+	// 40,000 characters of output (below bash's 50 KB limit): the tool result alone is estimated at 10,000 tokens.
+	const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "printf '%40000s' | tr ' ' x" } };
 	edupi = startEdupi(
 		{
-			models: tinyModel(200),
+			models: tinyModel(SMALL_WINDOW),
 			responses: [
 				"First answer.",
 				{ content: [bash], stopReason: "toolUse" },
@@ -503,7 +508,7 @@ test("threshold inside a run: after tool results fill the context, edupi compact
 			],
 		},
 		[],
-		{ dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 50 } }, SHORT_PROMPT) },
+		{ dir: dirWithSettings({ compaction: { keepRecentTokens: 50 } }) },
 	);
 	await edupi.command("get_state");
 	await prompt("q1");
@@ -526,8 +531,8 @@ test("threshold inside a run: after tool results fill the context, edupi compact
 
 	// The model call after it: the prompt, the summary, then the kept tool call and its result (no q1, no first answer).
 	const afterCompaction = edupi.requests()[4].body.messages;
-	expect(afterCompaction[0]).toEqual({ role: "system", content: `Be brief.\n\n<cwd>\n${edupi.dir}\n</cwd>` });
+	expect(afterCompaction[0]).toEqual(edupi.requests()[0].body.messages[0]);
 	expect(afterCompaction[1].content[0].text).toMatch(/^The conversation history before this point was compacted/);
 	expect(afterCompaction.map((m: Message) => m.role)).toEqual(["system", "user", "assistant", "tool"]);
-	expect(afterCompaction[3].content).toBe("x".repeat(400));
+	expect(afterCompaction[3].content).toBe("x".repeat(40000));
 });
