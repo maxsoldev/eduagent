@@ -225,6 +225,8 @@ test("abort mid-tool: the running command is killed, its result says so, and the
 		"agent_settled true",
 	]);
 	const last = edupi.seen.filter((m) => m.type === "message_end").at(-1)!.message;
+	// pi's provider says "aborted" here. Real pi says "error" / "This operation was aborted": its
+	// ModelRuntime resolves auth with the aborted signal first, and lazyStream reports any setup error as "error".
 	expect(last).toMatchObject({ role: "assistant", stopReason: "aborted", content: [] });
 	expect(edupi.requests()).toHaveLength(1); // the aborted call never reached the model
 
@@ -315,6 +317,19 @@ test("each thinking level becomes OpenRouter's reasoning effort in the request, 
 		"medium",
 		...changes,
 	]);
+});
+
+// test.fails until AgentSession's prepareNextTurn hook returns agent.state.model and thinkingLevel,
+// as pi's _installAgentNextTurnRefresh does (session-rpc group). Then make it a plain test.
+test.fails("set_thinking_level during a run applies to the run's next model call (pi's prepareNextTurn)", async () => {
+	edupi = startEdupi({ models: [LUNA], responses: [slowBash, "Done."] });
+	edupi.sendLine(JSON.stringify({ type: "prompt", message: "run slow" }));
+	await edupi.until("tool_execution_start");
+	await edupi.command("set_thinking_level", { level: "low" });
+	await untilSettled(1);
+	expect(edupi.requests().map((r) => r.body.reasoning)).toEqual([{ effort: "medium" }, { effort: "low" }]);
+	const replies = edupi.seen.filter((m) => m.type === "message_end" && m.message.role === "assistant");
+	expect(replies.map((m) => m.message.thinkingLevel)).toEqual(["medium", "low"]);
 });
 
 test("a model without reasoning stays at off and gets no reasoning field", async () => {

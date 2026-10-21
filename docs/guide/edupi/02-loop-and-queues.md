@@ -75,7 +75,7 @@ The second `queue_update` comes **before** the message starts, so a client sees 
 `abort` stops the run. The session aborts the Agent's `AbortController`; the signal reaches the HTTP request and every running tool:
 
 - **During the stream**, the provider stops reading. The reply ends as `stopReason: "aborted"` with the text so far, then `turn_end` and `agent_end`.
-- **During a tool**, `bash` kills its process group and returns `Command aborted` as an error result. Parallel calls that did not start get `Operation aborted`. The tool results go into the context, as always. The next model call sees the aborted signal and ends at once.
+- **During a tool**, `bash` kills its process group and returns `Command aborted` as an error result. Parallel calls that did not start get `Operation aborted`. The tool results go into the context, as always. The loop then starts the next turn, but the model call sees the aborted signal and ends at once, with no request sent and an empty reply. In edupi that reply has `stopReason: "aborted"`, as pi's provider sets it. Real pi shows `stopReason: "error"` and `errorMessage: "This operation was aborted"` there: its model runtime resolves the API key with the signal first, and a failure in that setup step is always an `error`.
 
 Then the session sends `agent_settled` with `aborted: true`, and only then the response to `abort`:
 
@@ -112,7 +112,7 @@ On the OpenRouter wire the level becomes one `reasoning` object for every model 
 {"role": "assistant", "content": "Hello!", "reasoning": "The user greets me. I greet back."}
 ```
 
-`set_thinking_level` saves a `thinking_level_change` entry and sends `thinking_level_changed` before its response, but only if the clamped level changed. Each assistant message records the `thinkingLevel` it was asked with.
+`set_thinking_level` saves a `thinking_level_change` entry and sends `thinking_level_changed` before its response, but only if the clamped level changed. Each assistant message records the `thinkingLevel` it was asked with. A level set while a run is active applies from the run's next model call: before each later turn, the loop's `prepareNextTurn` hook gets the session's current model and level.
 
 ## In edupi
 
@@ -136,8 +136,8 @@ let pendingMessages = (await config.getSteeringMessages?.()) || [];           //
 while (true) {
   let hasMoreToolCalls = true;
   while (hasMoreToolCalls || pendingMessages.length > 0) {
-    if (!firstTurn) {
-      await config.prepareNextTurn?.({ context: currentContext });              // may compact (chapter 07)
+    if (lastCompletedTurn) {
+      await config.prepareNextTurn?.(lastCompletedTurn);   // may compact (chapter 07); new context, model, level
       if (pendingMessages.length === 0) pendingMessages = (await config.getSteeringMessages?.()) || []; // B
       await emit({ type: "turn_start" });
     }
@@ -197,7 +197,10 @@ The Codex side: the [loop](https://github.com/openai/codex/blob/1c7c43cd856a1ef4
 - **No input handlers or prompt templates.** pi runs extension input handlers and expands `/skill:` and prompt templates on queued text too; edupi queues the text as it is, so the disposition is always `queued`, never `handled`.
 - **No thinking level map.** pi's OpenRouter catalog has a per-model map from OpenRouter's supported efforts (for example `xhigh`, or no `off`). edupi has none, so every reasoning model supports `off` to `high`, and `off` always sends `{"effort": "none"}`. No thinking budgets, no `cycle_thinking_level`, no saved default level.
 - **No `reasoning_details`.** OpenRouter can also stream structured, sometimes encrypted, reasoning details; pi keeps and replays them. edupi keeps the reasoning text only.
-- **No `prepareRequest` / `finishTurn` hooks** and no explicit continuation. edupi's `prepareNextTurn` returns only a context (chapter 07).
+- **No `prepareRequest` / `finishTurn` hooks** and no explicit continuation. pi's session uses them for its per-request projection, virtual models and extension `turn_end` handlers.
+- **No extension hooks in the loop.** No `transformContext`, `beforeToolCall` / `afterToolCall` (pi's extension `tool_call` / `tool_result` events and image resizing), no `terminate` on tool results (a batch where every result says `terminate` ends the run).
+- **A level change waits for the next run.** edupi's session hook returns only the context, so `set_thinking_level` during a run changes the requests of the next run only.
+- **No model runtime.** The stream function calls the provider directly. pi's goes through `ModelRuntime.streamSimple`, which resolves auth first; so after an abort during a tool, pi's next reply is an `error` and edupi's an `aborted`.
 - **A shorter `transformMessages`.** edupi's copy has pi's two passes (thinking from another model, then dropped replies and synthetic tool results), but no image downgrade and no tool call id normalization: OpenRouter's ids and edupi's text-only models need neither.
 
 ## Try it
