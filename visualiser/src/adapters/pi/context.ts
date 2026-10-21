@@ -6,6 +6,9 @@ import type { CtxCat } from "../../components/ContextBar";
 import type { ContextItem, ContextSnapshot } from "../types";
 import type { Json } from "../../view/model";
 
+/** One prompt section of edupi's promptAssembled trace event (protocol/README.md section 6). */
+export type Fragment = { kind: string; text: string; tokens: number; changed?: boolean };
+
 const approxTokens = (v: Json) => Math.ceil((typeof v === "string" ? v.length : JSON.stringify(v).length) / 4);
 
 const textOf = (content: Json): string =>
@@ -18,7 +21,7 @@ const clip = (t: string) => { const flat = t.replace(/\s+/g, " ").trim(); return
  * sections, used as the system message's parts when they make up its text. autoCompactLimit: pi
  * compacts above it (the context window minus pi's reserveTokens).
  */
-export function piContext(body: Json, fragments: Json[] | null, contextWindow: number, autoCompactLimit: number): ContextSnapshot {
+export function piContext(body: Json, fragments: Fragment[] | null, contextWindow: number, autoCompactLimit: number): ContextSnapshot {
   const messages: Json[] = body.messages ?? [];
   // The path each tool call read, so a tool output that is a SKILL.md can be named.
   const readPaths: Record<string, string> = {};

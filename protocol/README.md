@@ -126,6 +126,8 @@ pi's RPC protocol (`pi --mode rpc`, `packages/coding-agent/src/modes/rpc/` at th
 
 edupi speaks the same protocol, so the same adapter serves the `edupi` entries (Playwright: `visualiser/e2e/edupi.spec.ts`).
 
+The wire types come from edupi, a workspace package of the visualiser: `visualiser/src/adapters/pi/protocol.ts` imports pi's `RpcCommand`, `RpcResponse`, `RpcSessionState` and `JsonAgentSessionEvent` from `@eduagent/edupi` (its `exports`: `rpc-types`, `json-event`, `ai-types`, `agent-types`). So `PiRpcClient.command(type, fields)` checks each command's fields and types its reply's `data`. The imports are type-only; nothing from edupi runs in the browser.
+
 Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`, `queues`; `meta.json` has the pi commit), recorded by `visualiser/test/record-pi.mjs`.
 
 ## 4. Capabilities

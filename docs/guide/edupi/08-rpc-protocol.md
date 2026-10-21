@@ -89,7 +89,7 @@ How a line becomes output:
 
 The tests in [`test/rpc-prompt.test.ts`](../../../backends/edupi/test/rpc-prompt.test.ts) start edupi as a child process, as the launcher does, and check the event order and shapes.
 
-The visualiser talks to edupi with the same pi adapter it uses for the real pi (`visualiser/src/adapters/pi/`): edupi speaks pi's protocol, so nothing in the adapter knows which one it talks to.
+The visualiser talks to edupi with the same pi adapter it uses for the real pi (`visualiser/src/adapters/pi/`): edupi speaks pi's protocol, so nothing in the adapter knows which one it talks to. The adapter takes its wire types from edupi's [`rpc-types.ts`](../../../backends/edupi/src/coding-agent/modes/rpc/rpc-types.ts) and [`json-event.ts`](../../../backends/edupi/src/coding-agent/modes/json-event.ts) (type-only imports from the `@eduagent/edupi` workspace package), so a change to edupi's protocol shows up as a type error in the visualiser.
 
 ## In pi
 

@@ -14,7 +14,9 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eduagent/edupi": "workspace:*",
     "@playwright/test": "^1.50.0",
+    "@types/node": "^22.20.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",

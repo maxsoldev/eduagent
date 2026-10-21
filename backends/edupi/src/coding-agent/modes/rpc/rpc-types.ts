@@ -46,6 +46,15 @@ export interface RpcSessionState {
   pendingMessageCount: number;
 }
 
+/** edupi only: debug_get_context's reply. body is the next Chat Completions request body. */
+export interface RpcDebugContext {
+  body: object;
+  messageCount: number;
+  tokens: number;
+  contextWindow: number;
+  autoCompactLimit: number;
+}
+
 export type RpcResponse =
   | { id?: string; type: "response"; command: "prompt"; success: true; data: { disposition: PromptDisposition } }
   | { id?: string; type: "response"; command: "steer" | "follow_up"; success: true; data: { disposition: PromptDisposition } }
@@ -57,5 +66,5 @@ export type RpcResponse =
   | { id?: string; type: "response"; command: "get_commands"; success: true; data: { commands: RpcSlashCommand[] } }
   | { id?: string; type: "response"; command: "debug_set_step_mode"; success: true; data: { enabled: boolean; breakpoints: string[] } }
   | { id?: string; type: "response"; command: "debug_continue"; success: true }
-  | { id?: string; type: "response"; command: "debug_get_context"; success: true; data: object }
+  | { id?: string; type: "response"; command: "debug_get_context"; success: true; data: RpcDebugContext }
   | { id?: string; type: "response"; command: string; success: false; error: string };
