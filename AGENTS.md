@@ -1,27 +1,48 @@
 # AGENTS.md
 
-educodex is an educational Python re-implementation of the OpenAI Codex harness. Students read this code to learn how Codex works. See `README.md` and `docs/design.md`.
+eduagent is a suite of readable re-implementations (backends) of real coding-agent harnesses, with one shared visualiser. Students read this code to learn how the harnesses work and how they differ. See `README.md`, `GLOSSARY.md` and `docs/adr/`.
 
-## Codex source
+## Repo layout
 
-- Local checkout: `/Users/max/edu/agents/codex` (Rust code in `codex-rs/`).
-- Pinned commit: `1c7c43cd85` (`1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d`, 2026-10-07). Guide links use this commit.
-- Vendored Codex files live in `src/educodex/vendor/codex/`. Do not edit them by hand; re-run `uv run scripts/sync_vendor.py ../codex`.
+| Path | What |
+|---|---|
+| `backends/educodex/` | educodex, the Codex backend (Python): `src/educodex/`, `tests/`, `scripts/`, `examples/`, `spikes/`, `pyproject.toml`, `uv.lock` |
+| `visualiser/` | The shared web UI (React, Vite, Playwright tests in `e2e/`) |
+| `docs/guide/<backend>/` | The guide, one section per backend (`docs/guide/educodex/` now) |
+| `docs/design.md` | educodex design |
+| `docs/adr/`, `GLOSSARY.md` | Architecture decisions and domain terms for the suite |
+| `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`) |
 
-## How to port a Codex feature
+## Harness sources
 
-- Keep the core logic as close as possible to Codex: same names, prompts, wire formats and order of steps. When unsure, copy Codex's behaviour.
+| Backend | Harness | Local checkout | Pinned commit |
+|---|---|---|---|
+| educodex | Codex | `/Users/max/edu/agents/codex` (Rust code in `codex-rs/`) | `1c7c43cd85` (`1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d`, 2026-10-07) |
+| edupi | pi | `/Users/max/edu/agents/pi` | `16f5f0af4` (`16f5f0af4d85ca583d045ceb5ed6d646fcaf7761`) |
+
+Guide links use the pinned commit.
+
+## How to port a harness feature (every backend)
+
+- Keep the core logic as close as possible to the harness: same names, prompts, wire formats and order of steps. When unsure, copy the harness's behaviour.
 - Leave out optimisations, performance work, caching, telemetry and other complications on top. The code must stay readable for students.
-- Every module names the Codex file it mirrors. Record deliberate simplifications in the guide chapter's "Where educodex is simpler" block.
+- Every module names the harness file it mirrors. Record deliberate simplifications in the guide chapter's "Where <backend> is simpler" block.
+- The core never imports the teaching extras (`observe/`) or the hosts. A layer test checks this.
+- A feature is not done until its chapter in `docs/guide/<backend>/` is written: concept, backend code, harness permalinks at the pinned commit, further reading.
+
+### educodex only
+
 - OpenAI models only for now (via OpenRouter Responses API, default `openai/gpt-6-luna`). Do not add provider abstractions.
-- `core/` never imports `observe/`, `app_server/` or the CLI/TUI (`tests/test_layers.py`). Teaching extras go in `observe/` via the `Probe` hooks.
-- A feature is not done until its chapter in `docs/guide/` is written: concept, educodex code, Codex permalinks at the pinned commit, further reading.
+- `core/` never imports `observe/`, `app_server/` or the CLI/TUI (`backends/educodex/tests/test_layers.py`). Teaching extras go in `observe/` via the `Probe` hooks.
+- Vendored Codex files live in `backends/educodex/src/educodex/vendor/codex/`. Do not edit them by hand; re-run `uv run scripts/sync_vendor.py [path/to/codex]` from `backends/educodex/` (default: the `codex` checkout next to the repo).
+- Home: `~/.eduagent/.educodex` (laid out as `~/.codex`); `EDUCODEX_HOME` overrides it.
 
 ## Commands
 
 ```bash
-uv run --group dev pytest        # Python tests
-cd web && pnpm test:e2e          # Playwright tests for the web UI
+cd backends/educodex && uv run --group dev pytest   # educodex Python tests
+pnpm install && pnpm build                          # at the repo root: build the visualiser
+pnpm test:e2e                                       # at the repo root: Playwright tests for the visualiser
 ```
 
 ## Agent skills

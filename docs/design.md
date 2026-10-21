@@ -4,6 +4,8 @@ An educational Python re-implementation of the [OpenAI Codex](https://github.com
 
 **Reference Codex commit:** `1c7c43cd85` (2026-10-07). Every module names the Codex file it mirrors.
 
+The code lives in `backends/educodex/` of the eduagent repo; paths below are relative to it. The web UI is `visualiser/` at the repo root.
+
 ## Goals and non-goals
 
 **Goals**
@@ -186,7 +188,7 @@ Clients can opt out of any notification with Codex's `optOutNotificationMethods`
 
 ## Documentation
 
-`docs/guide/` is a step-by-step guide from basics to advanced ([outline](guide/README.md)). Each chapter covers the concept, the educodex code, the Codex code (permalinks at the pinned commit), where educodex is simpler, things to try, and further reading.
+`docs/guide/educodex/` is a step-by-step guide from basics to advanced ([outline](guide/educodex/README.md)). Each chapter covers the concept, the educodex code, the Codex code (permalinks at the pinned commit), where educodex is simpler, things to try, and further reading.
 
 ## Milestones
 

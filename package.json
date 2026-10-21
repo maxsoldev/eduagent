@@ -1,0 +1,8 @@
+{
+  "name": "eduagent",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter @eduagent/visualiser build",
+    "test:e2e": "pnpm --filter @eduagent/visualiser test:e2e"
+  }
+}

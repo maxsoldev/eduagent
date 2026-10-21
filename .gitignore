@@ -13,10 +13,10 @@ __pycache__/
 
 # Web
 node_modules/
-web/dist/
-web/test-results/
-web/playwright-report/
-web/tsconfig.tsbuildinfo
+visualiser/dist/
+visualiser/test-results/
+visualiser/playwright-report/
+visualiser/tsconfig.tsbuildinfo
 
 # Tool and OS artifacts
 .playwright-mcp/
