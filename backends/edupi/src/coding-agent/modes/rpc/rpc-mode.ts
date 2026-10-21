@@ -16,9 +16,7 @@ import type { RpcCommand, RpcDebugContext, RpcResponse, RpcSessionState, RpcSlas
 function takeOverStdout(): (line: string, done?: () => void) => void {
 	const write = process.stdout.write.bind(process.stdout);
 	process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
-	return (line, done) => {
-		write(line, done);
-	};
+	return (line, done) => write(line, done);
 }
 
 /** edupi only: the teaching extras' debug_ commands (step mode, get context). pi has none. */

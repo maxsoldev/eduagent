@@ -4,6 +4,7 @@
 // are the shared trace vocabulary in protocol/README.md section 6.
 import type { AgentMessage, AgentToolCall, AgentToolResult, Checkpoint, LoopIteration } from "../agent/types.ts";
 import type { AssistantMessage, ModelCost } from "../ai/types.ts";
+import { contentText } from "../ai/utils/transcript.ts";
 import type { CompactionResult } from "../coding-agent/core/compaction/compaction.ts";
 import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-agent/core/probe.ts";
 import { addTotals, type CostTotal, costBreakdown, pricingJson } from "./pricing.ts";
@@ -109,6 +110,23 @@ export class Tracer implements Probe {
 		this.emit("streamEvent", { event });
 	}
 
+	/** Also the response's cost (when the provider reported usage), and the session's running total. */
+	modelResponse(message: AssistantMessage) {
+		const { stopReason, errorMessage, responseId, content, usage } = message;
+		const seconds = Math.round(performance.now() - this.started) / 1000;
+		const cost = usage.totalTokens > 0 ? costBreakdown(usage, this.pricing, this.billedUsd) : undefined;
+		this.emit("modelResponse", { stopReason, errorMessage, responseId, content, usage, seconds, cost });
+		if (!cost) return;
+		this.totalCost = addTotals(this.totalCost, cost);
+		const toolsTokens = approxTokens(JSON.stringify({ tools: this.body.tools ?? [] }));
+		this.emit("cost", {
+			last: cost,
+			total: this.totalCost,
+			inputItems: this.body.messages?.length ?? 0,
+			toolsTokens,
+		});
+	}
+
 	toolDispatch({ toolCall, parallel }: { toolCall: AgentToolCall; parallel: boolean }) {
 		this.emit("toolDispatch", { tool: toolCall.name, callId: toolCall.id, arguments: toolCall.arguments, parallel });
 	}
@@ -125,10 +143,7 @@ export class Tracer implements Probe {
 		isError: boolean;
 		durationMs?: number;
 	}) {
-		const output = result.content
-			.filter((c) => c.type === "text")
-			.map((c) => c.text)
-			.join("\n");
+		const output = contentText(result.content);
 		const tokens = Math.floor((Buffer.byteLength(output, "utf-8") + 3) / 4);
 		this.emit("toolOutput", { tool: toolCall.name, callId: toolCall.id, output, isError, durationMs, tokens });
 	}
@@ -166,23 +181,6 @@ export class Tracer implements Probe {
 			})),
 			errors: info.diagnostics.map((d) => ({ path: d.path, message: d.message })),
 			projectTrusted: info.projectTrusted,
-		});
-	}
-
-	/** Also the response's cost (when the provider reported usage), and the session's running total. */
-	modelResponse(message: AssistantMessage) {
-		const { stopReason, errorMessage, responseId, content, usage } = message;
-		const seconds = Math.round(performance.now() - this.started) / 1000;
-		const cost = usage.totalTokens > 0 ? costBreakdown(usage, this.pricing, this.billedUsd) : undefined;
-		this.emit("modelResponse", { stopReason, errorMessage, responseId, content, usage, seconds, cost });
-		if (!cost) return;
-		this.totalCost = addTotals(this.totalCost, cost);
-		const toolsTokens = approxTokens(JSON.stringify({ tools: this.body.tools ?? [] }));
-		this.emit("cost", {
-			last: cost,
-			total: this.totalCost,
-			inputItems: this.body.messages?.length ?? 0,
-			toolsTokens,
 		});
 	}
 
