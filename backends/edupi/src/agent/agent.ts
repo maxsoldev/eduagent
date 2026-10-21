@@ -49,6 +49,8 @@ export class Agent {
   public sessionId?: string;
   public toolExecution: ToolExecutionMode;
   public probe?: AgentProbe;
+  /** Before each later turn of a run; the session sets it (pi: prepareNextTurnWithContext). */
+  public prepareNextTurn?: AgentLoopConfig["prepareNextTurn"];
 
   constructor(options: AgentOptions) {
     this._state = {
@@ -136,6 +138,7 @@ export class Agent {
       getApiKey: this.getApiKey,
       toolExecution: this.toolExecution,
       probe: this.probe,
+      prepareNextTurn: this.prepareNextTurn,
     };
   }
 

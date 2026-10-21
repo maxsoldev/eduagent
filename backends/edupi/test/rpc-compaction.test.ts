@@ -257,3 +257,29 @@ test("trace events show the summary request body and the context rebuilt from th
     firstKeptEntryId: end.result.firstKeptEntryId, tokensBefore: end.result.tokensBefore, tokensAfter: end.result.estimatedTokensAfter,
     details: { readFiles: [], modifiedFiles: [] }, messages });
 });
+
+test("threshold inside a run: after tool results fill the context, edupi compacts before the next model call", async () => {
+  const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "printf '%400s' | tr ' ' x" } }; // 400 characters of output
+  // Window 200, reserve 100: compact above 100 tokens. The tool result alone is estimated at 100.
+  edupi = startEdupi({ models: tinyModel(200), responses: ["First answer.", { content: [bash], stopReason: "toolUse" },
+    "## Goal\nHISTORY", "## Original Request\nPREFIX", "Done.", "## Goal\nAFTER", "## Original Request\nAFTER"] },
+  [], { dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 50 } }) });
+  await edupi.command("get_state");
+  await prompt("q1");
+  const start = edupi.seen.length;
+  await prompt("q2");
+  const events = edupi.seen.slice(start).filter((m) => m.type !== "trace" && m.type !== "message_update");
+  const types = events.map((m) => m.type === "message_end" ? `message_end ${m.message.role}` : m.type);
+
+  // One run: the tool turn ends, the session compacts, then the next turn starts from the compaction.
+  const firstCompaction = types.indexOf("compaction_start");
+  expect(types.slice(firstCompaction - 2, firstCompaction + 3)).toEqual(["message_end toolResult", "turn_end", "compaction_start", "compaction_end", "turn_start"]);
+  expect(events[firstCompaction]).toEqual({ type: "compaction_start", reason: "threshold" });
+  expect(types.filter((t) => t === "agent_start")).toHaveLength(1);
+
+  // The model call after it: the summary, then the kept tool call and its result (no q1, no first answer).
+  const afterCompaction = edupi.requests()[4].body.messages;
+  expect(afterCompaction[0].content[0].text).toMatch(/^The conversation history before this point was compacted/);
+  expect(afterCompaction.map((m: Message) => m.role)).toEqual(["user", "assistant", "tool"]);
+  expect(afterCompaction[2].content).toBe("x".repeat(400));
+});

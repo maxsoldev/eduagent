@@ -85,7 +85,11 @@ async function runLoop(
   let hasMoreToolCalls = true;
 
   while (hasMoreToolCalls) {
-    if (!firstTurn) await emit({ type: "turn_start" });
+    if (!firstTurn) {
+      const nextTurn = await config.prepareNextTurn?.({ context: currentContext });
+      currentContext = nextTurn?.context ?? currentContext;
+      await emit({ type: "turn_start" });
+    }
     firstTurn = false;
 
     const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);

@@ -11,7 +11,7 @@ pi compacts for three reasons. Each `compaction_start` and `compaction_end` even
 | Reason | When | Then |
 |---|---|---|
 | `manual` | The user sends `compact` (pi's `/compact`), with optional custom instructions | No retry |
-| `threshold` | The context is above **context window − reserve tokens** | No retry |
+| `threshold` | The context is above **context window − reserve tokens** | No retry. Inside a run, the next turn starts from the compacted context |
 | `overflow` | The provider refused the request: the context is too long | Compact, then **retry the turn once** |
 
 **The threshold rule** is one line ([`shouldCompact`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/compaction/compaction.ts#L267)):
@@ -28,7 +28,7 @@ pi checks the threshold at these points:
 
 - **after each run**, after `agent_end` and before `agent_settled`;
 - **before each prompt**, before the user message is added (the previous run may have ended above the threshold, for example if it was aborted);
-- **before each later model call inside a run** (after tool results). edupi does not check here yet; see "Where edupi is simpler".
+- **before each later model call inside a run**, after tool results: one big tool output can fill the window in the middle of a run. The agent loop calls the session's `prepareNextTurn` hook before each later turn.
 
 **The overflow rule.** The provider answers with an error, for example OpenRouter's HTTP 400 `This endpoint's maximum context length is 128000 tokens. However, you requested about 140000 tokens.` Every provider says this in its own words, so pi matches the error text against a list of patterns ([`overflow.ts`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/overflow.ts#L38)). Then pi:
 
@@ -134,7 +134,7 @@ The summary goes to the model as a **user** message at the **start**, before the
 | [`core/session-manager.ts`](../../../backends/edupi/src/coding-agent/core/session-manager.ts) | `appendCompaction`, `appendContextEdit`, `buildSessionProjection` (the context after edits) |
 | [`core/settings-manager.ts`](../../../backends/edupi/src/coding-agent/core/settings-manager.ts) | `compaction` settings from `<home>/settings.json` |
 | [`ai/utils/overflow.ts`](../../../backends/edupi/src/ai/utils/overflow.ts) | pi's overflow patterns |
-| [`agent/agent.ts`](../../../backends/edupi/src/agent/agent.ts) | `continue()`: run the loop again without a new message (the overflow retry) |
+| [`agent/agent.ts`](../../../backends/edupi/src/agent/agent.ts), [`agent/agent-loop.ts`](../../../backends/edupi/src/agent/agent-loop.ts) | `continue()`: run the loop again without a new message (the overflow retry); the `prepareNextTurn` hook before each later turn (the check inside a run) |
 
 The run with its two checks, from `AgentSession._startRun`:
 
@@ -157,7 +157,7 @@ The settings are pi's, in `~/.eduagent/.edupi/agent/settings.json`:
 
 **Trace events.** edupi adds two of the shared trace events (protocol spec, section 6). `compactionRequest` (`reason`, `tokensBefore`, `body`) carries the exact body of each summary request. It is sent from pi's own hook for request bodies, `onPayload`, which the summary call passes to the provider. The provider then sends its usual `modelRequest`, `streamEvent`s and `modelResponse`. `compacted` (`reason`, `summary`, `firstKeptEntryId`, `tokensBefore`, `tokensAfter`, `details`, `messages`) comes once the entry is saved; `messages` is the context rebuilt from it.
 
-**Tests.** `test/rpc-compaction.test.ts` (seam A) runs all three triggers with the faux provider. One test replays the session real pi recorded (`test/fixtures/pi/session-compact.jsonl`): the same settings, prompts and replies give the same summary requests as real pi sent, byte for byte, and the same compaction entries. The faux provider plays a context overflow with an error step, `{"error": {"status": 400, "message": "…maximum context length is 1000 tokens…"}}`, and a small context window with a `models` list.
+**Tests.** `test/rpc-compaction.test.ts` (seam A) runs all three triggers with the faux provider, and the threshold both after a run and inside one (a big bash output). One test replays the session real pi recorded (`test/fixtures/pi/session-compact.jsonl`): the same settings, prompts and replies give the same summary requests as real pi sent, byte for byte, and the same compaction entries. The faux provider plays a context overflow with an error step, `{"error": {"status": 400, "message": "…maximum context length is 1000 tokens…"}}`, and a small context window with a `models` list.
 
 ## In pi
 
@@ -187,7 +187,6 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 
 ## Where edupi is simpler
 
-- **No check before later model calls inside a run.** pi also checks the threshold before each model call that follows tool results (`_compactBeforeNextAssistantResponse`). edupi checks before a prompt and after a run. When edupi's loop gets tools and turns, this check point belongs there.
 - **Manual compaction does not abort.** pi aborts a running turn first. edupi has no abort yet, so it refuses `compact` while a run is active.
 - **No extensions.** pi lets an extension cancel a compaction or supply its own summary (`session_before_compact`, `fromHook`). edupi always uses pi's built-in summary.
 - **No summary retries.** pi retries a summary call after a transient network error (`retryAssistantCall`). edupi fails the compaction.

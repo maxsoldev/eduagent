@@ -5,7 +5,7 @@
 // session file, compacts the context (by hand, at the threshold, after an overflow), and
 // answers the state questions of get_state.
 import type { Agent } from "../../agent/agent.ts";
-import type { AgentEvent, AgentMessage } from "../../agent/types.ts";
+import type { AgentContext, AgentEvent, AgentMessage } from "../../agent/types.ts";
 import type { AssistantMessage, ImageContent, Model, ThinkingLevel, ToolResultMessage } from "../../ai/types.ts";
 import { isContextOverflow, isRecoverableLength } from "../../ai/utils/overflow.ts";
 import {
@@ -20,7 +20,7 @@ import {
   shouldCompact,
 } from "./compaction/compaction.ts";
 import type { Probe } from "./probe.ts";
-import { type CompactionEntry, getLatestCompactionEntry, type SessionEntry, type SessionManager } from "./session-manager.ts";
+import { type CompactionEntry, getLatestCompactionEntry, type SessionEntry, type SessionManager, type SessionProjection } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 export type CompactionReason = "manual" | "threshold" | "overflow";
@@ -95,6 +95,7 @@ export class AgentSession {
     this._getApiKey = config.getApiKey;
     this._probe = config.probe;
     this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+    this.agent.prepareNextTurn = ({ context }) => this._compactBeforeNextAssistantResponse(context);
     this._refreshFinalizedContext(); // records the entry of each restored message
   }
 
@@ -134,6 +135,24 @@ export class AgentSession {
     }
     if (event.type === "turn_end") this._lastAssistantToolResults = event.toolResults;
   };
+
+  /** Whether the context, as the session file gives it, is above the model's compaction threshold. */
+  private _exceedsCompactionThreshold(model: Model, projection: SessionProjection): boolean {
+    if (model.contextWindow <= 0) return false;
+    return shouldCompact(estimateProjectedContextTokens(projection, this.sessionManager.getBranch()).tokens,
+      model.contextWindow, this.settingsManager.getCompactionSettings());
+  }
+
+  /**
+   * Before each later model call of a run (after tool results): compact if the context is above
+   * the threshold. The next turn then starts from the context rebuilt from the session file.
+   */
+  private async _compactBeforeNextAssistantResponse(context: AgentContext): Promise<{ context: AgentContext }> {
+    const projection = this.sessionManager.buildSessionProjection();
+    if (!this._exceedsCompactionThreshold(this.model, projection)) return { context: { ...context, messages: projection.messages } };
+    await this._runAutoCompaction("threshold", false);
+    return { context: { ...context, messages: this.sessionManager.buildSessionProjection().messages } };
+  }
 
   /** After compaction or an omission, the Agent's messages are rebuilt from the session file. */
   private _refreshFinalizedContext(): void {

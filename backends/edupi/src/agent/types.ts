@@ -58,6 +58,11 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
   /** Default "parallel". A tool with executionMode "sequential" makes the whole batch sequential. */
   toolExecution?: ToolExecutionMode;
   probe?: AgentProbe;
+  /**
+   * Called after a turn when the loop goes on, just before the next turn starts. A returned
+   * context replaces the loop's context (the coding agent compacts here).
+   */
+  prepareNextTurn?: (turn: { context: AgentContext }) => Promise<{ context?: AgentContext } | undefined>;
 }
 
 export interface AgentState {
