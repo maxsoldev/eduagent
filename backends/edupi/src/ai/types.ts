@@ -54,7 +54,12 @@ export interface Tool {
 	name: string;
 	description: string;
 	parameters: TSchema;
+	/** Ask for strict JSON-schema sampling where the API has it. OpenRouter's Chat Completions has none, so edupi sends no `strict`. */
+	constrainedSampling?: false | ConstrainedSamplingConfig;
 }
+
+/** pi also has `{type: "grammar"}` (Lark or regex tools); edupi has only JSON-schema tools. */
+export type ConstrainedSamplingConfig = { type: "json_schema"; strict: "prefer" | "require" };
 
 /** A tool named in toolsRemoved. */
 export interface ToolReference {
@@ -79,6 +84,8 @@ export interface UserMessage {
 	content: string | (TextContent | ImageContent)[];
 	timestamp: number;
 }
+
+export type CacheRetention = "none" | "short" | "long";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -148,6 +155,8 @@ export interface SimpleStreamOptions {
 	maxTokens?: number;
 	temperature?: number;
 	sessionId?: string;
+	/** "none": no prompt cache wanted (one-off requests), so no cache affinity header. edupi treats "long" as "short". */
+	cacheRetention?: CacheRetention;
 	reasoning?: Exclude<ThinkingLevel, "off">;
 	/** Sees (and may replace) the request body before it is sent. Return undefined to keep it. */
 	onPayload?: (payload: unknown, model: Model) => unknown | undefined | Promise<unknown | undefined>;

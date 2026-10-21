@@ -27,8 +27,10 @@ import type {
 	TranscriptContext,
 	Usage,
 } from "../types.ts";
+import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { collapseSystemMessages, getCurrentTools, getSystemMessageText } from "../utils/transcript.ts";
 import { transformMessages } from "./transform-messages.ts";
 
@@ -104,7 +106,8 @@ export function stream(
 		try {
 			const apiKey = getClientApiKey(model.provider, options?.apiKey);
 			const compat = getCompat(model);
-			const client = createClient(model, apiKey, options?.headers, options?.fetch, options?.sessionId);
+			const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
+			const client = createClient(model, apiKey, options?.headers, options?.fetch, cacheSessionId);
 			let params = buildParams(model, context, options, compat);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) params = nextParams as ChatCompletionCreateParamsStreaming;
@@ -250,8 +253,13 @@ export function stream(
 			stream.push({ type: "done", reason: output.stopReason as "stop" | "length" | "toolUse", message: output });
 			stream.end();
 		} catch (error) {
+			// A stream that broke mid-way has unfinished blocks: drop their scratch buffers, never persist them.
+			for (const block of output.content) {
+				delete (block as StreamingToolCall).partialArgs;
+				delete (block as StreamingToolCall).streamIndex;
+			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : String(error);
+			output.errorMessage = formatProviderError(normalizeProviderError(error));
 			// OpenRouter puts the upstream provider's error text here.
 			const rawMetadata = (error as { error?: { metadata?: { raw?: unknown } } })?.error?.metadata?.raw;
 			if (rawMetadata && !output.errorMessage.includes(String(rawMetadata)))
@@ -343,10 +351,10 @@ export function convertMessages(
 	for (const msg of transformMessages(context.messages, model)) {
 		if (msg.role === "system") {
 			const text = getSystemMessageText(msg);
-			if (text.length > 0) params.push({ role: instructionRole, content: text });
+			if (text.length > 0) params.push({ role: instructionRole, content: sanitizeSurrogates(text) });
 		} else if (msg.role === "user") {
 			if (typeof msg.content === "string") {
-				params.push({ role: "user", content: msg.content });
+				params.push({ role: "user", content: sanitizeSurrogates(msg.content) });
 				continue;
 			}
 			const content = msg.content
@@ -354,7 +362,7 @@ export function convertMessages(
 				.map(
 					(item): ChatCompletionContentPart =>
 						item.type === "text"
-							? { type: "text", text: item.text }
+							? { type: "text", text: sanitizeSurrogates(item.text) }
 							: { type: "image_url", image_url: { url: `data:${item.mimeType};base64,${item.data}` } },
 				);
 			if (content.length > 0) params.push({ role: "user", content });
@@ -363,7 +371,7 @@ export function convertMessages(
 			// Assistant text goes back as one plain string, the Chat Completions standard.
 			const text = msg.content
 				.filter((b): b is TextContent => b.type === "text" && b.text.trim().length > 0)
-				.map((b) => b.text)
+				.map((b) => sanitizeSurrogates(b.text))
 				.join("");
 			if (text.length > 0) assistantMsg.content = text;
 			// Reasoning goes back in the field it came in (the block's signature), so the model sees its thinking.
@@ -402,7 +410,7 @@ function convertToolResult(msg: ToolResultMessage): ChatCompletionMessageParam {
 		.join("\n");
 	const hasImages = msg.content.some((c) => c.type === "image");
 	const content = text.trim().length > 0 ? text : hasImages ? "(see attached image)" : "(no tool output)";
-	return { role: "tool", content, tool_call_id: msg.toolCallId };
+	return { role: "tool", content: sanitizeSurrogates(content), tool_call_id: msg.toolCallId };
 }
 
 /** Tools as Chat Completions function specs. OpenRouter gets no `strict` field (pi's compat: supportsStrictMode false). */

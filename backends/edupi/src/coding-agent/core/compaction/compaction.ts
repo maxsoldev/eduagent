@@ -373,7 +373,12 @@ async function completeSummarization(
 	options: SimpleStreamOptions,
 	streamFn: StreamFn,
 ): Promise<AssistantMessage> {
-	const requestOptions: SimpleStreamOptions = { ...options, sessionId: options.sessionId ?? uuidv7() };
+	// No cache writes for a one-off summary (pi compaction.ts:628).
+	const requestOptions: SimpleStreamOptions = {
+		...options,
+		cacheRetention: "none",
+		sessionId: options.sessionId ?? uuidv7(),
+	};
 	return (await streamFn(model, context, requestOptions)).result();
 }
 
