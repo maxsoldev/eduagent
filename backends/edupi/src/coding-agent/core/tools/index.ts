@@ -15,12 +15,7 @@ export const toolSystemPromptContributions: Record<string, { snippet: string; gu
 	write: writeToolSystemPromptContribution,
 };
 
-/** Per-tool options (pi has one entry per tool; edupi's bash is the only one with options). */
-export interface ToolsOptions {
-	bash?: BashToolOptions;
-}
-
 /** read, bash, edit, write: in this order the model sees them. Paths are relative to cwd. */
-export function createCodingTools(cwd: string, options: ToolsOptions = {}): AgentTool<any>[] {
+export function createCodingTools(cwd: string, options: { bash?: BashToolOptions } = {}): AgentTool<any>[] {
 	return [createReadTool(cwd), createBashTool(cwd, options.bash), createEditTool(cwd), createWriteTool(cwd)];
 }
