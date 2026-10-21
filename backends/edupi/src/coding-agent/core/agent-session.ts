@@ -129,7 +129,12 @@ export class AgentSession {
 		this.resourceLoader = config.resourceLoader;
 		this._probe = config.probe;
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
-		this.agent.prepareNextTurn = ({ context }) => this._compactBeforeNextAssistantResponse(context);
+		// pi's _installAgentNextTurnRefresh: each later turn gets the rebuilt context and the current model and level.
+		this.agent.prepareNextTurn = async ({ context }) => ({
+			context: (await this._compactBeforeNextAssistantResponse(context)).context,
+			model: this.agent.state.model,
+			thinkingLevel: this.agent.state.thinkingLevel,
+		});
 		this._refreshFinalizedContext(); // records the entry of each restored message
 		this._rebuildSystemPrompt(this.agent.state.tools.map((tool) => tool.name));
 		this._probe?.sessionStarted?.({ sessionId: this.sessionId });
