@@ -48,8 +48,9 @@ uv run educodex exec --cwd /path/to/project "Fix the failing test"
 # The web UI: start the launcher at the repo root (see above) and pick educodex
 (cd ../.. && pnpm install && pnpm build && pnpm eduagent --cwd /path/to/project)
 
-# The app server alone, speaking JSONL on stdin/stdout (what the launcher runs)
-uv run educodex app-server --listen stdio://
+# The app server alone, speaking JSONL on stdin/stdout (what the launcher runs).
+# It has no web server: stdio is its only transport, as Codex's default.
+uv run educodex app-server
 
 # Offline: a scripted fake model, no API key needed
 uv run educodex exec --cwd /tmp/demo --fake-model examples/fake/demo.json "go"
@@ -105,7 +106,7 @@ Paths are relative to `backends/educodex/`, except the last two rows.
 | `src/educodex/core/memories/` | Memories: read path and the two-phase write path (`memories/`, `ext/memories/`) |
 | `src/educodex/core/probe.py` | No-op observability hooks the core calls (like Codex's OpenTelemetry calls, `otel/`) |
 | `src/educodex/observe/` | educodex only: `trace/*` events (`Tracer`), costs, step mode |
-| `src/educodex/app_server/` | JSON-RPC lite server (`app-server/`, `app-server-protocol/`) |
+| `src/educodex/app_server/` | JSON-RPC lite server over stdio (`app-server/`, `app-server-protocol/`, `app-server-transport/`) |
 | `visualiser/` (repo root) | React UI |
 | `docs/design.md`, `docs/guide/educodex/` (repo root) | Design and the guide |
 

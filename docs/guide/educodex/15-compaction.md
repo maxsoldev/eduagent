@@ -172,16 +172,13 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 
 ## Try it
 
-1. Start the server and open http://127.0.0.1:8765 (build the UI first: `(cd ../.. && pnpm install && pnpm build)`):
-   ```bash
-   uv run educodex app-server
-   ```
+1. [Start the launcher](README.md#the-web-ui), open http://127.0.0.1:8765 and pick **educodex**.
 2. Have a short conversation, then press **compact**. In the **Timeline**, click *Compaction request*: it is the full history plus the summary prompt, with `"tools": []`. Then click *History compacted* and read `newHistory`.
 3. Open the **Context** tab and untick *zoom to used*. The bar now spans the whole context window, with a marker at the auto-compact limit. After compaction you will see the "compaction summary" item at the end.
 4. Offline, over stdio. The fake model returns the next scripted response as the "summary", so a two-response script is enough:
    ```bash
    echo '[[{"type":"message","text":"Hi!"}],[{"type":"message","text":"## Progress\n- greeted"}]]' > /tmp/compact.json
-   uv run educodex app-server --listen stdio:// --fake-model /tmp/compact.json
+   uv run educodex app-server --fake-model /tmp/compact.json
    ```
    Paste `initialize`, `initialized`, `thread/start` and a `turn/start` with the text `hello` (see chapter 18), then `{"id":9,"method":"thread/compact/start","params":{"threadId":"<id>"}}`. The reply is `{"id":9,"result":{}}`, sent before the compaction finishes. Then look for `trace/compacted`: the new history is the fresh context (a developer message with permissions, an `<environment_context>` user message), `"hello"`, then the summary.
 

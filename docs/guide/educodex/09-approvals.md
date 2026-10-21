@@ -181,10 +181,10 @@ Escalation under `never` is refused even earlier, in the [`exec_command` handler
 
 ```bash
 mkdir -p /tmp/approval-demo
-uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/approval-demo
+(cd ../.. && pnpm eduagent --cwd /tmp/approval-demo)
 ```
 
-Open http://127.0.0.1:8765 and send any message. When the approval card appears:
+Open http://127.0.0.1:8765, pick **educodex-demo** ([the fake-model entry](README.md#the-web-ui)) and send any message. When the approval card appears:
 - open the **Protocol** tab and find the `item/commandExecution/requestApproval` request with an `id` like `srv-…`. The turn is paused;
 - open the **Guardrails** tab: `trace/policyDecision` says `prompt` with the reason "dangerous command (forced rm) always needs approval";
 - click `decline`. The model receives "exec command rejected by user" and the turn goes on. The Protocol tab shows the response and then a `serverRequest/resolved` notification. Run it again and click `cancel`: the turn ends as `interrupted`.

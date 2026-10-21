@@ -37,6 +37,7 @@ Guide links use the pinned commit.
 - `core/` never imports `observe/`, `app_server/` or the CLI/TUI (`backends/educodex/tests/test_layers.py`). Teaching extras go in `observe/` via the `Probe` hooks.
 - Vendored Codex files live in `backends/educodex/src/educodex/vendor/codex/`. Do not edit them by hand; re-run `uv run scripts/sync_vendor.py [path/to/codex]` from `backends/educodex/` (default: the `codex` checkout next to the repo).
 - Home: `~/.eduagent/.educodex` (laid out as `~/.codex`); `EDUCODEX_HOME` overrides it.
+- `educodex app-server` speaks stdio only (Codex's default transport). It has no web server; the launcher serves the visualiser and the guide. Test it over stdio with the `app_server` fixture in `backends/educodex/tests/conftest.py`.
 
 ## Commands
 

@@ -147,12 +147,12 @@ uv run educodex exec "List the files in this directory, then tell me how many th
 
 Each `model request #N` block ends with a line like `loop needs_follow_up=True → continue`. The last one says `→ stop`. Add `-v` to print every trace event and request body.
 
-In the web UI (`uv run educodex app-server`, then http://127.0.0.1:8765):
+In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**):
 - the **Timeline** tab shows each `loopIteration` with its decision, between the model requests and tool calls;
 - tick **step mode** to pause before each model request and before and after each tool call (breakpoints `beforeModelRequest`, `beforeToolCall`, `afterToolCall`), and step through the loop by hand;
 - press **interrupt** while a turn is running (step mode makes this easy). Then open the **Context** tab and find the `<turn_aborted>` user message at the end.
 
-Offline: `uv run educodex app-server --fake-model examples/fake/demo.json` replays a 7-iteration turn (plan, `ls`, patch, run, a dangerous `rm -rf` that needs approval, plan, answer). Send any message and watch the Timeline. The same flag works for `exec`: `uv run educodex exec --fake-model examples/fake/demo.json "go"` prints all 7 iterations in the terminal (run it in a scratch folder with `--cwd`, since it creates `hello.py`).
+Offline: pick **educodex-demo** ([the fake-model entry](README.md#the-web-ui)). It replays a 7-iteration turn (plan, `ls`, patch, run, a dangerous `rm -rf` that needs approval, plan, answer). Send any message and watch the Timeline. The same flag works for `exec`: `uv run educodex exec --fake-model examples/fake/demo.json "go"` prints all 7 iterations in the terminal (run it in a scratch folder with `--cwd`, since it creates `hello.py`).
 
 ## Further reading
 - [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/): turns, iterations and the growing prompt.
