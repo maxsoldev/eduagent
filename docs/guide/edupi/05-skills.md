@@ -82,7 +82,7 @@ Tag and push.
 v1.2
 ```
 
-This text is the user message, as the model and the session file see it. An unknown name is sent unchanged. The RPC command `get_commands` lists every skill as a command `skill:<name>`, with `source: "skill"` and its `sourceInfo` (path, scope).
+This text is the user message, as the model and the session file see it. An unknown name is sent unchanged. The RPC command `get_commands` lists every skill as a command `skill:<name>`, with `source: "skill"` and its `sourceInfo`: the file `path`, `source: "auto"` (found in a skills folder), the `scope` (`user` or `project`) and the `baseDir` of that folder's owner (the agent folder, or `<cwd>/.pi`).
 
 A skill with `disable-model-invocation: true` is **not in the list** the model sees, so the model never loads it. It is still in `get_commands`, and `/skill:name` still works. Use this for skills with side effects, such as a release, that should run only when a person asks.
 
@@ -152,7 +152,7 @@ The Codex side: [skill roots](https://github.com/openai/codex/blob/1c7c43cd856a1
 
 - **Two folders only.** pi also scans the `.agents/skills` folders (in trusted projects, from cwd up to the git root) and `~/.agents/skills`, and takes skills from packages, settings and `--skill` paths. edupi scans `<cwd>/.pi/skills` and its home's `skills` folder, so it never reads the folders of other agents.
 - **No ignore files.** pi skips paths listed in `.gitignore`, `.ignore` and `.fdignore` inside a skills folder. edupi does not.
-- **Trust without asking.** No trust prompt, no `/trust` command, no `defaultProjectTrust` setting and no extension hook. edupi decides with `--approve`/`--no-approve` and the home's `trust.json`, as pi's RPC mode does.
+- **Trust without asking.** No trust prompt, no `/trust` command, no `defaultProjectTrust` setting and no extension hook. edupi decides with `--approve`/`--no-approve` and the home's `trust.json`, as pi's RPC mode does; it only reads `trust.json`, so it needs no file lock.
 - **No `/reload`.** Skills are read when a session starts.
 - **No `enableSkillCommands` setting** and no errors reported to extensions when a `/skill:` file cannot be read: edupi sends the text as typed.
 
@@ -169,15 +169,15 @@ printf -- '---\nname: release\ndescription: Cut a release.\ndisable-model-invoca
   > /tmp/edupi-skills/.pi/skills/release/SKILL.md
 ```
 
-Open **edupi** in the visualiser in `/tmp/edupi-skills` and ask *"Write me a poem about rain."* In the **Timeline**, **Skills loaded** shows one skill and "project not trusted": the launcher entry has no `--approve`, so `.pi/skills` was skipped. The model calls `read` on `haiku/SKILL.md`, then answers. The **Context** tab shows the `skills` part of the system prompt and the `tool output: SKILL.md`.
+Open **edupi** in the visualiser in `/tmp/edupi-skills` and ask *"Write me a poem about rain."* The shipped entry passes `--approve`, so in the **Timeline**, **Skills loaded** shows both skills and "project trusted". The model calls `read` on `haiku/SKILL.md`, then answers. The **Context** tab shows the `skills` part of the system prompt (`haiku` only: `release` opts out) and the `tool output: SKILL.md`. Type `$` in the composer: `release` is in the list. Pick it and send: the user message is the skill's body in a `<skill>` block.
 
-To trust the project, add `"--approve"` to the entry's `command` in `launcher/backends.local.json`, or save a decision:
+To see pi's RPC default, copy the `edupi` entry to `launcher/backends.local.json` without `"--approve"` and open a new viewer (edupi decides on trust when it starts): **Skills loaded** now shows only `haiku` and "project not trusted". A saved decision trusts the project again without the flag:
 
 ```bash
 echo '{"/private/tmp/edupi-skills": true}' > ~/.eduagent/.edupi/agent/trust.json   # the real path (macOS: /tmp is /private/tmp)
 ```
 
-Open a new viewer (edupi decides on trust when it starts) and type `$` in the composer: `release` is in the list, but not in the prompt's `skills` part. Pick it and send: the user message is the skill's body in a `<skill>` block.
+A `trust.json` that is not valid JSON, or has a value other than `true`, `false` or `null`, stops edupi at startup, as it stops pi ("Failed to read trust store ...").
 
 Compare with educodex: put the same `haiku` folder in `~/.agents/skills` and ask the same question. Codex lists it in a developer message and reads it with `exec_command`.
 

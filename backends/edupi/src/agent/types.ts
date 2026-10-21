@@ -93,10 +93,32 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 	probe?: AgentProbe;
 	/**
-	 * Called after a turn when the loop goes on, just before the next turn starts. A returned
-	 * context replaces the loop's context (the coding agent compacts here).
+	 * Called after a turn when the loop goes on, just before the next turn starts. The returned
+	 * context, model and thinking level replace the loop's own; returned messages go in first
+	 * (the coding agent compacts here, and picks up a model or level changed during the run).
 	 */
-	prepareNextTurn?: (turn: { context: AgentContext }) => Promise<{ context?: AgentContext } | undefined>;
+	prepareNextTurn?: (
+		turn: PrepareNextTurnContext,
+	) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
+}
+
+/** The turn that just ended, passed to prepareNextTurn. */
+export interface PrepareNextTurnContext {
+	message: AssistantMessage;
+	toolResults: ToolResultMessage[];
+	/** The loop's context, with the reply and its tool results in it. */
+	context: AgentContext;
+	/** The messages this run has added so far. */
+	newMessages: AgentMessage[];
+}
+
+/** What prepareNextTurn may replace for the next model call. */
+export interface AgentLoopTurnUpdate {
+	context?: AgentContext;
+	/** Messages to put in before the next model call, with message events. */
+	messages?: AgentMessage[];
+	model?: Model;
+	thinkingLevel?: ThinkingLevel;
 }
 
 export interface AgentState {
