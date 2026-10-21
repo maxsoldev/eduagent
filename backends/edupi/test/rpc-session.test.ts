@@ -1,7 +1,16 @@
 // Seam A: sessions in pi's file format. edupi writes each session as a JSONL file of entries
 // (id + parentId) under its home, rebuilds the context from the entries, and answers
 // new_session and get_messages as pi does. The home is a temporary dir (EDUPI_CODING_AGENT_DIR).
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -280,4 +289,76 @@ test("--no-session keeps the session in memory and writes no file", async () => 
 	expect(state.sessionFile).toBeUndefined();
 	expect(state.messageCount).toBe(3); // system (tools), user, assistant
 	expect(existsSync(join(edupi.dir, "home", "agent", "sessions"))).toBe(false);
+});
+
+test("--session on an empty file writes a header into it, then appends the conversation", async () => {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+	const file = join(dir, "empty.jsonl");
+	writeFileSync(file, "");
+	edupi = startEdupi({ responses: ["Hi."] }, ["--session", file], { dir });
+	const state = (await edupi.command("get_state")).data;
+	expect(state.sessionFile).toBe(file);
+	// pi writes the header at once and counts the file as written, so the settings follow before any prompt.
+	expect(readEntries(file).map((e) => e.type)).toEqual(["session", "model_change", "thinking_level_change"]);
+
+	await prompt("Hello?");
+	const entries = readEntries(file);
+	expect(entries[0]).toMatchObject({ type: "session", id: state.sessionId });
+	expect(entries.filter((e) => e.type === "message").map((e) => e.message.role)).toEqual([
+		"system",
+		"user",
+		"assistant",
+	]);
+});
+
+test("--session on a file without a final newline adds one before it appends", async () => {
+	const { dir, file } = copyFixture("session-prompt-and-tools.jsonl");
+	writeFileSync(file, readFileSync(file, "utf8").trimEnd()); // e.g. a crash during the last write
+	const recorded = readEntries(file);
+	edupi = startEdupi({ responses: ["Hello again."] }, ["--session", file], { dir });
+	await prompt("Still there?");
+	const after = readEntries(file);
+	expect(after.slice(0, recorded.length)).toEqual(recorded);
+	expect(after.slice(recorded.length).map((e) => e.message.role)).toEqual(["system", "user", "assistant"]);
+});
+
+test("--session refuses a file whose first entry is not a session header, and leaves it as it was", async () => {
+	const { dir, file } = copyFixture("session-prompt-and-tools.jsonl");
+	const [header, ...rest] = readFileSync(file, "utf8").trimEnd().split("\n");
+	const content = `${[...rest, header].join("\n")}\n`;
+	writeFileSync(file, content);
+	edupi = startEdupi({ responses: [] }, ["--session", file], { dir });
+	expect(await edupi.close()).not.toBe(0);
+	expect(edupi.stderrText).toContain(`Session file is not a valid edupi session: ${file}`);
+	expect(readFileSync(file, "utf8")).toBe(content);
+});
+
+test("--continue skips a newer file in the session folder that is not a session", async () => {
+	edupi = startEdupi({ responses: ["Remembered."] });
+	await prompt("Remember this.");
+	const first = (await edupi.command("get_state")).data;
+	await edupi.close();
+	const junk = join(first.sessionFile, "..", "zz-notes.jsonl");
+	writeFileSync(junk, '{"note":"not a session"}\n');
+	utimesSync(junk, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
+
+	edupi = startEdupi({ responses: [] }, ["--continue"], { dir: edupi.dir });
+	const state = (await edupi.command("get_state")).data;
+	expect(state).toMatchObject({ sessionId: first.sessionId, sessionFile: first.sessionFile });
+});
+
+test("a message saved with null content is read as empty content, as pi reads hand-edited files", async () => {
+	const { dir, file } = copyFixture("session-prompt-and-tools.jsonl");
+	const entries = readEntries(file);
+	const messageEntries = entries.filter((e) => e.type === "message");
+	messageEntries[0].message.content = null; // the system message
+	messageEntries[2].message.content = null; // the first assistant reply
+	writeFileSync(file, entries.map((e) => `${JSON.stringify(e)}\n`).join(""));
+	edupi = startEdupi({ responses: ["Hello again."] }, ["--session", file], { dir });
+
+	const { messages } = (await edupi.command("get_messages")).data;
+	expect(messages[0].content).toBe("");
+	expect(messages[2].content).toEqual([]);
+	await prompt("Still there?");
+	expect(edupi.requests()).toHaveLength(1);
 });

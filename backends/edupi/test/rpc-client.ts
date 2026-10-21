@@ -44,6 +44,11 @@ export class RpcClient {
 		}
 	}
 
+	/** What edupi wrote to stderr so far. */
+	get stderrText(): string {
+		return this.stderr;
+	}
+
 	/** Writes one raw line to edupi's stdin. */
 	sendLine(line: string) {
 		this.proc.stdin.write(`${line}\n`);
