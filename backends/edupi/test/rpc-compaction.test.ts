@@ -146,3 +146,93 @@ test("compact on a session with nothing to summarise ends with pi's error", asyn
   ]);
   expect(response).toEqual({ id: "1", type: "response", command: "compact", success: false, error: "Nothing to compact (session too small)" });
 });
+
+/** A model with a tiny context window, as OpenRouter's GET /models would list it. */
+const tinyModel = (contextLength: number) => [{ id: "openai/gpt-6-luna", name: "Tiny Luna", context_length: contextLength,
+  top_provider: { context_length: contextLength, max_completion_tokens: 50 }, supported_parameters: ["tools"] }];
+
+test("threshold: after a run whose context passed contextWindow - reserveTokens, edupi compacts before agent_settled", async () => {
+  const long = "x".repeat(400); // 100 estimated tokens
+  // Window 200, reserve 100: compact above 100 tokens. keepRecentTokens 101 keeps q2 (1) and its answer (100).
+  edupi = startEdupi({ models: tinyModel(200), responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."] },
+    [], { dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 101 } }) });
+  await edupi.command("get_state");
+  await prompt("q1");
+  expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // 18 tokens: below the threshold
+
+  const start = edupi.seen.length;
+  await prompt("q2");
+  const reply = edupi.seen.filter((m) => m.type === "message_end").at(-1)!.message;
+  expect(reply.usage.totalTokens).toBeGreaterThan(100);
+  const after = edupi.seen.slice(start).filter((m) => m.type !== "trace" && m.type !== "message_update").map((m) => m.type);
+  expect(after.slice(-4)).toEqual(["agent_end", "compaction_start", "compaction_end", "agent_settled"]);
+  const end = edupi.seen.find((m) => m.type === "compaction_end")!;
+  expect(edupi.seen.find((m) => m.type === "compaction_start")).toEqual({ type: "compaction_start", reason: "threshold" });
+  expect(end).toMatchObject({ reason: "threshold", aborted: false, willRetry: false,
+    result: { summary: "## Goal\nTHRESHOLD SUMMARY", tokensBefore: reply.usage.totalTokens } });
+  expect(edupi.requests()[2].body.messages[1].content[0].text).toMatch(/^<conversation>\n\[User\]: q1\n\n\[Assistant\]: First answer\.\n<\/conversation>/);
+
+  // No retry: the run ended with the reply. The next prompt starts from the compaction (the old
+  // reply's usage predates it, so the check before the prompt does not compact again).
+  await prompt("q3");
+  expect(edupi.requests()[3].body.messages).toEqual([
+    summaryMessage("## Goal\nTHRESHOLD SUMMARY"), user("q2"), { role: "assistant", content: long }, user("q3"),
+  ]);
+});
+
+const OVERFLOW = { error: { status: 400, message: "This endpoint's maximum context length is 1000 tokens. However, you requested about 5000 tokens." } };
+
+test("overflow: the provider refuses the context; edupi drops the failed reply, compacts and retries once", async () => {
+  // keepRecentTokens 1 keeps only the last prompt; everything before it is summarised.
+  edupi = startEdupi({ responses: ["First answer.", "Second answer.", OVERFLOW, "## Goal\nOVERFLOW SUMMARY", "Third answer, after the retry."] },
+    [], { dir: dirWithSettings({ compaction: { keepRecentTokens: 1 } }) });
+  await edupi.command("get_state");
+  await prompt("q1");
+  await prompt("q2");
+  const start = edupi.seen.length;
+  await prompt("q3");
+  const events = edupi.seen.slice(start).filter((m) => m.type !== "trace" && m.type !== "message_update");
+
+  // The failed run ends, then pi's recovery: omit the reply, compact, and a second run continues.
+  expect(events.map((m) => m.type === "message_end" ? `message_end ${m.message.role}` : m.type)).toEqual([
+    "response", "agent_start", "turn_start", "message_start", "message_end user", "message_start", "message_end assistant", "turn_end", "agent_end",
+    "entry_appended", "compaction_start", "compaction_end",
+    "agent_start", "turn_start", "message_start", "message_end assistant", "turn_end", "agent_end", "agent_settled",
+  ]);
+  const failed = events.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
+  expect(failed).toMatchObject({ stopReason: "error", errorMessage: expect.stringMatching(/maximum context length is 1000 tokens/) });
+  expect(events.find((m) => m.type === "compaction_start")).toEqual({ type: "compaction_start", reason: "overflow" });
+  expect(events.find((m) => m.type === "compaction_end")).toMatchObject({ reason: "overflow", aborted: false, willRetry: true,
+    result: { summary: "## Goal\nOVERFLOW SUMMARY" } });
+  expect(events.at(-3)).toMatchObject({ type: "turn_end", message: { stopReason: "stop", content: [{ type: "text", text: "Third answer, after the retry." }] } });
+
+  // The retry is rebuilt from the compaction: the summary, then q3. The failed reply is not in it.
+  const requests = edupi.requests().map((r) => r.body.messages);
+  expect(requests[3][1].content[0].text).toMatch(/^<conversation>\n\[User\]: q1\n\n\[Assistant\]: First answer\.\n\n\[User\]: q2\n\n\[Assistant\]: Second answer\.\n<\/conversation>/);
+  expect(requests[4]).toEqual([summaryMessage("## Goal\nOVERFLOW SUMMARY"), user("q3")]);
+
+  // The session file keeps the failed reply; a context_edit entry leaves it out of the context.
+  const file = entries();
+  const failedEntry = file.find((e) => e.type === "message" && e.message.stopReason === "error")!;
+  const edit = file.find((e) => e.type === "context_edit")!;
+  expect(edit).toEqual({ type: "context_edit", id: expect.any(String), parentId: failedEntry.id, timestamp: expect.any(String),
+    targetId: failedEntry.id, replacement: null });
+  expect(events.find((m) => m.type === "entry_appended")!.entry).toEqual(edit);
+  expect(file.map((e) => e.type).slice(-3)).toEqual(["context_edit", "compaction", "message"]);
+  const { messages } = (await edupi.command("get_messages")).data;
+  expect(messages.map((m: Message) => m.role)).toEqual(["compactionSummary", "user", "assistant"]);
+});
+
+test("overflow: a second overflow after the retry gives up with pi's error", async () => {
+  edupi = startEdupi({ responses: ["First answer.", OVERFLOW, "## Goal\nOVERFLOW SUMMARY", OVERFLOW] },
+    [], { dir: dirWithSettings({ compaction: { keepRecentTokens: 1 } }) });
+  await prompt("q1");
+  await prompt("q2");
+  const ends = edupi.seen.filter((m) => m.type === "compaction_end");
+  expect(ends.map((e) => [e.willRetry, e.errorMessage])).toEqual([
+    [true, undefined],
+    [false, "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."],
+  ]);
+  expect(edupi.seen.filter((m) => m.type === "agent_start")).toHaveLength(3); // q1, q2, the one retry
+  expect(edupi.seen.at(-1)).toEqual({ type: "agent_settled", aborted: false });
+});
