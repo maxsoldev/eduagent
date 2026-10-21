@@ -5,15 +5,19 @@
 // it is a `fetch` for the OpenAI SDK that answers with Chat Completions SSE chunks. So the real
 // openai-completions code runs in tests too, and every request body can be recorded.
 import { readFileSync } from "node:fs";
-import type { AssistantMessage, StopReason, TextContent } from "../types.ts";
+import type { AssistantMessage, JsonObject, StopReason, TextContent, ToolCall } from "../types.ts";
 
 const DEFAULT_MIN_TOKEN_SIZE = 3;
 const DEFAULT_MAX_TOKEN_SIZE = 5;
 
-export type FauxContentBlock = TextContent;
+export type FauxContentBlock = TextContent | ToolCall;
 
 export function fauxText(text: string): TextContent {
   return { type: "text", text };
+}
+
+export function fauxToolCall(name: string, args: JsonObject, options: { id?: string } = {}): ToolCall {
+  return { type: "toolCall", id: options.id ?? `tool:${Math.random().toString(36).slice(2, 10)}`, name, arguments: args };
 }
 
 /** A scripted reply. Only content and stopReason matter; the provider fills in the rest. */
@@ -91,7 +95,7 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
       choices: usage ? [] : [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}),
     });
     const promptTokens = estimateTokens(JSON.stringify(body.messages));
-    const outputText = message.content.map((block) => block.type === "text" ? block.text : "").join("");
+    const outputText = message.content.map((block) => block.type === "text" ? block.text : block.type === "toolCall" ? JSON.stringify(block.arguments) : "").join("");
     const usage = { prompt_tokens: promptTokens, completion_tokens: estimateTokens(outputText), total_tokens: promptTokens + estimateTokens(outputText) };
 
     const encoder = new TextEncoder();
@@ -99,12 +103,23 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
       async start(controller) {
         const send = (data: object) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         send(chunk({ role: "assistant", content: "" }));
+        let toolIndex = 0;
         for (const block of message.content) {
-          if (block.type !== "text") continue;
-          for (const piece of splitStringByTokenSize(block.text, minTokenSize, maxTokenSize)) {
-            await scheduleChunk(piece, options.tokensPerSecond);
-            if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
-            send(chunk({ content: piece }));
+          if (block.type === "text") {
+            for (const piece of splitStringByTokenSize(block.text, minTokenSize, maxTokenSize)) {
+              await scheduleChunk(piece, options.tokensPerSecond);
+              if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
+              send(chunk({ content: piece }));
+            }
+          } else if (block.type === "toolCall") {
+            // A tool call: the first delta names it, then its arguments come as JSON text in pieces.
+            const index = toolIndex++;
+            send(chunk({ tool_calls: [{ index, id: block.id, type: "function", function: { name: block.name, arguments: "" } }] }));
+            for (const piece of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
+              await scheduleChunk(piece, options.tokensPerSecond);
+              if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
+              send(chunk({ tool_calls: [{ index, function: { arguments: piece } }] }));
+            }
           }
         }
         send(chunk({}, FINISH_REASONS[message.stopReason] ?? "stop"));
@@ -134,6 +149,7 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 /**
  * Reads a faux script file: `{"responses": [...]}`. A response is a string (one text reply) or
  * `{"content": string | blocks, "stopReason"?: ...}`, the arguments of fauxAssistantMessage.
+ * A block is `{"type": "text", "text"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
  */
 export function loadFauxScript(path: string): AssistantMessage[] {
   const script = JSON.parse(readFileSync(path, "utf8"));

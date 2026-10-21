@@ -10,5 +10,16 @@
   "modelResponse": {
     "usage": "object",
     "seconds": "number"
+  },
+  "toolDispatch": {
+    "tool": "string",
+    "callId": "string",
+    "parallel": "boolean"
+  },
+  "toolOutput": {
+    "tool": "string",
+    "callId": "string",
+    "output": "string",
+    "tokens": "number"
   }
 }

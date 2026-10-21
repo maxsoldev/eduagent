@@ -28,6 +28,8 @@ test("a prompt streams pi's agent, turn and message events and ends with the rep
     "response prompt",
     "agent_start",
     "turn_start",
+    "message_start system", // the tool declarations (toolsAdded), before the first prompt only
+    "message_end system",
     "message_start user",
     "message_end user",
     "message_start assistant",
@@ -65,7 +67,9 @@ test("a prompt streams pi's agent, turn and message events and ends with the rep
 
   const end = edupi.seen.find((m) => m.type === "agent_end")!;
   expect(end.willRetry).toBe(false);
-  expect(end.messages.map((m: Message) => m.role)).toEqual(["user", "assistant"]);
+  expect(end.messages.map((m: Message) => m.role)).toEqual(["system", "user", "assistant"]);
+  const system = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "system")!.message;
+  expect(system.toolsAdded.map((t: Message) => t.name)).toEqual(["read", "bash", "edit", "write"]);
   expect(edupi.seen.find((m) => m.type === "turn_end")).toMatchObject({ message: reply, toolResults: [] });
   expect(edupi.seen.at(-1)).toEqual({ type: "agent_settled", aborted: false });
 });
@@ -103,5 +107,5 @@ test("get_state answers with pi's session state, before and after a prompt", asy
   edupi.sendLine(JSON.stringify({ type: "prompt", message: "Hello?" }));
   await edupi.until("agent_settled");
   const after = await edupi.command("get_state");
-  expect(after.data).toMatchObject({ isStreaming: false, messageCount: 2, sessionId: before.data.sessionId });
+  expect(after.data).toMatchObject({ isStreaming: false, messageCount: 3, sessionId: before.data.sessionId }); // system, user, assistant
 });
