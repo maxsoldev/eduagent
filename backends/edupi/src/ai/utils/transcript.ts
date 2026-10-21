@@ -17,13 +17,7 @@ import type {
 
 type TranscriptMessages = readonly { role: string }[];
 
-interface ToolDeclaringMessage {
-	role: "system";
-	toolsAdded?: Tool[];
-	toolsRemoved?: ToolReference[];
-}
-
-const isSystemMessage = (message: { role: string }): message is ToolDeclaringMessage => message.role === "system";
+const isSystemMessage = (message: { role: string }): message is SystemMessage => message.role === "system";
 
 /** The tools available after applying every transcript change in order. */
 export function getCurrentTools(messages: TranscriptMessages): Tool[] {
@@ -96,12 +90,11 @@ export function getCurrentSystemMessage(messages: TranscriptMessages): SystemMes
 	const sections = new Map<string, string>();
 	let timestamp: number | undefined;
 	for (const message of messages) {
-		if (message.role !== "system") continue;
-		const system = message as SystemMessage;
-		timestamp ??= system.timestamp;
-		const text = contentText(system.content);
+		if (!isSystemMessage(message)) continue;
+		timestamp ??= message.timestamp;
+		const text = contentText(message.content);
 		if (text.length > 0) content.push(text);
-		for (const [name, value] of Object.entries(system.sections ?? {})) {
+		for (const [name, value] of Object.entries(message.sections ?? {})) {
 			if (value === null) sections.delete(name);
 			else sections.set(name, value);
 		}

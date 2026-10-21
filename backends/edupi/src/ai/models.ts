@@ -23,12 +23,11 @@ export function clampThinkingLevel(model: Model, level: ThinkingLevel): Thinking
 	if (availableLevels.includes(level)) return level;
 
 	const requestedIndex = EXTENDED_THINKING_LEVELS.indexOf(level);
-	if (requestedIndex === -1) return availableLevels[0] ?? "off";
 	for (let i = requestedIndex; i < EXTENDED_THINKING_LEVELS.length; i++) {
 		if (availableLevels.includes(EXTENDED_THINKING_LEVELS[i])) return EXTENDED_THINKING_LEVELS[i];
 	}
 	for (let i = requestedIndex - 1; i >= 0; i--) {
 		if (availableLevels.includes(EXTENDED_THINKING_LEVELS[i])) return EXTENDED_THINKING_LEVELS[i];
 	}
-	return availableLevels[0] ?? "off";
+	return "off";
 }

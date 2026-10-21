@@ -190,7 +190,7 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 - **Simpler bash.** No spawn hook or command prefix, no Windows shells, no `bash` search on `PATH` (only `/bin/bash`, else `sh`). The output is kept in memory (pi streams it to the temp file), and `structuredContent.output` is not capped at 1MB (so it never has `truncated: true` or `full_output_path`). After the command exits, edupi waits at most 100 ms for the output pipes; pi waits until they are idle. pi kills running commands when it exits; edupi leaves them running.
 - **Simpler paths.** No macOS file-name variants (NFD, curly quotes, screenshot names) in `read`.
 - **No `beforeToolCall` / `afterToolCall` hooks** (pi uses them for extensions), no `terminate` flag, no `grep`, `find` and `ls` tools, no tool set changes after the first prompt (so no `toolsRemoved` in practice).
-- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser. As in pi, a `null` for an optional argument counts as left out (it is deleted before validation).
+- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser. pi also deletes a `null` for an optional argument before validation; edupi does not ([chapter 01](01-provider-api.md#where-edupi-is-simpler)).
 
 ## Try it
 
