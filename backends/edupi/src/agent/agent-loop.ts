@@ -83,6 +83,7 @@ async function runLoop(
   streamFunction: StreamFn,
 ): Promise<void> {
   let firstTurn = true;
+  let iteration = 0; // edupi: model calls in this run, for the loopIteration trace
   // Drain point A: the user may have steered while the run was starting.
   let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -114,10 +115,12 @@ async function runLoop(
 
       const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
       newMessages.push(message);
+      iteration++;
 
       // An error or an abort ends the run at once. Queued messages stay queued.
       if (message.stopReason === "error" || message.stopReason === "aborted") {
         await emit({ type: "turn_end", message, toolResults: [] });
+        await config.probe?.loopIteration?.({ iteration, needsFollowUp: false, message, decision: "stop" });
         await emit({ type: "agent_end", messages: newMessages });
         return;
       }
@@ -142,6 +145,8 @@ async function runLoop(
 
       // Drain point C: steering sent while the model streamed or the tools ran.
       pendingMessages = (await config.getSteeringMessages?.()) || [];
+      const decision = hasMoreToolCalls || pendingMessages.length > 0 ? "continue" : "stop";
+      await config.probe?.loopIteration?.({ iteration, needsFollowUp: hasMoreToolCalls, message, decision });
     }
 
     // The agent would stop here. Follow-up messages become pending and start another inner loop.

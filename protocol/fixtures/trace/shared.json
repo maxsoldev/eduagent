@@ -11,6 +11,12 @@
     "usage": "object",
     "seconds": "number"
   },
+  "loopIteration": {
+    "iteration": "number",
+    "needsFollowUp": "boolean",
+    "tokens": "number",
+    "decision": "string"
+  },
   "compactionRequest": {
     "reason": "string",
     "tokensBefore": "number",

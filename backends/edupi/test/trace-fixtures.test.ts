@@ -16,7 +16,7 @@ afterEach(async () => {
   await edupi?.close();
 });
 
-test("edupi's model, tool, prompt, skill, cost and step-mode trace events match the protocol fixtures", async () => {
+test("edupi's model, loop, tool, prompt, skill, cost and step-mode trace events match the protocol fixtures", async () => {
   const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "echo hi" } };
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
   const skill = join(dir, "home", "agent", "skills", "greet");
@@ -42,6 +42,7 @@ test("edupi's model, tool, prompt, skill, cost and step-mode trace events match 
     toolOutput: first("toolOutput"),
     streamEvent: first("streamEvent", (m) => Boolean(m.event.choices[0]?.delta?.content)), // a text chunk, as in the fixture
     modelResponse: first("modelResponse"),
+    loopIteration: first("loopIteration"), // the tool call's iteration, as in the fixture
     promptAssembled: first("promptAssembled"),
     skillsLoaded: first("skillsLoaded"),
     pricing: first("pricing"),

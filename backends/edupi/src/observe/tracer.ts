@@ -2,7 +2,7 @@
 // observe/tracer.py does. pi has no trace events. edupi sends them in pi's type-tagged style,
 // {type: "trace", name, ...payload}, on the same stdout as the RPC events. Names and payloads
 // are the shared trace vocabulary in protocol/README.md section 6.
-import type { AgentMessage, AgentToolCall, AgentToolResult, Checkpoint } from "../agent/types.ts";
+import type { AgentMessage, AgentToolCall, AgentToolResult, Checkpoint, LoopIteration } from "../agent/types.ts";
 import type { AssistantMessage } from "../ai/types.ts";
 import type { CompactionResult } from "../coding-agent/core/compaction/compaction.ts";
 import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-agent/core/probe.ts";
@@ -106,6 +106,12 @@ export class Tracer implements Probe {
     const output = result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
     const tokens = Math.floor((Buffer.byteLength(output, "utf-8") + 3) / 4);
     this.emit("toolOutput", { tool: toolCall.name, callId: toolCall.id, output, isError, durationMs, tokens });
+  }
+
+  /** tokens: the context size after the reply, from its usage (what pi's compaction check reads). */
+  loopIteration({ iteration, needsFollowUp, message, decision }: LoopIteration) {
+    const tokens = message.usage.totalTokens;
+    this.emit("loopIteration", { iteration, needsFollowUp, tokens, stopReason: message.stopReason, decision });
   }
 
   /** One fragment per prompt section, as educodex's promptAssembled; changed = in this run's system message patch. */

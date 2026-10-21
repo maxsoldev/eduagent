@@ -1,0 +1,9 @@
+{
+  "type": "trace",
+  "name": "loopIteration",
+  "iteration": 1,
+  "needsFollowUp": true,
+  "tokens": 712,
+  "stopReason": "toolUse",
+  "decision": "continue"
+}
