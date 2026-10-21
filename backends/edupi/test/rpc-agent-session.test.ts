@@ -190,3 +190,18 @@ test("--session works in the cwd of the file's header: its AGENTS.md and cwd go 
 	expect(system).toContain("Project rules from the header's cwd.");
 	expect(system).toContain(`<cwd>\n${project}\n</cwd>`);
 });
+
+test("bash commands see the session as PI_* variables, read when the command runs", async () => {
+	const command = 'echo "$PI_SESSION_ID|$PI_SESSION_FILE|$PI_PROVIDER|$PI_MODEL|$PI_REASONING_LEVEL"';
+	const bash = {
+		content: [{ type: "toolCall", id: "call_e", name: "bash", arguments: { command } }],
+		stopReason: "toolUse",
+	};
+	edupi = startEdupi({ responses: [bash, "Done."] });
+	await prompt("show the env");
+	const state = (await edupi.command("get_state")).data;
+	const end = edupi.seen.find((m) => m.type === "tool_execution_end")!;
+	expect(end.result.content[0].text.trim()).toBe(
+		`${state.sessionId}|${state.sessionFile}|openrouter|openai/gpt-6-luna|off`,
+	);
+});
