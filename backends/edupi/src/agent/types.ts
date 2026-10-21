@@ -37,9 +37,6 @@ export interface CustomAgentMessages {
 /** The provider's messages plus the app's own. convertToLlm turns them into provider messages. */
 export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
 
-/** "parallel" (pi's default): all tool calls of one reply run at once. "sequential": one after the other. */
-export type ToolExecutionMode = "sequential" | "parallel";
-
 export type AgentToolCall = ToolCall;
 
 /**
@@ -80,8 +77,6 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	/** AgentMessage[] to provider Message[], just before each model call. */
 	convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
-	/** Default "parallel". A tool with executionMode "sequential" makes the whole batch sequential. */
-	toolExecution?: ToolExecutionMode;
 	/** Steering messages to put in before the next model call. Polled at the loop's drain points. */
 	getSteeringMessages?: () => Promise<AgentMessage[]>;
 	/** Follow-up messages, polled only when the agent would stop. */
@@ -89,8 +84,8 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	probe?: AgentProbe;
 	/**
 	 * Called after a turn when the loop goes on, just before the next turn starts. The returned
-	 * context, model and thinking level replace the loop's own; returned messages go in first
-	 * (the coding agent compacts here, and picks up a model or level changed during the run).
+	 * context, model and thinking level replace the loop's own (the coding agent compacts here,
+	 * and picks up a model or level changed during the run).
 	 */
 	prepareNextTurn?: (
 		turn: PrepareNextTurnContext,
@@ -99,19 +94,13 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 
 /** The turn that just ended, passed to prepareNextTurn. */
 export interface PrepareNextTurnContext {
-	message: AssistantMessage;
-	toolResults: ToolResultMessage[];
 	/** The loop's context, with the reply and its tool results in it. */
 	context: AgentContext;
-	/** The messages this run has added so far. */
-	newMessages: AgentMessage[];
 }
 
 /** What prepareNextTurn may replace for the next model call. */
 export interface AgentLoopTurnUpdate {
 	context?: AgentContext;
-	/** Messages to put in before the next model call, with message events. */
-	messages?: AgentMessage[];
 	model?: Model;
 	thinkingLevel?: ThinkingLevel;
 }
@@ -121,11 +110,6 @@ export interface AgentState {
 	thinkingLevel: ThinkingLevel;
 	tools: AgentTool<any>[];
 	messages: AgentMessage[];
-	readonly isStreaming: boolean;
-	readonly streamingMessage?: AgentMessage;
-	/** Ids of the tool calls that are running now. */
-	readonly pendingToolCalls: ReadonlySet<string>;
-	readonly errorMessage?: string;
 }
 
 /** What a tool returns. content goes to the model; details are for the user interface only. */
@@ -153,7 +137,6 @@ export interface AgentTool<TParams = any, TDetails = any> extends Tool {
 		signal?: AbortSignal,
 		onUpdate?: AgentToolUpdateCallback<TDetails>,
 	) => Promise<AgentToolResult<TDetails>>;
-	executionMode?: ToolExecutionMode;
 }
 
 /** One finished tool call: the result the model reads, and how long execute() took. */

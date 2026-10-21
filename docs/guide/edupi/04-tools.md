@@ -82,7 +82,7 @@ turn_end
 
 The `tool_execution_end` events come in completion order, but the result messages come in the order the model asked. So the next request is the same, whichever tool was faster.
 
-`toolExecution: "sequential"` on the `Agent` turns this off: each call starts, ends and gets its result message before the next one starts. A tool can also say `executionMode: "sequential"`: then the whole batch runs one by one. None of pi's four tools does. pi protects files another way: `edit` and `write` wait in a per-file queue (`withFileMutationQueue`, keyed by the file's real path), so two edits of one file never overlap. Without it, two parallel edits would both read the old text, and the second write would drop the first change.
+pi also has a sequential mode (`toolExecution: "sequential"` on the `Agent`, or `executionMode: "sequential"` on a tool), but none of its four tools uses it. pi protects files another way: `edit` and `write` wait in a per-file queue (`withFileMutationQueue`, keyed by the file's real path), so two edits of one file never overlap. Without it, two parallel edits would both read the old text, and the second write would drop the first change.
 
 ### Tools are declared in the transcript
 
@@ -126,7 +126,7 @@ This is the request the real pi sent (`test/fixtures/pi/tools-request.json`). An
 | [`src/coding-agent/core/tools/write.ts`](../../../backends/edupi/src/coding-agent/core/tools/write.ts) | `tools/write.ts` | The write tool |
 | [`src/coding-agent/core/tools/file-mutation-queue.ts`](../../../backends/edupi/src/coding-agent/core/tools/file-mutation-queue.ts) | `tools/file-mutation-queue.ts` | `withFileMutationQueue`: one `edit` or `write` per file at a time |
 | [`src/coding-agent/core/tools/truncate.ts`](../../../backends/edupi/src/coding-agent/core/tools/truncate.ts) | `tools/truncate.ts` | `truncateHead` (read), `truncateTail` (bash): 2000 lines or 50KB |
-| [`src/agent/agent-loop.ts`](../../../backends/edupi/src/agent/agent-loop.ts) | `agent/src/agent-loop.ts` | `runLoop` (call the model again after tools), `declareToolChanges`, `executeToolCalls` (parallel or sequential), `prepareToolCall`, `executePreparedToolCall` |
+| [`src/agent/agent-loop.ts`](../../../backends/edupi/src/agent/agent-loop.ts) | `agent/src/agent-loop.ts` | `runLoop` (call the model again after tools), `declareToolChanges`, `executeToolCallsParallel`, `prepareToolCall`, `executePreparedToolCall` |
 | [`src/agent/types.ts`](../../../backends/edupi/src/agent/types.ts) | `agent/src/types.ts` | `AgentTool`, `AgentToolResult`, the `tool_execution_*` events, `AgentProbe` |
 | [`src/ai/utils/validation.ts`](../../../backends/edupi/src/ai/utils/validation.ts) | `ai/src/utils/validation.ts` | `validateToolArguments` with typebox |
 | [`src/ai/utils/transcript.ts`](../../../backends/edupi/src/ai/utils/transcript.ts) | `ai/src/utils/transcript.ts` | `getCurrentTools`, `getToolStateChanges` |
@@ -137,11 +137,11 @@ The heart of parallel execution, in edupi's code. The first loop starts each cal
 ```ts
 for (const toolCall of toolCalls) {
   await emit({ type: "tool_execution_start", toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments });
-  const preparation = prepareToolCall(currentContext, toolCall, signal);
+  const preparation = prepareToolCall(currentContext, toolCall);
   if (preparation.kind === "immediate") { /* unknown tool or bad arguments: end at once */ continue; }
   finalizedCalls.push(async () => {
     const finalized = { toolCall, ...(await executePreparedToolCall(preparation, signal, emit)) };
-    await emitToolExecutionEnd(finalized, emit, config); // completion order
+    await emitToolExecutionEnd(finalized, emit, config, signal); // completion order
     return finalized;
   });
 }
@@ -172,7 +172,7 @@ The tests in [`test/rpc-tools.test.ts`](../../../backends/edupi/test/rpc-tools.t
 | Changing a file | `edit`: exact `oldText` → `newText` replacements, or `write` the whole file | `apply_patch`: one freeform patch in Codex's own format, for many files at once |
 | Long output | the head (read) or the tail (bash), whole lines; bash saves the full output to a temp file and names it | the head and the tail, the middle cut out, with a token count |
 | Output text | the plain output, plus status lines (`Command exited with code 3`) | a header: `Chunk ID`, `Wall time`, `Process exited with code`, `Original token count`, then `Output:` |
-| Parallel calls | every call of one reply runs at once, unless a tool says sequential | a read/write lock: parallel-safe tools (`exec_command`, read-only MCP tools) share it, the others (`apply_patch`) run alone |
+| Parallel calls | every call of one reply runs at once | a read/write lock: parallel-safe tools (`exec_command`, read-only MCP tools) share it, the others (`apply_patch`) run alone |
 | Where the tools are | in the transcript (system message `toolsAdded`), sent as Chat Completions `tools` | in the request's `tools` field (or, for Responses Lite models, an `additional_tools` input item) |
 | Results on the wire | `tool` messages with `tool_call_id` | `function_call_output` / `custom_tool_call_output` items with `call_id` |
 | Safety | none: the tools run with the user's rights (pi has no approvals or sandbox) | approval policy, command rules and an OS sandbox (chapters 09 to 11) |
@@ -189,6 +189,8 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 - **No images.** pi's `read` sends images as attachments (resized); edupi reads every file as text.
 - **Simpler bash.** No spawn hook or command prefix, no Windows shells, no `bash` search on `PATH` (only `/bin/bash`, else `sh`). The output is kept in memory (pi streams it to the temp file), and `structuredContent.output` is not capped at 1MB (so it never has `truncated: true` or `full_output_path`). After the command exits, edupi waits at most 100 ms for the output pipes; pi waits until they are idle. pi kills running commands when it exits; edupi leaves them running.
 - **Simpler paths.** No macOS file-name variants (NFD, curly quotes, screenshot names) in `read`.
+- **Parallel only.** No sequential mode (`toolExecution`, a tool's `executionMode`): none of the four tools needs it.
+- **No check for cut-off replies.** pi fails every tool call of a reply that stopped at the output token limit (`failToolCallsFromTruncatedMessage`); edupi runs them, and cut-off arguments fail the schema check.
 - **No `beforeToolCall` / `afterToolCall` hooks** (pi uses them for extensions), no `terminate` flag, no `grep`, `find` and `ls` tools, no tool set changes after the first prompt (so no `toolsRemoved` in practice).
 - **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser. As in pi, a `null` for an optional argument counts as left out (it is deleted before validation).
 

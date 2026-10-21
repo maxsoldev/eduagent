@@ -136,8 +136,8 @@ let pendingMessages = (await config.getSteeringMessages?.()) || [];           //
 while (true) {
   let hasMoreToolCalls = true;
   while (hasMoreToolCalls || pendingMessages.length > 0) {
-    if (lastCompletedTurn) {
-      await config.prepareNextTurn?.(lastCompletedTurn);   // may compact (chapter 07); new context, model, level
+    if (!firstTurn) {
+      await config.prepareNextTurn?.({ context: currentContext }); // may compact (chapter 07); new context, model, level
       if (pendingMessages.length === 0) pendingMessages = (await config.getSteeringMessages?.()) || []; // B
       await emit({ type: "turn_start" });
     }
@@ -199,6 +199,7 @@ The Codex side: the [loop](https://github.com/openai/codex/blob/1c7c43cd856a1ef4
 - **No `reasoning_details`.** OpenRouter can also stream structured, sometimes encrypted, reasoning details; pi keeps and replays them. edupi keeps the reasoning text only.
 - **No `prepareRequest` / `finishTurn` hooks** and no explicit continuation. pi's session uses them for its per-request projection, virtual models and extension `turn_end` handlers.
 - **No extension hooks in the loop.** No `transformContext`, `beforeToolCall` / `afterToolCall` (pi's extension `tool_call` / `tool_result` events and image resizing), no `terminate` on tool results (a batch where every result says `terminate` ends the run).
+- **A smaller `Agent`.** Its state is only the model, thinking level, tools and messages (no `isStreaming`, `streamingMessage`, `pendingToolCalls`, `errorMessage`); the session tracks the run itself. `prompt` takes ready messages (no text or images), there is no `waitForIdle` or `clearAllQueues` on the Agent, listeners get no abort signal, and `prepareNextTurn` gets only the context (it cannot add messages).
 - **No model runtime.** The stream function calls the provider directly. pi's goes through `ModelRuntime.streamSimple`, which resolves auth first; so after an abort during a tool, pi's next reply is an `error` and edupi's an `aborted`.
 - **A shorter `transformMessages`.** edupi's copy has pi's two passes (thinking from another model, then dropped replies and synthetic tool results), but no image downgrade and no tool call id normalization: OpenRouter's ids and edupi's text-only models need neither.
 
