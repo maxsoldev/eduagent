@@ -164,7 +164,6 @@ The Codex side: [`RolloutRecorder`](https://github.com/openai/codex/blob/1c7c43c
 - **Version 3 only.** pi migrates older files (v1 without ids, v2) and rewrites them. edupi refuses them.
 - **`--session` takes a path only.** pi also takes a partial session id and searches the folders, and has `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`).
 - **Models from OpenRouter only.** An opened session's model is restored only if its provider is `openrouter`; otherwise edupi uses its default model.
-- **`new_session` waits** for an active run to end, because edupi has no abort yet. pi aborts the run first.
 - **Simpler ids and reads.** `uuidv7` leaves out pi's counter for ids made in the same millisecond. Files are read whole, without pi's streaming reader and header scan limits.
 
 ## Try it

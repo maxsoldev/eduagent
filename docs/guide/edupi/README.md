@@ -78,9 +78,10 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json
 | # | Chapter | You will learn | educodex chapter |
 |---|---|---|---|
 | 01 | [The provider API](01-provider-api.md) | Chat Completions vs Responses; OpenRouter as an OpenAI-compatible endpoint; pi's provider layer and its faux provider | [02](../educodex/02-talking-to-a-model.md) |
+| 02 | [The loop and the queues](02-loop-and-queues.md) | pi's inner and outer loops; steering and follow-up queues and their drain points; abort; the thinking level as OpenRouter's reasoning effort; how this differs from Codex's turn loop and `turn/steer` | [04](../educodex/04-agentic-loop.md), [08](../educodex/08-reasoning.md) |
 | 04 | [Tools](04-tools.md) | pi's read, bash, edit and write; what the model reads vs what the user sees (the edit diff); tool calls run in parallel by default; tools declared in the transcript; how this differs from Codex's tools | [03](../educodex/03-tool-calling.md), [07](../educodex/07-built-in-tools.md) |
 | 06 | [Sessions](06-sessions.md) | pi's session file: a tree of entries with `id` and `parentId`; the context rebuilt from the entries; `new_session` and `get_messages`; how it differs from Codex's rollout files | [16](../educodex/16-session-logs.md) |
 | 07 | [Compaction](07-compaction.md) | pi's three triggers (manual, threshold, overflow); the cut point and split turns; the checkpoint and update prompts; the compaction entry and the request rebuilt from it | [15](../educodex/15-compaction.md) |
 | 08 | [The RPC protocol](08-rpc-protocol.md) | `pi --mode rpc`: commands, responses and events as JSON lines; how they differ from Codex's App Server | [18](../educodex/18-app-server.md) |
 
-Planned chapters, written with their features: 02 the loop and the queues, 03 prompt assembly, 05 skills.
+Planned chapters, written with their features: 03 prompt assembly, 05 skills.
