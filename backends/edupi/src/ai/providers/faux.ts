@@ -4,11 +4,28 @@
 // answers with Chat Completions SSE chunks, so the real openai-completions code runs and each body
 // is recorded. GET /models answers with the script's models (context window, prices).
 import { readFileSync } from "node:fs";
-import type { AssistantMessage, JsonObject, StopReason, TextContent, ThinkingContent, ToolCall } from "../types.ts";
+import type {
+	AssistantMessage,
+	JsonObject,
+	StopReason,
+	TextContent,
+	ThinkingContent,
+	ToolCall,
+	Usage,
+} from "../types.ts";
 import type { OpenRouterModel } from "./openrouter.ts";
 
 const DEFAULT_MIN_TOKEN_SIZE = 3;
 const DEFAULT_MAX_TOKEN_SIZE = 5;
+
+const DEFAULT_USAGE: Usage = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
 
 export type FauxContentBlock = TextContent | ThinkingContent | ToolCall;
 
@@ -29,26 +46,23 @@ export function fauxToolCall(name: string, args: JsonObject, options: { id?: str
 	};
 }
 
+function normalizeFauxAssistantContent(content: string | FauxContentBlock | FauxContentBlock[]): FauxContentBlock[] {
+	if (typeof content === "string") return [fauxText(content)];
+	return Array.isArray(content) ? content : [content];
+}
+
 /** A scripted reply. Only content and stopReason matter; the provider fills in the rest. */
 export function fauxAssistantMessage(
 	content: string | FauxContentBlock | FauxContentBlock[],
 	options: { stopReason?: StopReason } = {},
 ): AssistantMessage {
-	const blocks = typeof content === "string" ? [fauxText(content)] : Array.isArray(content) ? content : [content];
 	return {
 		role: "assistant",
-		content: blocks,
+		content: normalizeFauxAssistantContent(content),
 		api: "faux",
 		provider: "faux",
 		model: "faux-1",
-		usage: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
+		usage: DEFAULT_USAGE,
 		stopReason: options.stopReason ?? "stop",
 		timestamp: Date.now(),
 	};
@@ -74,14 +88,22 @@ export interface RegisterFauxProviderOptions {
 
 export interface FauxProvider {
 	fetch: typeof globalThis.fetch;
-	state: { callCount: number };
 	setResponses(responses: FauxResponse[]): void;
-	appendResponses(responses: FauxResponse[]): void;
-	getPendingResponseCount(): number;
 }
 
 function estimateTokens(text: string): number {
 	return Math.ceil(text.length / 4);
+}
+
+/** The text the usage chunk counts as output: text, thinking and tool-call arguments. */
+function completionText(content: FauxContentBlock[]): string {
+	return content
+		.map((block) => {
+			if (block.type === "text") return block.text;
+			if (block.type === "thinking") return block.thinking;
+			return JSON.stringify(block.arguments);
+		})
+		.join("");
 }
 
 function splitStringByTokenSize(text: string, minTokenSize: number, maxTokenSize: number): string[] {
@@ -103,6 +125,86 @@ function scheduleChunk(chunk: string, tokensPerSecond: number | undefined): Prom
 
 const FINISH_REASONS: Partial<Record<StopReason, string>> = { stop: "stop", length: "length", toolUse: "tool_calls" };
 
+/**
+ * The SSE response a Chat Completions endpoint sends for this message: a role chunk, the content
+ * in random pieces, a finish chunk, a usage chunk, then [DONE]. Abort is checked between pieces.
+ */
+function streamWithDeltas(
+	message: AssistantMessage | FauxBrokenStream,
+	body: { model: string; messages: unknown },
+	minTokenSize: number,
+	maxTokenSize: number,
+	tokensPerSecond: number | undefined,
+	signal: AbortSignal | null | undefined,
+): Response {
+	const chunk = (delta: object, finishReason: string | null = null, usage?: object) => ({
+		id: "chatcmpl-faux",
+		object: "chat.completion.chunk",
+		created: Math.floor(Date.now() / 1000),
+		model: body.model,
+		choices: usage ? [] : [{ index: 0, delta, finish_reason: finishReason }],
+		...(usage ? { usage } : {}),
+	});
+	const promptTokens = estimateTokens(JSON.stringify(body.messages));
+	const completionTokens = estimateTokens(completionText(message.content));
+	const usage = {
+		prompt_tokens: promptTokens,
+		completion_tokens: completionTokens,
+		total_tokens: promptTokens + completionTokens,
+	};
+
+	const encoder = new TextEncoder();
+	const sse = new ReadableStream<Uint8Array>({
+		async start(controller) {
+			const send = (data: object) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+			// Sends text in random pieces, each as the delta toDelta makes. False if the request was aborted.
+			const sendPieces = async (text: string, toDelta: (piece: string) => object) => {
+				for (const piece of splitStringByTokenSize(text, minTokenSize, maxTokenSize)) {
+					await scheduleChunk(piece, tokensPerSecond);
+					if (signal?.aborted) return false;
+					send(chunk(toDelta(piece)));
+				}
+				return true;
+			};
+
+			send(chunk({ role: "assistant", content: "" }));
+			let toolIndex = 0;
+			for (const block of message.content) {
+				let sent = true;
+				if (block.type === "thinking") {
+					// Reasoning comes in OpenRouter's `reasoning` delta field, before the answer.
+					sent = await sendPieces(block.thinking, (piece) => ({ reasoning: piece }));
+				} else if (block.type === "text") {
+					sent = await sendPieces(block.text, (piece) => ({ content: piece }));
+				} else if (block.type === "toolCall") {
+					// A tool call: the first delta names it, then its arguments come as JSON text in pieces.
+					const index = toolIndex++;
+					send(
+						chunk({
+							tool_calls: [
+								{ index, id: block.id, type: "function", function: { name: block.name, arguments: "" } },
+							],
+						}),
+					);
+					// edupi: `rawArguments` in a script streams malformed JSON as a model may send it.
+					const argumentsText =
+						(block as { rawArguments?: string }).rawArguments ?? JSON.stringify(block.arguments);
+					sent = await sendPieces(argumentsText, (piece) => ({
+						tool_calls: [{ index, function: { arguments: piece } }],
+					}));
+				}
+				if (!sent) return controller.error(new Error("Request was aborted"));
+			}
+			if ("streamError" in message) return controller.error(new Error(message.streamError));
+			send(chunk({}, FINISH_REASONS[message.stopReason] ?? "stop"));
+			send(chunk({}, null, usage));
+			controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+			controller.close();
+		},
+	});
+	return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
 export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxProvider {
 	const minTokenSize = Math.max(
 		1,
@@ -110,7 +212,6 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 	);
 	const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);
 	let pendingResponses: FauxResponse[] = [];
-	const state = { callCount: 0 };
 
 	const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
 		const url = String(input instanceof Request ? input.url : input);
@@ -119,7 +220,6 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 		const body = JSON.parse(String(init?.body ?? "null"));
 		const sessionHeader = new Headers(init?.headers).get("x-session-id");
 		options.onRequest?.({ url, body, ...(sessionHeader ? { headers: { "x-session-id": sessionHeader } } : {}) });
-		state.callCount++;
 		const message = pendingResponses.shift();
 		if (!message) {
 			return Response.json({ error: { message: "No more faux responses queued" } }, { status: 500 });
@@ -130,96 +230,27 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 			return Response.json({ error: { message: message.error.message, code: status } }, { status });
 		}
 
-		// The SSE chunks a Chat Completions endpoint sends for this message.
-		const chunk = (delta: object, finishReason: string | null = null, usage?: object) => ({
-			id: "chatcmpl-faux",
-			object: "chat.completion.chunk",
-			created: Math.floor(Date.now() / 1000),
-			model: body.model,
-			choices: usage ? [] : [{ index: 0, delta, finish_reason: finishReason }],
-			...(usage ? { usage } : {}),
-		});
-		const promptTokens = estimateTokens(JSON.stringify(body.messages));
-		const outputText = message.content
-			.map((block) =>
-				block.type === "text"
-					? block.text
-					: block.type === "thinking"
-						? block.thinking
-						: block.type === "toolCall"
-							? JSON.stringify(block.arguments)
-							: "",
-			)
-			.join("");
-		const usage = {
-			prompt_tokens: promptTokens,
-			completion_tokens: estimateTokens(outputText),
-			total_tokens: promptTokens + estimateTokens(outputText),
-		};
-
-		const encoder = new TextEncoder();
-		const sse = new ReadableStream<Uint8Array>({
-			async start(controller) {
-				const send = (data: object) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-				send(chunk({ role: "assistant", content: "" }));
-				let toolIndex = 0;
-				for (const block of message.content) {
-					if (block.type === "thinking") {
-						// Reasoning comes in OpenRouter's `reasoning` delta field, before the answer.
-						for (const piece of splitStringByTokenSize(block.thinking, minTokenSize, maxTokenSize)) {
-							await scheduleChunk(piece, options.tokensPerSecond);
-							if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
-							send(chunk({ reasoning: piece }));
-						}
-					} else if (block.type === "text") {
-						for (const piece of splitStringByTokenSize(block.text, minTokenSize, maxTokenSize)) {
-							await scheduleChunk(piece, options.tokensPerSecond);
-							if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
-							send(chunk({ content: piece }));
-						}
-					} else if (block.type === "toolCall") {
-						// A tool call: the first delta names it, then its arguments come as JSON text in pieces.
-						const index = toolIndex++;
-						send(
-							chunk({
-								tool_calls: [
-									{ index, id: block.id, type: "function", function: { name: block.name, arguments: "" } },
-								],
-							}),
-						);
-						// edupi: `rawArguments` in a script streams malformed JSON as a model may send it.
-						const argumentsText =
-							(block as { rawArguments?: string }).rawArguments ?? JSON.stringify(block.arguments);
-						for (const piece of splitStringByTokenSize(argumentsText, minTokenSize, maxTokenSize)) {
-							await scheduleChunk(piece, options.tokensPerSecond);
-							if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
-							send(chunk({ tool_calls: [{ index, function: { arguments: piece } }] }));
-						}
-					}
-				}
-				if ("streamError" in message) return controller.error(new Error(message.streamError));
-				send(chunk({}, FINISH_REASONS[message.stopReason] ?? "stop"));
-				send(chunk({}, null, usage));
-				controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-				controller.close();
-			},
-		});
-		return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
+		return streamWithDeltas(message, body, minTokenSize, maxTokenSize, options.tokensPerSecond, init?.signal);
 	};
 
 	return {
 		fetch,
-		state,
 		setResponses(responses) {
 			pendingResponses = [...responses];
 		},
-		appendResponses(responses) {
-			pendingResponses.push(...responses);
-		},
-		getPendingResponseCount() {
-			return pendingResponses.length;
-		},
 	};
+}
+
+type FauxScriptStep =
+	| string
+	| FauxError
+	| { content: string | FauxContentBlock[]; stopReason?: StopReason; streamError?: string };
+
+function toFauxResponse(step: FauxScriptStep): FauxResponse {
+	if (typeof step === "string") return fauxAssistantMessage(step);
+	if ("error" in step) return step;
+	const message = fauxAssistantMessage(step.content, { stopReason: step.stopReason });
+	return step.streamError !== undefined ? { ...message, streamError: step.streamError } : message;
 }
 
 // Reads a faux script: `{"models"?: [OpenRouter list items], "tokensPerSecond"?: n, "responses": [...]}`.
@@ -234,22 +265,6 @@ export function loadFauxScript(path: string): {
 	responses: FauxResponse[];
 } {
 	const script = JSON.parse(readFileSync(path, "utf8"));
-	type Step =
-		| string
-		| FauxError
-		| { content: string | FauxContentBlock[]; stopReason?: StopReason; streamError?: string };
-	const responses = script.responses.map(
-		(step: Step): FauxResponse =>
-			typeof step === "string"
-				? fauxAssistantMessage(step)
-				: "error" in step
-					? step
-					: step.streamError !== undefined
-						? {
-								...fauxAssistantMessage(step.content, { stopReason: step.stopReason }),
-								streamError: step.streamError,
-							}
-						: fauxAssistantMessage(step.content, { stopReason: step.stopReason }),
-	);
+	const responses = (script.responses as FauxScriptStep[]).map(toFauxResponse);
 	return { models: script.models ?? [], tokensPerSecond: script.tokensPerSecond, responses };
 }

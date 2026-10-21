@@ -167,14 +167,14 @@ export function stream(
 				if (block.type === "text") {
 					stream.push({
 						type: "text_end",
-						contentIndex: blocks.indexOf(block),
+						contentIndex: getContentIndex(block),
 						content: block.text,
 						partial: output,
 					});
 				} else if (block.type === "thinking") {
 					stream.push({
 						type: "thinking_end",
-						contentIndex: blocks.indexOf(block),
+						contentIndex: getContentIndex(block),
 						content: block.thinking,
 						partial: output,
 					});
@@ -183,7 +183,7 @@ export function stream(
 					Object.assign(toolCall, parseToolCallArguments(toolCall.partialArgs));
 					delete toolCall.partialArgs; // only the parsed arguments are kept
 					delete toolCall.streamIndex;
-					stream.push({ type: "toolcall_end", contentIndex: blocks.indexOf(block), toolCall, partial: output });
+					stream.push({ type: "toolcall_end", contentIndex: getContentIndex(block), toolCall, partial: output });
 				}
 			};
 
@@ -326,11 +326,17 @@ export function buildParams(
 	if (tools.length > 0) params.tools = convertTools(tools);
 	else if (hasToolHistory(context.messages)) params.tools = [];
 	// OpenRouter's reasoning object works for every provider behind it (pi's thinkingFormat
-	// "openrouter"). No level means reasoning off: effort "none". Non-reasoning models get nothing.
+	// "openrouter"). No level means reasoning off: the map's "off" effort, else "none". A model
+	// that cannot turn reasoning off (map.off null) and non-reasoning models get no field.
 	if (model.reasoning) {
-		(params as typeof params & { reasoning?: { effort: string } }).reasoning = {
-			effort: options?.reasoningEffort ?? "none",
-		};
+		const openRouterParams = params as typeof params & { reasoning?: { effort?: string } };
+		if (options?.reasoningEffort) {
+			openRouterParams.reasoning = {
+				effort: model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort,
+			};
+		} else if (model.thinkingLevelMap?.off !== null) {
+			openRouterParams.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
+		}
 	}
 	return params;
 }
@@ -367,39 +373,45 @@ export function convertMessages(
 				);
 			if (content.length > 0) params.push({ role: "user", content });
 		} else if (msg.role === "assistant") {
-			const assistantMsg: ChatCompletionAssistantMessageParam = { role: "assistant", content: null };
-			// Assistant text goes back as one plain string, the Chat Completions standard.
-			const text = msg.content
-				.filter((b): b is TextContent => b.type === "text" && b.text.trim().length > 0)
-				.map((b) => sanitizeSurrogates(b.text))
-				.join("");
-			if (text.length > 0) assistantMsg.content = text;
-			// Reasoning goes back in the field it came in (the block's signature), so the model sees its thinking.
-			const thinkingBlocks = msg.content.filter(
-				(b): b is ThinkingContent => b.type === "thinking" && b.thinking.trim().length > 0,
-			);
-			const signature = thinkingBlocks[0]?.thinkingSignature;
-			if (signature && (REASONING_FIELDS as readonly string[]).includes(signature)) {
-				(assistantMsg as unknown as Record<string, unknown>)[signature] = thinkingBlocks
-					.map((b) => b.thinking)
-					.join("\n");
-			}
-			const toolCalls = msg.content.filter((b): b is ToolCall => b.type === "toolCall");
-			if (toolCalls.length > 0) {
-				assistantMsg.tool_calls = toolCalls.map((tc) => ({
-					id: tc.id,
-					type: "function" as const,
-					function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
-				}));
-			}
-			// Providers refuse an assistant message with neither content nor tool calls (an aborted reply).
-			if (assistantMsg.content === null && !assistantMsg.tool_calls) continue;
-			params.push(assistantMsg);
+			const assistantMsg = convertAssistantMessage(msg);
+			if (assistantMsg) params.push(assistantMsg);
 		} else if (msg.role === "toolResult") {
 			params.push(convertToolResult(msg));
 		}
 	}
 	return params;
+}
+
+/** An assistant reply as one message: its text, its reasoning and its tool calls (inline in pi's convertMessages). */
+function convertAssistantMessage(msg: AssistantMessage): ChatCompletionAssistantMessageParam | undefined {
+	const assistantMsg: ChatCompletionAssistantMessageParam = { role: "assistant", content: null };
+	// Assistant text goes back as one plain string, the Chat Completions standard.
+	const text = msg.content
+		.filter((b): b is TextContent => b.type === "text" && b.text.trim().length > 0)
+		.map((b) => sanitizeSurrogates(b.text))
+		.join("");
+	if (text.length > 0) assistantMsg.content = text;
+	// Reasoning goes back in the field it came in (the block's signature), so the model sees its thinking.
+	const thinkingBlocks = msg.content.filter(
+		(b): b is ThinkingContent => b.type === "thinking" && b.thinking.trim().length > 0,
+	);
+	const signature = thinkingBlocks[0]?.thinkingSignature;
+	if (signature && (REASONING_FIELDS as readonly string[]).includes(signature)) {
+		(assistantMsg as unknown as Record<string, unknown>)[signature] = thinkingBlocks
+			.map((b) => b.thinking)
+			.join("\n");
+	}
+	const toolCalls = msg.content.filter((b): b is ToolCall => b.type === "toolCall");
+	if (toolCalls.length > 0) {
+		assistantMsg.tool_calls = toolCalls.map((tc) => ({
+			id: tc.id,
+			type: "function" as const,
+			function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+		}));
+	}
+	// Providers refuse an assistant message with neither content nor tool calls (an aborted reply).
+	if (assistantMsg.content === null && !assistantMsg.tool_calls) return undefined;
+	return assistantMsg;
 }
 
 /** One "tool" message per result, answering the call with the same id. Its content is plain text. */
