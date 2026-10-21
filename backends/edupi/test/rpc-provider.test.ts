@@ -154,6 +154,41 @@ test("model metadata comes from OpenRouter's model list: context window, output 
 	expect(reply.usage.cost.output).toBeCloseTo(reply.usage.output * 1e-5, 12);
 });
 
+// pi's catalog builds a thinking level map from OpenRouter's reasoning.supported_efforts.
+test("the model's supported efforts decide each thinking level's effort: xhigh and max are kept, minimal is clamped", async () => {
+	const luna = { ...LUNA, reasoning: { supported_efforts: ["none", "low", "medium", "high", "xhigh", "max"] } };
+	const levels = ["off", "minimal", "xhigh", "max"];
+	edupi = startEdupi({ models: [luna], responses: levels });
+	expect((await edupi.command("get_state")).data.model.thinkingLevelMap).toEqual({
+		off: "none",
+		minimal: null,
+		low: "low",
+		medium: "medium",
+		high: "high",
+		xhigh: "xhigh",
+		max: "max",
+	});
+	for (const level of levels) {
+		await edupi.command("set_thinking_level", { level });
+		await prompt(`at ${level}`);
+	}
+	expect(edupi.requests().map((r) => r.body.reasoning)).toEqual([
+		{ effort: "none" },
+		{ effort: "low" }, // minimal is not supported: the next higher level
+		{ effort: "xhigh" },
+		{ effort: "max" },
+	]);
+});
+
+test("a model with mandatory reasoning has no off level", async () => {
+	const mandatory = { ...LUNA, reasoning: { mandatory: true, supported_efforts: ["low", "medium", "high"] } };
+	edupi = startEdupi({ models: [mandatory], responses: ["Hi."] });
+	await edupi.command("set_thinking_level", { level: "off" });
+	expect((await edupi.command("get_state")).data.thinkingLevel).toBe("low");
+	await prompt("Hi?");
+	expect(edupi.requests()[0].body.reasoning).toEqual({ effort: "low" });
+});
+
 test("a model OpenRouter does not list gets pi's defaults for custom models", async () => {
 	edupi = startEdupi({ models: [LUNA], responses: [] }, ["--model", "someone/new-model"]);
 	const { model } = (await edupi.command("get_state")).data;

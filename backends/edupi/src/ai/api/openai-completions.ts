@@ -326,11 +326,17 @@ export function buildParams(
 	if (tools.length > 0) params.tools = convertTools(tools);
 	else if (hasToolHistory(context.messages)) params.tools = [];
 	// OpenRouter's reasoning object works for every provider behind it (pi's thinkingFormat
-	// "openrouter"). No level means reasoning off: effort "none". Non-reasoning models get nothing.
+	// "openrouter"). No level means reasoning off: the map's "off" effort, else "none". A model
+	// that cannot turn reasoning off (map.off null) and non-reasoning models get no field.
 	if (model.reasoning) {
-		(params as typeof params & { reasoning?: { effort: string } }).reasoning = {
-			effort: options?.reasoningEffort ?? "none",
-		};
+		const openRouterParams = params as typeof params & { reasoning?: { effort?: string } };
+		if (options?.reasoningEffort) {
+			openRouterParams.reasoning = {
+				effort: model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort,
+			};
+		} else if (model.thinkingLevelMap?.off !== null) {
+			openRouterParams.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
+		}
 	}
 	return params;
 }

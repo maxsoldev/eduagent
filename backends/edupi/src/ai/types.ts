@@ -89,6 +89,9 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/** A thinking level's value for this model's API (e.g. OpenRouter's effort). null: the level is not supported. */
+export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
+
 export interface AssistantMessage {
 	role: "assistant";
 	content: (TextContent | ThinkingContent | ToolCall)[];
@@ -139,6 +142,8 @@ export interface Model {
 	provider: ProviderId;
 	baseUrl: string;
 	reasoning: boolean;
+	/** Missing keys use the level's own name; xhigh and max are supported only with a key. */
+	thinkingLevelMap?: ThinkingLevelMap;
 	input: ("text" | "image")[];
 	cost: ModelCost;
 	contextWindow: number;

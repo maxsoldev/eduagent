@@ -97,8 +97,8 @@ The aborted reply stays in the session, but it does not go back to the model: pi
 pi has one setting for reasoning, the **thinking level**: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A new session starts at `medium`. Each level is checked against the model:
 
 - A model without reasoning supports only `off`.
-- A reasoning model supports `off` to `high`. `xhigh` and `max` need an entry in the model's level map (from OpenRouter's supported efforts).
-- An unsupported level is **clamped**: to the next higher supported level, else the next lower one. So `max` on a model without a map becomes `high`.
+- A reasoning model supports `off` to `high`. Its **thinking level map** (from OpenRouter's supported efforts, [chapter 01](01-provider-api.md)) can remove a level (`null`), and `xhigh` and `max` need an entry in it. `openai/gpt-6-luna` supports `off`, `low` to `max`, but not `minimal`.
+- An unsupported level is **clamped**: to the next higher supported level, else the next lower one. So `minimal` on `openai/gpt-6-luna` becomes `low`, and `max` on a model without a map becomes `high`.
 
 On the OpenRouter wire the level becomes one `reasoning` object for every model family:
 
@@ -106,7 +106,7 @@ On the OpenRouter wire the level becomes one `reasoning` object for every model 
 {"model": "openai/gpt-6-luna", "messages": […], "reasoning": {"effort": "high"}}
 ```
 
-`off` sends `{"effort": "none"}`, which turns reasoning off at OpenRouter. A model without reasoning gets no `reasoning` field. The model streams its reasoning in the `reasoning` delta field. pi keeps it as a `thinking` block, with the field name as its `thinkingSignature`, and sends it back in the same field on the next request:
+The effort is the level's value in the map, else the level's name. `off` sends `{"effort": "none"}`, which turns reasoning off at OpenRouter; a model whose reasoning is mandatory has no `off` level. A model without reasoning gets no `reasoning` field. The model streams its reasoning in the `reasoning` delta field. pi keeps it as a `thinking` block, with the field name as its `thinkingSignature`, and sends it back in the same field on the next request:
 
 ```json
 {"role": "assistant", "content": "Hello!", "reasoning": "The user greets me. I greet back."}
@@ -195,7 +195,7 @@ The Codex side: the [loop](https://github.com/openai/codex/blob/1c7c43cd856a1ef4
 
 - **No `clear_queue`, no queue mode commands.** The modes stay at pi's default `one-at-a-time` (no `set_steering_mode`, `set_follow_up_mode`, no settings for them).
 - **No input handlers or prompt templates.** pi runs extension input handlers and expands `/skill:` and prompt templates on queued text too; edupi queues the text as it is, so the disposition is always `queued`, never `handled`.
-- **No thinking level map.** pi's OpenRouter catalog has a per-model map from OpenRouter's supported efforts (for example `xhigh`, or no `off`). edupi has none, so every reasoning model supports `off` to `high`, and `off` always sends `{"effort": "none"}`. No thinking budgets, no `cycle_thinking_level`, no saved default level.
+- **No thinking budgets**, no `cycle_thinking_level`, no saved default level.
 - **No `reasoning_details`.** OpenRouter can also stream structured, sometimes encrypted, reasoning details; pi keeps and replays them. edupi keeps the reasoning text only.
 - **No `prepareRequest` / `finishTurn` hooks** and no explicit continuation. pi's session uses them for its per-request projection, virtual models and extension `turn_end` handlers.
 - **No extension hooks in the loop.** No `transformContext`, `beforeToolCall` / `afterToolCall` (pi's extension `tool_call` / `tool_result` events and image resizing), no `terminate` on tool results (a batch where every result says `terminate` ends the run).
@@ -211,7 +211,7 @@ In the visualiser, open **edupi** (with a real model) and ask for something slow
 - type *"Then say goodbye."* and press **follow-up**. It runs only after the agent has answered.
 - send another slow task and press **abort**. The command card ends as aborted, the turn as interrupted. In the **Protocol** tab the `abort` response comes after `agent_settled`.
 
-Set the effort select to **high** and send a prompt. In the **Requests** tab, find `"reasoning": {"effort": "high"}` in the body. Set it to **max**: the request still says `high` (clamped). The reasoning shows in the chat above the reply.
+Set the effort select to **high** and send a prompt. In the **Requests** tab, find `"reasoning": {"effort": "high"}` in the body. Set it to **minimal**: the request says `low` (clamped, `openai/gpt-6-luna` has no `minimal`). The reasoning shows in the chat above the reply.
 
 Offline, over stdio, with the faux script that runs a slow command:
 
