@@ -1,10 +1,27 @@
-// Capabilities come only from the launcher config entry (GET /backends). A panel or control
-// for a feature is shown only if the backend lists that feature.
-//   approvals: approval policy select, approval cards, Guardrails tab (with trace)
-//   sandbox: sandbox select, Guardrails tab (with trace)
-//   memories: /memory-* commands     skills: /skills and the $ popup
-//   compaction: compact button and /compact     stepMode: step mode toggle
-//   trace: Requests and Tools tabs, cost badge     contextInspector: Context tab
-//   mcp: MCP servers in the Tools tab     queues: steer and follow-up while a turn runs (pi)
-export type Capability = "approvals" | "sandbox" | "memories" | "skills" | "compaction" | "mcp" | "trace" | "stepMode" | "contextInspector" | "queues";
-export type Capabilities = ReadonlySet<string>;
+// Capabilities come only from the launcher config entry (GET /backends; names in launcher/src/api.ts).
+// FEATURES says which capabilities each panel or control needs; App, Inspector and the adapters ask it.
+import type { Capability } from "@eduagent/launcher/api";
+
+export type { Capability };
+export type Capabilities = ReadonlySet<Capability>;
+
+const has = (c: Capability) => (caps: Capabilities) => caps.has(c);
+
+export const FEATURES = {
+  approvals: has("approvals"), // approval policy select, approval cards
+  sandbox: has("sandbox"), // sandbox select
+  skills: has("skills"), // /skills and the $ popup
+  compact: has("compaction"), // compact button
+  stepMode: has("stepMode"), // step mode toggle
+  costBadge: has("trace"),
+  queues: has("queues"), // steer, follow-up and abort while a turn runs (pi)
+  contextTab: has("contextInspector"),
+  requestsTab: has("trace"),
+  toolsTab: has("trace"),
+  mcpServers: has("mcp"), // MCP servers in the Tools tab
+  guardrailsTab: (caps: Capabilities) => caps.has("trace") && (caps.has("approvals") || caps.has("sandbox")),
+} satisfies Record<string, (caps: Capabilities) => boolean>;
+export type Feature = keyof typeof FEATURES;
+
+/** Is this feature shown for a backend with these capabilities? */
+export const shows = (caps: Capabilities, feature: Feature) => FEATURES[feature](caps);

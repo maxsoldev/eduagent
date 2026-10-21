@@ -1,6 +1,7 @@
 // Codex-only parts: plans, file-change diffs, memory updates, memory citations, approval
 // prompts and the approval/sandbox controls. They read Codex item shapes directly.
 import type { AdapterModule } from "../types";
+import { shows } from "../../view/capabilities";
 import type { Approval, Entry, Json, NativePart } from "../../view/model";
 import { AssistantMessage, Status, ToolCard } from "../../components/parts";
 
@@ -106,12 +107,12 @@ function ApprovalCard({ approval, onAnswer }: { approval: Approval; onAnswer: (r
 // Codex's approval policy and sandbox mode, each shown only if the backend lists the capability.
 const Controls: AdapterModule["Controls"] = ({ settings, set, capabilities }) => (
   <>
-    {capabilities.has("approvals") && (
+    {shows(capabilities, "approvals") && (
       <select value={settings.approvalPolicy} onChange={(e) => set("approvalPolicy", e.target.value)} title="approval policy" data-testid="approval-policy">
         <option value="on-request">approval: on-request</option><option value="never">approval: never</option>
       </select>
     )}
-    {capabilities.has("sandbox") && (
+    {shows(capabilities, "sandbox") && (
       <select value={settings.sandbox} onChange={(e) => set("sandbox", e.target.value)} title="sandbox mode" data-testid="sandbox">
         <option value="read-only">sandbox: read-only</option><option value="workspace-write">sandbox: workspace-write</option>
         <option value="danger-full-access">sandbox: danger-full-access</option>

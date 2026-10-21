@@ -4,6 +4,7 @@ import { backendUrl, type BackendInfo } from "./launcher";
 import type { Adapter, AdapterModule, Option, Settings } from "./adapters/types";
 import { initialView, reduceView } from "./view/model";
 import { linksFor } from "./view/harness";
+import { shows } from "./view/capabilities";
 import { Chat } from "./components/Chat";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
@@ -51,7 +52,7 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
   };
 
   // pi's queues: while a turn runs, a message steers the agent or waits as a follow-up.
-  const queues = caps.has("queues") && adapter?.steer && adapter.followUp ? {
+  const queues = shows(caps, "queues") && adapter?.steer && adapter.followUp ? {
     onSteer: (text: string) => adapter.steer!(text).catch((err) => note(String(err.message ?? err), true)),
     onFollowUp: (text: string) => adapter.followUp!(text).catch((err) => note(String(err.message ?? err), true)),
   } : null;
@@ -100,10 +101,10 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
             <option value="">effort: default</option>
             {(adapter?.efforts ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {caps.has("stepMode") && <label className="toggle" title="pause before each model call and tool call"><input type="checkbox" checked={stepMode} onChange={(e) => toggleStep(e.target.checked)} data-testid="step-mode" /> step mode</label>}
-          {caps.has("compaction") && <button onClick={() => adapter?.compact()} disabled={!ready || view.running} title="summarise history now" data-testid="compact">compact</button>}
+          {shows(caps, "stepMode") && <label className="toggle" title="pause before each model call and tool call"><input type="checkbox" checked={stepMode} onChange={(e) => toggleStep(e.target.checked)} data-testid="step-mode" /> step mode</label>}
+          {shows(caps, "compact") && <button onClick={() => adapter?.compact()} disabled={!ready || view.running} title="summarise history now" data-testid="compact">compact</button>}
           <button onClick={() => startSession(settings)} disabled={!ready || view.running} data-testid="new-thread">new thread</button>
-          {caps.has("trace") && view.costTotal && (
+          {shows(caps, "costBadge") && view.costTotal && (
             <span className="cost-badge" data-testid="cost-badge"
               title={`${view.costTotal.requests} requests · ${view.costTotal.tokens.input.toLocaleString()} input tokens (${view.costTotal.tokens.cached.toLocaleString()} cached) · ${view.costTotal.tokens.output.toLocaleString()} output tokens${view.costTotal.usd ? ` · saved ${usd(view.costTotal.usd.savedByCache)} by caching` : ""}`}>
               {usd(view.costTotal.billedUsd ?? view.costTotal.usd?.total)} · {pct(view.costTotal.cacheHitRate)} cached
@@ -117,19 +118,19 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
       <main>
         <section className="left">
           <div className="thread-info muted small">thread {view.sessionId?.slice(0, 8) ?? "—"} · cwd <input className="cwd" value={settings.cwd} onChange={(e) => set("cwd", e.target.value)} title="working directory (applies to new threads)" /></div>
-          <Chat turns={view.turns} approvals={caps.has("approvals") ? view.approvals : []} paused={view.paused} module={module}
+          <Chat turns={view.turns} approvals={shows(caps, "approvals") ? view.approvals : []} paused={view.paused} module={module}
             onAnswer={(a, result) => adapter?.respond(a, result)} onContinue={() => adapter?.continueStep()}
             welcome={[
               ...(commands.length ? [`Type / for commands (${commands.map((c) => `/${c.name}`).join(", ")}).`] : []),
-              ...(caps.has("skills") ? ["Type $ to use a skill."] : []),
-              ...(caps.has("stepMode") ? ["Turn on Step mode to pause before each model call."] : []),
+              ...(shows(caps, "skills") ? ["Type $ to use a skill."] : []),
+              ...(shows(caps, "stepMode") ? ["Turn on Step mode to pause before each model call."] : []),
             ]} />
           {queued.length > 0 && (
             <div className="queue" data-testid="queue">
               {queued.map(([kind, text], i) => <div key={i} className="queued" data-testid="queued"><span className="badge">{kind}</span> {text}</div>)}
             </div>
           )}
-          <Composer disabled={!ready} turnRunning={view.running} commands={commands} loadSkills={caps.has("skills") ? loadSkills : null}
+          <Composer disabled={!ready} turnRunning={view.running} commands={commands} loadSkills={shows(caps, "skills") ? loadSkills : null}
             placeholder={!ready ? "starting thread…" : view.running ? (queues ? "agent is working… Enter steers, Alt+Enter queues a follow-up" : "agent is working…")
               : "Ask the agent to do something (/ for commands, $ for skills, Shift+Enter for newline)"}
             onSend={send} onCommand={runCommand} onInterrupt={() => adapter?.interrupt()} queues={queues} />

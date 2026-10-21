@@ -2,6 +2,7 @@
 // Incoming messages go through codexActions (mapping.ts) into the view model.
 import type { Adapter, AdapterOptions, Command, ContextSnapshot, Settings, SkillInfo } from "../types";
 import type { Approval, Json } from "../../view/model";
+import { shows } from "../../view/capabilities";
 import { RpcClient } from "./rpc";
 import { codexActions } from "./mapping";
 import { codexExplainer } from "./explain";
@@ -31,8 +32,8 @@ export function createCodexAdapter({ url, capabilities, dispatch }: AdapterOptio
   let turnId: string | null = null;
   const thread = () => ({ threadId, turnId });
   // Without the capability, leave the setting to the backend's default.
-  const approvals = (s: Settings) => (capabilities.has("approvals") ? s.approvalPolicy : undefined);
-  const sandbox = (s: Settings) => (capabilities.has("sandbox") ? s.sandbox : undefined);
+  const approvals = (s: Settings) => (shows(capabilities, "approvals") ? s.approvalPolicy : undefined);
+  const sandbox = (s: Settings) => (shows(capabilities, "sandbox") ? s.sandbox : undefined);
 
   return {
     explain: codexExplainer,

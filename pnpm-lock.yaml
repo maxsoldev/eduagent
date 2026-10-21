@@ -67,6 +67,9 @@ importers:
       '@eduagent/edupi':
         specifier: workspace:*
         version: link:../backends/edupi
+      '@eduagent/launcher':
+        specifier: workspace:*
+        version: link:../launcher
       '@playwright/test':
         specifier: ^1.50.0
         version: 1.64.0

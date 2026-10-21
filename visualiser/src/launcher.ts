@@ -1,7 +1,8 @@
 // The launcher's API: GET /backends lists the backends, and /backends/<name>?cwd=<dir> is the WebSocket
 // that starts one backend process for this viewer (launcher/src/server.ts).
-export type BackendInfo = { name: string; harness: string; protocol: string; description?: string; capabilities: string[] };
-export type BackendList = { cwd: string; backends: BackendInfo[] };
+import type { BackendList } from "@eduagent/launcher/api";
+
+export type { BackendInfo, BackendList } from "@eduagent/launcher/api";
 
 export async function fetchBackends(): Promise<BackendList> {
   const res = await fetch("/backends");

@@ -132,7 +132,7 @@ Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`, `qu
 
 ## 4. Capabilities
 
-Capabilities come only from the launcher config entry (`capabilities` in `launcher/backends*.json`, listed by `GET /backends`). Without a capability, the viewer hides its panels and does not send its settings:
+Capabilities come only from the launcher config entry (`capabilities` in `launcher/backends*.json`, listed by `GET /backends`). The names and the `GET /backends` types are in `launcher/src/api.ts`, which the visualiser imports; an unknown name stops the launcher at startup. Without a capability, the viewer hides its panels and does not send its settings. `FEATURES` in `visualiser/src/view/capabilities.ts` says which capabilities each panel needs:
 
 | Capability | Shows |
 |---|---|
