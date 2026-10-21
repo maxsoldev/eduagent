@@ -145,7 +145,15 @@ messages = await this._prepareRun(text, images);   // threshold check before the
 onStarted?.();                                     // the "prompt" response
 try {
   await this.agent.prompt(messages);
-  while (await this._handlePostAgentRun()) await this.agent.continue();   // true only for an overflow retry
+  while (!this._agentRunAbortRequested) {
+    if (await this._handlePostAgentRun()) {     // threshold check; true for an overflow retry
+      if (this._agentRunAbortRequested) break;
+      await this.agent.continue();
+      continue;
+    }
+    if (this._agentRunAbortRequested || !this.agent.hasQueuedMessages()) break;
+    await this.agent.continue();                // messages queued too late for the loop
+  }
 } finally {
   this._emitAgentSettled();
 }

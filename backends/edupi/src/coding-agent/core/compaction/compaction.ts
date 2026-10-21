@@ -61,6 +61,10 @@ function extractFileOperations(
 	return fileOps;
 }
 
+// ============================================================================
+// Message Extraction
+// ============================================================================
+
 /** The conversation messages of an entry. System messages are prompt state: the compaction entry replays them. */
 function getMessagesFromProjectedEntryForCompaction(entry: ProjectedSessionEntry): AgentMessage[] {
 	if (entry.sourceEntry.type === "compaction") return [];
@@ -144,6 +148,35 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 	return { tokens: usageTokens + trailingTokens, usageTokens, trailingTokens, lastUsageIndex: usageInfo.index };
 }
 
+/** True if the entry of the message at lastUsageIndex comes after the latest context edit or compaction. */
+function isUsageAfterLatestContextChange(
+	projection: SessionProjection,
+	branchEntries: SessionEntry[],
+	lastUsageIndex: number,
+): boolean {
+	// Find the entry that produced the projected message at lastUsageIndex.
+	let projectedMessageIndex = 0;
+	let usageEntryId: string | undefined;
+	for (const entry of projection.entries) {
+		const nextMessageIndex = projectedMessageIndex + entry.messages.length;
+		if (lastUsageIndex < nextMessageIndex) {
+			usageEntryId = entry.sourceEntry.id;
+			break;
+		}
+		projectedMessageIndex = nextMessageIndex;
+	}
+	const usageEntryIndex = usageEntryId ? branchEntries.findIndex((entry) => entry.id === usageEntryId) : -1;
+	let latestInvalidatingEntryIndex = -1;
+	for (let i = branchEntries.length - 1; i >= 0; i--) {
+		const entry = branchEntries[i];
+		if (entry.type === "context_edit" || entry.type === "compaction") {
+			latestInvalidatingEntryIndex = i;
+			break;
+		}
+	}
+	return usageEntryIndex > latestInvalidatingEntryIndex;
+}
+
 /**
  * Like estimateContextTokens, but a usage reported before the latest context edit or compaction
  * describes an older, bigger context. Then every message is estimated instead.
@@ -153,29 +186,14 @@ export function estimateProjectedContextTokens(
 	branchEntries: SessionEntry[],
 ): ContextUsageEstimate {
 	const estimate = estimateContextTokens(projection.messages);
-	if (estimate.lastUsageIndex !== null) {
-		let projectedMessageIndex = 0;
-		let usageEntryId: string | undefined;
-		for (const entry of projection.entries) {
-			const nextMessageIndex = projectedMessageIndex + entry.messages.length;
-			if (estimate.lastUsageIndex < nextMessageIndex) {
-				usageEntryId = entry.sourceEntry.id;
-				break;
-			}
-			projectedMessageIndex = nextMessageIndex;
-		}
-		const usageEntryIndex = usageEntryId ? branchEntries.findIndex((entry) => entry.id === usageEntryId) : -1;
-		let latestInvalidatingEntryIndex = -1;
-		for (let i = branchEntries.length - 1; i >= 0; i--) {
-			const entry = branchEntries[i];
-			if (entry.type === "context_edit" || entry.type === "compaction") {
-				latestInvalidatingEntryIndex = i;
-				break;
-			}
-		}
-		if (usageEntryIndex > latestInvalidatingEntryIndex) return estimate;
+	if (
+		estimate.lastUsageIndex !== null &&
+		isUsageAfterLatestContextChange(projection, branchEntries, estimate.lastUsageIndex)
+	) {
+		return estimate;
 	}
 
+	// Only the current system message is sent; older ones are prompt history.
 	const currentSystem = getCurrentSystemMessage(projection.messages);
 	let tokens = currentSystem ? estimateTokens(currentSystem) : 0;
 	for (const message of projection.messages) if (message.role !== "system") tokens += estimateTokens(message);
@@ -247,86 +265,6 @@ export interface CutPointResult {
 	firstKeptEntryIndex: number; // index of the first entry to keep
 	turnStartIndex: number; // the user message that starts the turn being split, or -1
 	isSplitTurn: boolean; // the cut is inside a turn, not at its user message
-}
-
-function isProjectedTurnStart(entry: ProjectedSessionEntry): boolean {
-	if (entry.sourceEntry.type === "compaction") return false;
-	return entry.messages.some(isTurnStartMessage);
-}
-
-function findProjectedTurnStartIndex(entries: ProjectedSessionEntry[], entryIndex: number, startIndex: number): number {
-	for (let i = entryIndex; i >= startIndex; i--) if (isProjectedTurnStart(entries[i])) return i;
-	return -1;
-}
-
-/**
- * Walks back from the newest entry, adding up estimated tokens, until keepRecentTokens is reached.
- * The cut goes at the nearest cut point at or after that entry. If it is not a turn's user message,
- * the turn is split: its first part (the prefix) gets a summary of its own.
- */
-function findProjectedCutPoint(
-	entries: ProjectedSessionEntry[],
-	startIndex: number,
-	endIndex: number,
-	keepRecentTokens: number,
-): CutPointResult {
-	const cutPoints: number[] = [];
-	for (let i = startIndex; i < endIndex; i++) {
-		const entry = entries[i];
-		if (entry.sourceEntry.type !== "compaction" && entry.messages.some(isCutPointMessage)) cutPoints.push(i);
-	}
-	if (cutPoints.length === 0) return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
-
-	let accumulatedTokens = 0;
-	let exceededBudget = false;
-	let cutIndex = cutPoints[0];
-	for (let i = endIndex - 1; i >= startIndex; i--) {
-		const messageTokens = entries[i].messages.reduce((sum, message) => sum + estimateTokens(message), 0);
-		if (messageTokens === 0) continue;
-		accumulatedTokens += messageTokens;
-		if (accumulatedTokens >= keepRecentTokens) {
-			exceededBudget = true;
-			cutIndex = cutPoints.find((candidate) => candidate >= i) ?? cutPoints[cutPoints.length - 1];
-			break;
-		}
-	}
-
-	// After an overflow, only the omitted reply (and its context edits) follows the last input.
-	// Then the cut moves one entry on, past that input: it goes into the summary (a split turn),
-	// so the retry does not send the input that overflowed again.
-	const suffix = entries.slice(cutIndex + 1, endIndex);
-	const isIntrinsicallyVisible = (entry: ProjectedSessionEntry): boolean =>
-		entry.sourceEntry.type !== "context_edit" && sessionEntryToContextMessages(entry.sourceEntry).length > 0;
-	const isOmitted = (entry: ProjectedSessionEntry): boolean =>
-		isIntrinsicallyVisible(entry) && entry.messages.length === 0;
-	const omittedSuffixIds = new Set(suffix.filter(isOmitted).map((entry) => entry.sourceEntry.id));
-	const hasExternalReplacement = suffix.some(
-		(entry) =>
-			entry.sourceEntry.type === "context_edit" &&
-			entry.sourceEntry.replacement !== null &&
-			!omittedSuffixIds.has(entry.sourceEntry.targetId),
-	);
-	const isRecoveryOmissionSuffix =
-		exceededBudget &&
-		!hasExternalReplacement &&
-		suffix.some(
-			(entry) =>
-				entry.sourceEntry.type === "message" && entry.sourceEntry.message.role === "assistant" && isOmitted(entry),
-		) &&
-		suffix.every(
-			(entry) => entry.sourceEntry.type !== "compaction" && (!isIntrinsicallyVisible(entry) || isOmitted(entry)),
-		);
-	if (isRecoveryOmissionSuffix) cutIndex++;
-
-	// Keep the settings entries just before the cut with it.
-	while (cutIndex > startIndex) {
-		const previous = entries[cutIndex - 1];
-		if (previous.sourceEntry.type === "compaction" || previous.messages.length > 0) break;
-		cutIndex--;
-	}
-	const startsTurn = isProjectedTurnStart(entries[cutIndex]);
-	const turnStartIndex = startsTurn ? -1 : findProjectedTurnStartIndex(entries, cutIndex, startIndex);
-	return { firstKeptEntryIndex: cutIndex, turnStartIndex, isSplitTurn: !startsTurn && turnStartIndex !== -1 };
 }
 
 // ============================================================================
@@ -498,6 +436,92 @@ export interface CompactionPreparation {
 	settings: CompactionSettings;
 }
 
+function isProjectedTurnStart(entry: ProjectedSessionEntry): boolean {
+	if (entry.sourceEntry.type === "compaction") return false;
+	return entry.messages.some(isTurnStartMessage);
+}
+
+function findProjectedTurnStartIndex(entries: ProjectedSessionEntry[], entryIndex: number, startIndex: number): number {
+	for (let i = entryIndex; i >= startIndex; i--) if (isProjectedTurnStart(entries[i])) return i;
+	return -1;
+}
+
+/**
+ * True if the entries after the cut hold only an omitted assistant reply (an overflow recovery
+ * attempt) and the context edits that omit it: nothing there is still sent to the model.
+ * A replacement edit of some other entry, or a compaction, makes it false.
+ */
+function isRecoveryOmissionSuffix(suffix: ProjectedSessionEntry[]): boolean {
+	const isIntrinsicallyVisible = (entry: ProjectedSessionEntry): boolean =>
+		entry.sourceEntry.type !== "context_edit" && sessionEntryToContextMessages(entry.sourceEntry).length > 0;
+	const isOmitted = (entry: ProjectedSessionEntry): boolean =>
+		isIntrinsicallyVisible(entry) && entry.messages.length === 0;
+	const omittedSuffixIds = new Set(suffix.filter(isOmitted).map((entry) => entry.sourceEntry.id));
+	const hasExternalReplacement = suffix.some(
+		(entry) =>
+			entry.sourceEntry.type === "context_edit" &&
+			entry.sourceEntry.replacement !== null &&
+			!omittedSuffixIds.has(entry.sourceEntry.targetId),
+	);
+	return (
+		!hasExternalReplacement &&
+		suffix.some(
+			(entry) =>
+				entry.sourceEntry.type === "message" && entry.sourceEntry.message.role === "assistant" && isOmitted(entry),
+		) &&
+		suffix.every(
+			(entry) => entry.sourceEntry.type !== "compaction" && (!isIntrinsicallyVisible(entry) || isOmitted(entry)),
+		)
+	);
+}
+
+/**
+ * Walks back from the newest entry, adding up estimated tokens, until keepRecentTokens is reached.
+ * The cut goes at the nearest cut point at or after that entry. If it is not a turn's user message,
+ * the turn is split: its first part (the prefix) gets a summary of its own.
+ */
+function findProjectedCutPoint(
+	entries: ProjectedSessionEntry[],
+	startIndex: number,
+	endIndex: number,
+	keepRecentTokens: number,
+): CutPointResult {
+	const cutPoints: number[] = [];
+	for (let i = startIndex; i < endIndex; i++) {
+		const entry = entries[i];
+		if (entry.sourceEntry.type !== "compaction" && entry.messages.some(isCutPointMessage)) cutPoints.push(i);
+	}
+	if (cutPoints.length === 0) return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
+
+	let accumulatedTokens = 0;
+	let exceededBudget = false;
+	let cutIndex = cutPoints[0];
+	for (let i = endIndex - 1; i >= startIndex; i--) {
+		const messageTokens = entries[i].messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+		if (messageTokens === 0) continue;
+		accumulatedTokens += messageTokens;
+		if (accumulatedTokens >= keepRecentTokens) {
+			exceededBudget = true;
+			cutIndex = cutPoints.find((candidate) => candidate >= i) ?? cutPoints[cutPoints.length - 1];
+			break;
+		}
+	}
+
+	// After an overflow the cut moves one entry on, past the last input: it goes into the summary
+	// (a split turn), so the retry does not send the input that overflowed again.
+	if (exceededBudget && isRecoveryOmissionSuffix(entries.slice(cutIndex + 1, endIndex))) cutIndex++;
+
+	// Keep the settings entries just before the cut with it.
+	while (cutIndex > startIndex) {
+		const previous = entries[cutIndex - 1];
+		if (previous.sourceEntry.type === "compaction" || previous.messages.length > 0) break;
+		cutIndex--;
+	}
+	const startsTurn = isProjectedTurnStart(entries[cutIndex]);
+	const turnStartIndex = startsTurn ? -1 : findProjectedTurnStartIndex(entries, cutIndex, startIndex);
+	return { firstKeptEntryIndex: cutIndex, turnStartIndex, isSplitTurn: !startsTurn && turnStartIndex !== -1 };
+}
+
 /**
  * Decides what to summarize. Only entries after the previous compaction count; its summary is
  * updated instead. Undefined if there is nothing to summarize (the session is too small, or the
@@ -575,7 +599,7 @@ Create a concise checkpoint of the user's request and the progress shown above. 
 
 Only summarize information explicitly present above. Do not infer or recreate later messages.`;
 
-/** Adds the usage of two summary calls. */
+/** Adds the usage of two summary calls (pi imports it from core/usage-totals.ts). */
 function combineUsage(a: Usage, b: Usage): Usage {
 	return {
 		input: a.input + b.input,
