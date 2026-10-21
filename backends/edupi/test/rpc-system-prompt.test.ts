@@ -319,14 +319,14 @@ test("a broken trust.json stops edupi at startup with pi's message", async () =>
 	put(trustPath, "{bad");
 	edupi = startEdupi({ responses: [] }, [], { dir });
 	expect(await edupi.close()).toBe(1);
-	expect(edupi.stderrText()).toContain(
+	expect(edupi.stderrText).toContain(
 		`Failed to read trust store ${trustPath}: Expected property name or '}' in JSON at position 1`,
 	);
 
 	put(trustPath, JSON.stringify({ [dir]: "yes" }));
 	edupi = startEdupi({ responses: [] }, [], { dir });
 	expect(await edupi.close()).toBe(1);
-	expect(edupi.stderrText()).toContain(
+	expect(edupi.stderrText).toContain(
 		`Invalid trust store ${trustPath}: value for ${JSON.stringify(dir)} must be true, false, or null`,
 	);
 });
@@ -338,5 +338,5 @@ test("an unreadable SYSTEM.md warns, and pi's resolvePromptInput then uses the p
 	edupi = startEdupi({ responses: ["Hi."] }, [], { dir });
 	await prompt("Hello?");
 	expect(firstRequest()[0].content).toBe(`${systemPath}\n\n<cwd>\n${dir}\n</cwd>`);
-	expect(edupi.stderrText()).toContain(`Warning: Could not read system prompt file ${systemPath}: Error: EISDIR`);
+	expect(edupi.stderrText).toContain(`Warning: Could not read system prompt file ${systemPath}: Error: EISDIR`);
 });
