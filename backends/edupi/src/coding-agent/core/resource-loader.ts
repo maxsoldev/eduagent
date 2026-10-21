@@ -107,28 +107,17 @@ export class DefaultResourceLoader {
 			...(this.projectTrusted ? [{ path: projectSkillsDir, scope: "project" as const }] : []),
 			{ path: join(this.agentDir, "skills"), scope: "user" as const },
 		];
-		const skillsResult = loadSkills({
-			cwd: this.cwd,
-			agentDir: this.agentDir,
-			skillPaths: this.skillRoots.map((root) => root.path),
-		});
-		// pi updateSkillsFromPaths: an auto-discovered skill gets its folder's metadata (package-manager.ts
-		// addAutoDiscoveredResources): source "auto", baseDir = the agent dir or <cwd>/.pi.
-		this.skills = {
-			...skillsResult,
-			skills: skillsResult.skills.map((skill) => {
-				const root = this.skillRoots.find((r) => skill.filePath.startsWith(`${r.path}${sep}`));
-				if (!root) return skill;
-				const sourceInfo = { ...skill.sourceInfo, source: "auto", scope: root.scope, baseDir: dirname(root.path) };
-				return { ...skill, sourceInfo };
-			}),
-		};
+		this.updateSkillsFromPaths(this.skillRoots.map((root) => root.path));
+
 		this.agentsFiles = loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir });
-		const systemPromptFile = this.discoverPromptFile("SYSTEM.md");
+
+		const systemPromptFile = this.discoverSystemPromptFile();
 		this.systemPrompt = resolvePromptInput(systemPromptFile, "system prompt");
-		const appendFile = this.discoverPromptFile("APPEND_SYSTEM.md");
+
+		const appendFile = this.discoverAppendSystemPromptFile();
 		const appendSystemPrompt = resolvePromptInput(appendFile, "append system prompt");
 		this.appendSystemPrompt = appendSystemPrompt !== undefined ? [appendSystemPrompt] : [];
+
 		this.promptFiles = { systemPrompt: systemPromptFile, appendSystemPrompt: appendFile };
 	}
 
@@ -158,11 +147,36 @@ export class DefaultResourceLoader {
 		return this.appendSystemPrompt;
 	}
 
-	/** <cwd>/.pi/<name> if the project is trusted, else <agentDir>/<name>. */
-	private discoverPromptFile(name: string): string | undefined {
-		const projectPath = join(this.cwd, PROJECT_CONFIG_DIR_NAME, name);
+	/**
+	 * Each skill gets its folder's source info (pi package-manager.ts addAutoDiscoveredResources):
+	 * source "auto", the folder's scope, baseDir = the agent dir or <cwd>/.pi.
+	 */
+	private updateSkillsFromPaths(skillPaths: string[]): void {
+		const skillsResult = loadSkills({ cwd: this.cwd, agentDir: this.agentDir, skillPaths });
+		this.skills = {
+			...skillsResult,
+			skills: skillsResult.skills.map((skill) => {
+				const root = this.skillRoots.find((r) => skill.filePath.startsWith(`${r.path}${sep}`));
+				if (!root) return skill;
+				const sourceInfo = { ...skill.sourceInfo, source: "auto", scope: root.scope, baseDir: dirname(root.path) };
+				return { ...skill, sourceInfo };
+			}),
+		};
+	}
+
+	/** <cwd>/.pi/SYSTEM.md if the project is trusted, else <agentDir>/SYSTEM.md. */
+	private discoverSystemPromptFile(): string | undefined {
+		const projectPath = join(this.cwd, PROJECT_CONFIG_DIR_NAME, "SYSTEM.md");
 		if (this.projectTrusted && existsSync(projectPath)) return projectPath;
-		const globalPath = join(this.agentDir, name);
+		const globalPath = join(this.agentDir, "SYSTEM.md");
+		return existsSync(globalPath) ? globalPath : undefined;
+	}
+
+	/** <cwd>/.pi/APPEND_SYSTEM.md if the project is trusted, else <agentDir>/APPEND_SYSTEM.md. */
+	private discoverAppendSystemPromptFile(): string | undefined {
+		const projectPath = join(this.cwd, PROJECT_CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
+		if (this.projectTrusted && existsSync(projectPath)) return projectPath;
+		const globalPath = join(this.agentDir, "APPEND_SYSTEM.md");
 		return existsSync(globalPath) ? globalPath : undefined;
 	}
 }

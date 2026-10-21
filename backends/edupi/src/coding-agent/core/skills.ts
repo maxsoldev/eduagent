@@ -76,11 +76,21 @@ function createSkillSourceInfo(filePath: string, baseDir: string, source: string
 	return { path: filePath, source: "local", scope, origin: "top-level", baseDir };
 }
 
-// Load skills from a directory:
-// - if a directory contains SKILL.md, it is a skill root: take it and do not recurse further
-// - otherwise, load direct .md children in the root
-// - recurse into subdirectories (not dot folders or node_modules) to find SKILL.md
-export function loadSkillsFromDir(dir: string, source: string): LoadSkillsResult {
+export interface LoadSkillsFromDirOptions {
+	/** Directory to scan for skills */
+	dir: string;
+	/** Source identifier for these skills */
+	source: string;
+}
+
+/**
+ * Load skills from a directory:
+ * - if a directory contains SKILL.md, it is a skill root: take it and do not recurse further
+ * - otherwise, load direct .md children in the root
+ * - recurse into subdirectories (not dot folders or node_modules) to find SKILL.md
+ */
+export function loadSkillsFromDir(options: LoadSkillsFromDirOptions): LoadSkillsResult {
+	const { dir, source } = options;
 	return loadSkillsFromDirInternal(dir, source, true);
 }
 
@@ -295,14 +305,16 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 	const isUnderPath = (target: string, root: string): boolean =>
 		target === root || target.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
 
+	const getSource = (resolvedPath: string): "user" | "project" | "path" => {
+		if (isUnderPath(resolvedPath, userSkillsDir)) return "user";
+		if (isUnderPath(resolvedPath, projectSkillsDir)) return "project";
+		return "path";
+	};
+
 	for (const rawPath of options.skillPaths) {
 		const resolvedPath = resolve(options.cwd, rawPath);
 		if (!existsSync(resolvedPath)) continue; // pi warns "skill path does not exist" for explicit paths only
-		const source = isUnderPath(resolvedPath, userSkillsDir)
-			? "user"
-			: isUnderPath(resolvedPath, projectSkillsDir)
-				? "project"
-				: "path";
+		const source = getSource(resolvedPath);
 		const stats = statSync(resolvedPath);
 		if (stats.isDirectory()) addSkills(loadSkillsFromDirInternal(resolvedPath, source, true));
 		else if (stats.isFile() && resolvedPath.endsWith(".md")) {
