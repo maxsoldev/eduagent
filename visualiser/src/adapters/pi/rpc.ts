@@ -5,6 +5,7 @@
 import type { RpcCommand } from "@eduagent/edupi/rpc-types";
 import type { Direction, Json } from "../../view/model";
 import type { PiMessage, RpcResponse } from "./protocol";
+import { openSocket, type SocketStatus } from "../socket";
 
 type CommandType = RpcCommand["type"];
 type Fields<T extends CommandType> = Omit<Extract<RpcCommand, { type: T }>, "id" | "type">;
@@ -15,7 +16,7 @@ type Data<T extends CommandType> = RpcResponse extends infer R
 type Handlers = {
   onMessage: (message: PiMessage) => void; // every incoming message, replies included
   onWire: (direction: Direction, message: Json) => void;
-  onStatus: (status: "connecting" | "open" | "closed", reason?: string) => void;
+  onStatus: (status: SocketStatus, reason?: string) => void;
 };
 
 export class PiRpcClient {
@@ -24,22 +25,14 @@ export class PiRpcClient {
   private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   constructor(private url: string, private h: Handlers) {}
 
-  connect(): Promise<void> {
-    this.h.onStatus("connecting");
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.url);
-      this.ws = ws;
-      ws.onopen = () => {
-        this.h.onStatus("open");
-        resolve();
-      };
-      ws.onerror = () => reject(new Error(`cannot connect to ${this.url}`));
-      ws.onclose = (e) => {
-        for (const p of this.pending.values()) p.reject(new Error(e.reason || "connection closed"));
+  async connect(): Promise<void> {
+    this.ws = await openSocket(this.url, {
+      onStatus: this.h.onStatus,
+      onMessage: (message) => this.receive(message as PiMessage),
+      onClose: (reason) => {
+        for (const p of this.pending.values()) p.reject(new Error(reason));
         this.pending.clear();
-        this.h.onStatus("closed", e.reason);
-      };
-      ws.onmessage = (e) => this.receive(JSON.parse(e.data));
+      },
     });
   }
 

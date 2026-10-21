@@ -5,16 +5,13 @@
 import type { CtxCat } from "../../components/ContextBar";
 import type { ContextItem, ContextSnapshot } from "../types";
 import type { Json } from "../../view/model";
+import { approxTokens, clip } from "../context";
 
 /** One prompt section of edupi's promptAssembled trace event (protocol/README.md section 6). */
 export type Fragment = { kind: string; text: string; tokens: number; changed?: boolean };
 
-const approxTokens = (v: Json) => Math.ceil((typeof v === "string" ? v.length : JSON.stringify(v).length) / 4);
-
 const textOf = (content: Json): string =>
   typeof content === "string" ? content : (content ?? []).map((c: Json) => c.text ?? `[${c.type}]`).join(" ");
-
-const clip = (t: string) => { const flat = t.replace(/\s+/g, " ").trim(); return flat.length > 160 ? `${flat.slice(0, 160)}…` : flat; };
 
 /**
  * body: the request's messages and tools (edupi's debug_get_context). fragments: promptAssembled's
