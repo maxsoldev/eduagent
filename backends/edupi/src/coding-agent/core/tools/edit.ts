@@ -92,6 +92,7 @@ export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDe
 		description:
 			"Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
 		parameters: editSchema,
+		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		prepareArguments: prepareEditArguments,
 		async execute(_toolCallId, input, signal) {
 			if (!Array.isArray(input.edits) || input.edits.length === 0) {
