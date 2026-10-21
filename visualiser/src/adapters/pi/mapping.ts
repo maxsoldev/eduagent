@@ -26,6 +26,10 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
 
   return (m: Json) => {
     if (m.type === "response") return response(m);
+    if (m.type === "trace") { // edupi's teaching extras: {type: "trace", name, ...payload} (protocol/README.md section 6)
+      const { type: _, name, ...data } = m;
+      return [{ type: "event", event: { name, trace: true, sessionId, data } }];
+    }
     const { type, ...data } = m;
     const out: ViewAction[] = [{ type: "event", event: { name: type, trace: false, sessionId, data } }];
     switch (type) {

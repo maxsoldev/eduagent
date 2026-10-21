@@ -34,3 +34,33 @@ test("pick edupi in the picker and chat: the reply streams in over pi's RPC prot
   await wire.getByPlaceholder("filter…").fill("text_delta");
   expect(await wire.locator(".t-title").getByText("message_update", { exact: true }).count()).toBeGreaterThan(2);
 });
+
+test("the Requests tab shows an edupi request as Chat Completions messages", async ({ page }) => {
+  await page.goto("/?backend=edupi");
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  await send(page, "Say hello.");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(1);
+  await send(page, "And again?");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(2);
+
+  await page.getByTestId("tab-Requests").click();
+  const view = page.getByTestId("requests-view");
+  await expect(view).toContainText("POST https://openrouter.ai/api/v1/chat/completions");
+  await expect(view).toContainText("unchanged ✓");
+  const items = page.getByTestId("request-items");
+  await expect(items).toHaveAttribute("data-api", "openai-completions");
+  await expect(items).toContainText("Chat Completions messages");
+  const rows = items.getByTestId("request-item");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText("user");
+  await expect(rows.nth(0)).toContainText("Say hello.");
+  await expect(rows.nth(1)).toContainText("assistant");
+  await expect(rows.nth(1)).toContainText("Hello from edupi.");
+  await expect(rows.nth(2)).toContainText("And again?");
+  await expect(view).toContainText("stopReason"); // the modelResponse trace event
+
+  // The timeline lists edupi's trace events with their explanations.
+  await page.getByTestId("tab-Timeline").click();
+  await expect(page.locator('.t-row[data-event="modelRequest"]').first()).toContainText("Model request");
+  await expect(page.locator('.t-row[data-event="modelResponse"]').first()).toContainText("Model response");
+});

@@ -79,6 +79,11 @@ test("a full turn: tools, approval, and every inspector tab", async ({ page }) =
 
   await page.getByTestId("tab-Requests").click();
   await expect(page.getByTestId("requests-view")).toContainText("unchanged ✓");
+  // educodex speaks the Responses API: the request is a list of input items.
+  await expect(page.getByTestId("request-items")).toHaveAttribute("data-api", "openai-responses");
+  await expect(page.getByTestId("request-items")).toContainText("Responses input items");
+  await expect(page.getByTestId("request-item").first()).toContainText("message · developer");
+  await expect(page.getByTestId("request-items").getByText("function_call", { exact: true }).first()).toBeVisible();
   // JSON tree: the key opens one level, the arrow opens everything below.
   const reasoning = page.getByTestId("requests-view").locator(".j-key.clickable", { hasText: /^reasoning: $/ }).first().locator("..");
   await reasoning.locator("> .j-key").click();

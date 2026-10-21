@@ -197,8 +197,55 @@ function ContextView({ view, adapter, links }: { view: View; adapter: Adapter; l
   );
 }
 
-// The items of a request body, by its API (named in the modelRequest trace event; Responses if absent).
-const requestItems = (data: Json): Json[] => (data.api === "openai-completions" ? data.body.messages : data.body.input) ?? [];
+// The API of a request, named in the modelRequest trace event (Responses if absent).
+const api = (data: Json): string => data.api ?? "openai-responses";
+// The items of a request body: Chat Completions sends `messages`, Responses sends `input` items.
+const requestItems = (data: Json): Json[] => (api(data) === "openai-completions" ? data.body.messages : data.body.input) ?? [];
+
+const clip = (t: string) => (t.length > 160 ? `${t.slice(0, 160)}…` : t);
+const partsText = (content: Json): string =>
+  typeof content === "string" ? content
+  : (content ?? []).map((c: Json) => c.text ?? c.refusal ?? (c.image_url || c.type === "input_image" ? "[image]" : `[${c.type}]`)).join(" ");
+
+// One row per message (Chat Completions): role, then the text, tool calls or the tool call it answers.
+function completionsRow(m: Json): [string, string] {
+  const calls = (m.tool_calls ?? []).map((c: Json) => `${c.function?.name}(${c.function?.arguments ?? ""})`).join(" ");
+  const head = m.role + (m.tool_call_id ? ` · ${m.tool_call_id}` : "");
+  return [head, [partsText(m.content), calls].filter(Boolean).join(" ")];
+}
+
+// One row per input item (Responses): its type, the role of a message, the tool of a call.
+function responsesRow(it: Json): [string, string] {
+  switch (it.type) {
+    case "message": return [`message · ${it.role}`, partsText(it.content)];
+    case "function_call": case "custom_tool_call": return [it.type, `${it.name}(${it.arguments ?? it.input ?? ""})`];
+    case "function_call_output": case "custom_tool_call_output":
+      return [it.type, typeof it.output === "string" ? it.output : partsText(it.output)];
+    case "reasoning": return ["reasoning", (it.summary ?? []).map((s: Json) => s.text).join(" ")];
+    default: return [it.type ?? "item", JSON.stringify(it)];
+  }
+}
+
+// The request as its API sees it: Chat Completions messages or Responses input items.
+function RequestItems({ api, items }: { api: string; items: Json[] }) {
+  const completions = api === "openai-completions";
+  return (
+    <div data-testid="request-items" data-api={api}>
+      <h4>{completions ? "Chat Completions messages (body.messages)" : "Responses input items (body.input)"}</h4>
+      <p className="muted small">{completions
+        ? "Each message has a role (system or developer, user, assistant, tool). Tool calls ride on assistant messages; each result is a tool message."
+        : "Each item has a type: messages with a role, function calls and their outputs, reasoning. Instructions are developer messages."}</p>
+      {items.map((it, i) => {
+        const [head, text] = completions ? completionsRow(it) : responsesRow(it);
+        return (
+          <div key={i} className="t-row" data-testid="request-item">
+            <div className="t-head"><span className="t-time">{i}</span><span className="t-title">{head}</span><span className="t-sum">{clip(text)}</span></div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function Requests({ events, ex, links }: { events: TimelineEvent[]; ex: Explainer; links: HarnessLinks }) {
   const requests = events.filter((e) => e.trace && e.name === "modelRequest");
@@ -225,6 +272,7 @@ function Requests({ events, ex, links }: { events: TimelineEvent[]; ex: Explaine
         <>Compared to request #{index}: <b>{input.length - prevInput.length}</b> items appended, earlier items {prefixOk ? <b className="ok">unchanged ✓ (prompt cache can hit)</b> : <b className="bad">changed ✗</b>}.</>
       )} <Links ex={ex} links={links} name="modelRequest" /></p>
       {response?.data.cost && <CostTable cost={response.data.cost} />}
+      <RequestItems api={api(req.data)} items={input} />
       <h4>Request body</h4>
       <JsonView value={req.data.body} open={1} />
       {response && (

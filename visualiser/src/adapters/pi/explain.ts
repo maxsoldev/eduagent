@@ -1,6 +1,6 @@
 // The pi adapter's timeline texts: one short explanation per pi event and the pi source file
-// that emits it (paths at the pinned commit, see view/harness.ts). The edupi guide has no
-// chapters yet, so no chapter links.
+// that emits it (paths at the pinned commit, see view/harness.ts). Trace events come only from
+// edupi (pi has none); their source is the pi code at the same step.
 import type { Explainer, Info } from "../../view/explain";
 import type { Json, TimelineEvent } from "../../view/model";
 
@@ -36,8 +36,20 @@ const EXPLAIN: Record<string, Info> = {
   auto_retry_end: { title: "Retry ended", category: "model", source: SESSION, text: "The retry succeeded or pi gave up." },
 };
 
+const PROVIDER = "packages/ai/src/api/openai-completions.ts";
+
+// edupi's trace events (protocol/README.md section 6). Chapter 01 of the edupi guide is the provider API.
+const TRACE: Record<string, Info> = {
+  modelRequest: { title: "Model request", category: "model", chapter: "01", source: PROVIDER,
+    text: "POST /chat/completions with the whole conversation as messages. The body is exactly what the OpenAI SDK sent to OpenRouter." },
+  streamEvent: { title: "Stream event (chunk)", category: "model", chapter: "01", source: PROVIDER,
+    text: "One raw Chat Completions chunk. pi turns each delta into a message_update event." },
+  modelResponse: { title: "Model response", category: "model", chapter: "01", source: PROVIDER,
+    text: "The stream ended. usage is pi's Usage, parsed from the last chunk; stopReason comes from finish_reason." },
+};
+
 function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
-  return (!e.trace && EXPLAIN[e.name]) || { title: e.name, category: e.trace ? "debug" : "protocol", text: "" };
+  return (e.trace ? TRACE[e.name] : EXPLAIN[e.name]) || { title: e.name, category: e.trace ? "debug" : "protocol", text: "" };
 }
 
 const NOISY = new Set(["message_update", "tool_execution_update"]);
@@ -55,8 +67,10 @@ function summary(e: TimelineEvent): string {
     case "compaction_start": return p.reason;
     case "compaction_end": return `${p.reason}${p.result ? ` · ${p.result.tokensBefore} tokens before` : ""}${p.errorMessage ? ` · ${p.errorMessage}` : ""}`;
     case "thinking_level_changed": return p.level;
+    case "modelRequest": return e.trace ? `${p.body.messages.length} messages · ${p.body.model}` : "";
+    case "modelResponse": return e.trace ? `${p.stopReason} · ${p.usage.input} in / ${p.usage.output} out · ${p.seconds}s` : "";
     default: return "";
   }
 }
 
-export const piExplainer: Explainer = { info, summary, noisy: (e) => !e.trace && NOISY.has(e.name) };
+export const piExplainer: Explainer = { info, summary, noisy: (e) => (e.trace ? e.name === "streamEvent" : NOISY.has(e.name)) };
