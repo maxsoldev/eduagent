@@ -20,7 +20,7 @@ import {
   shouldCompact,
 } from "./compaction/compaction.ts";
 import type { Probe } from "./probe.ts";
-import { getLatestCompactionEntry, type SessionEntry, type SessionManager } from "./session-manager.ts";
+import { type CompactionEntry, getLatestCompactionEntry, type SessionEntry, type SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 export type CompactionReason = "manual" | "threshold" | "overflow";
@@ -341,7 +341,7 @@ export class AgentSession {
 
     // A reply from before the latest compaction has a stale usage: it must not compact again.
     const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
-    if (compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime()) return false;
+    if (this._isBeforeCompaction(assistantMessage, compactionEntry)) return false;
 
     // Cases 1 and 2: context overflow.
     const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
@@ -371,16 +371,26 @@ export class AgentSession {
     } else if (assistantMessage.stopReason === "error" || directContextTokens === 0) {
       const messages = this.agent.state.messages;
       const estimate = estimateContextTokens(messages);
-      if (estimate.lastUsageIndex !== null && compactionEntry) {
-        const usageMsg = messages[estimate.lastUsageIndex];
-        if (usageMsg.role === "assistant" && usageMsg.timestamp <= new Date(compactionEntry.timestamp).getTime()) return false;
-      }
+      if (estimate.lastUsageIndex !== null && this._isBeforeCompaction(messages[estimate.lastUsageIndex], compactionEntry)) return false;
       contextTokens = estimate.tokens;
     } else {
       contextTokens = directContextTokens;
     }
     if (shouldCompact(contextTokens, contextWindow, settings)) return this._runAutoCompaction("threshold", false);
     return false;
+  }
+
+  /**
+   * Whether a message was saved before the compaction entry. pi compares timestamps; edupi
+   * compares the entries' order, because with the fast faux provider both can fall in one millisecond.
+   */
+  private _isBeforeCompaction(message: AgentMessage, compactionEntry: CompactionEntry | null): boolean {
+    if (!compactionEntry) return false;
+    const branch = this.sessionManager.getBranch();
+    const entryId = this._entryIdsByMessage.get(message);
+    const messageIndex = entryId ? branch.findIndex((entry) => entry.id === entryId) : -1;
+    if (messageIndex < 0) return message.timestamp <= new Date(compactionEntry.timestamp).getTime();
+    return messageIndex < branch.indexOf(compactionEntry);
   }
 
   /** Leaves the failed reply (and its tool results) out of the context with context_edit entries. */
