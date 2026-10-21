@@ -191,7 +191,7 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 - **No `constrainedSampling` on the tools.** pi's four tools ask for strict JSON-schema sampling (`strict: "prefer"`); it is in their `toolsAdded` declarations. OpenRouter gets no `strict` field either way, so the requests are the same, but edupi's session files do not have the field.
 - **Simpler paths.** No macOS file-name variants (NFD, curly quotes, screenshot names) in `read`.
 - **No `beforeToolCall` / `afterToolCall` hooks** (pi uses them for extensions), no `terminate` flag, no `grep`, `find` and `ls` tools, no tool set changes after the first prompt (so no `toolsRemoved` in practice).
-- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser and repairs bad string escapes.
+- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser.
 
 ## Try it
 
