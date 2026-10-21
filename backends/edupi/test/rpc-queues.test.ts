@@ -96,3 +96,59 @@ test("a follow-up sent while the reply streams runs after that turn, in the same
   const agentEnd = edupi.seen.find((m) => m.type === "agent_end")!;
   expect(agentEnd.messages.map((m: Message) => m.role)).toEqual(["system", "user", "assistant", "user", "assistant"]);
 });
+
+test("abort mid-stream: the reply ends as aborted, then agent_settled, then the abort response; queued messages stay", async () => {
+  edupi = startEdupi({ tokensPerSecond: 20, responses: ["one two three four five six seven eight nine ten eleven twelve", "After."] });
+  edupi.sendLine(JSON.stringify({ type: "prompt", message: "count slowly" }));
+  await edupi.until((m) => m.type === "message_update" && m.assistantMessageEvent.type === "text_delta");
+  await edupi.command("follow_up", { message: "later" });
+  const from = edupi.seen.length;
+  const reply = await edupi.command("abort");
+  expect(reply).toEqual({ id: "2", type: "response", command: "abort", success: true });
+
+  expect(eventOrder(from)).toEqual(["message_end assistant", "turn_end", "agent_end", "agent_settled true"]);
+  const end = edupi.seen.slice(from).find((m) => m.type === "message_end")!.message;
+  expect(end).toMatchObject({ role: "assistant", stopReason: "aborted", errorMessage: "Request was aborted" });
+  expect(end.content[0].text.length).toBeGreaterThan(0); // the partial text is kept
+  expect("one two three four five six seven eight nine ten eleven twelve".startsWith(end.content[0].text)).toBe(true);
+  // The abort response is the last line: it waits until the run has settled.
+  expect(edupi.seen.at(-1)).toBe(reply);
+  // pi's abort does not clear the queues.
+  expect((await edupi.command("get_state")).data).toMatchObject({ isStreaming: false, pendingMessageCount: 1 });
+});
+
+test("abort mid-tool: the running command is killed, its result says so, and the next model call returns aborted at once", async () => {
+  edupi = startEdupi({ responses: [toolUse(call("call_slow", "bash", { command: "echo started; sleep 5; echo finished" })), "Still here."] });
+  edupi.sendLine(JSON.stringify({ type: "prompt", message: "Run a slow command." }));
+  await edupi.until((m) => m.type === "tool_execution_update" && m.partialResult.content.length > 0);
+  const started = Date.now();
+  await edupi.command("abort");
+  expect(Date.now() - started).toBeLessThan(3000); // the sleep did not run to its end
+
+  const end = edupi.seen.find((m) => m.type === "tool_execution_end")!;
+  expect(end).toMatchObject({ toolCallId: "call_slow", isError: true, result: { content: [{ type: "text", text: "started\n\n\nCommand aborted" }] } });
+  expect(eventOrder().slice(8)).toEqual([
+    "tool_execution_start call_slow", "tool_execution_end call_slow", "message_start toolResult", "message_end toolResult", "turn_end",
+    "turn_start", "message_start assistant", "message_end assistant", "turn_end", "agent_end", "agent_settled true",
+  ]);
+  const last = edupi.seen.filter((m) => m.type === "message_end").at(-1)!.message;
+  expect(last).toMatchObject({ role: "assistant", stopReason: "aborted", content: [] });
+  expect(edupi.requests()).toHaveLength(1); // the aborted call never reached the model
+
+  // The session goes on: the next prompt runs normally.
+  edupi.sendLine(JSON.stringify({ type: "prompt", message: "Are you still there?" }));
+  await untilSettled(2);
+  expect(edupi.seen.filter((m) => m.type === "agent_settled").at(-1)).toEqual({ type: "agent_settled", aborted: false });
+});
+
+test("new_session during a run aborts the run first, as pi does", async () => {
+  edupi = startEdupi({ responses: [slowBash, "Never sent."] });
+  edupi.sendLine(JSON.stringify({ type: "prompt", message: "run slow" }));
+  await edupi.until("tool_execution_start");
+  const reply = await edupi.command("new_session");
+  expect(reply).toMatchObject({ command: "new_session", success: true, data: { cancelled: false } });
+  const settled = edupi.seen.findIndex((m) => m.type === "agent_settled");
+  expect(edupi.seen[settled]).toEqual({ type: "agent_settled", aborted: true });
+  expect(settled).toBeLessThan(edupi.seen.indexOf(reply));
+  expect(edupi.requests()).toHaveLength(1);
+});

@@ -41,6 +41,8 @@ export class AgentSession {
   private readonly _getApiKey: (provider: string) => string | undefined;
   private _eventListeners: AgentSessionEventListener[] = [];
   private _isAgentRunActive = false; // from _startRun until agent_settled
+  private _agentRunAbortRequested = false; // agent_settled reports it as `aborted`
+  private _idleWaiters: (() => void)[] = []; // resolved after agent_settled
   // The texts of the queued messages, for queue_update. The messages themselves are in the Agent.
   private _steeringMessages: string[] = [];
   private _followUpMessages: string[] = [];
@@ -195,9 +197,23 @@ export class AgentSession {
     this.agent.followUp({ role: "user", content: [{ type: "text", text }, ...(images ?? [])], timestamp: Date.now() });
   }
 
+  /** Aborts the active run (stream and tools) and resolves once it has settled. The queues stay. */
+  async abort(): Promise<void> {
+    if (this._isAgentRunActive) this._agentRunAbortRequested = true;
+    this.agent.abort();
+    await this.waitForIdle();
+  }
+
+  /** Resolves after the active run's agent_settled; at once when idle. */
+  waitForIdle(): Promise<void> {
+    if (!this._isAgentRunActive) return Promise.resolve();
+    return new Promise((resolve) => this._idleWaiters.push(resolve));
+  }
+
   /** One run: the user message, then the Agent's loop, then agent_settled. */
   private async _startRun(text: string, images: ImageContent[], onStarted?: () => void): Promise<void> {
     this._isAgentRunActive = true;
+    this._agentRunAbortRequested = false;
     const messages: AgentMessage[] = [{ role: "user", content: [{ type: "text", text }, ...images], timestamp: Date.now() }];
     onStarted?.();
     try {
@@ -209,6 +225,7 @@ export class AgentSession {
 
   private _emitAgentSettled(): void {
     this._isAgentRunActive = false;
-    this._emit({ type: "agent_settled", aborted: false });
+    this._emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
+    for (const resolve of this._idleWaiters.splice(0)) resolve();
   }
 }

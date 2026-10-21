@@ -84,6 +84,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
         return success(id, "follow_up", { disposition });
       }
 
+      // The response comes after the run has settled (after agent_settled).
+      case "abort": {
+        await session.abort();
+        return success(id, "abort");
+      }
+
       case "get_state": {
         const state: RpcSessionState = {
           model: session.model,
