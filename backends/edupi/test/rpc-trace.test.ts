@@ -55,7 +55,7 @@ test("each model response is traced with pi's usage, taken from the last chunk",
   const usageChunk = traces("streamEvent").map((m) => m.event).find((c) => c.usage).usage;
   const reply = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
   expect(response).toEqual({
-    type: "trace", name: "modelResponse", api: "openai-completions", stopReason: "stop", responseId: "chatcmpl-faux",
+    type: "trace", name: "modelResponse", stopReason: "stop", responseId: "chatcmpl-faux",
     content: [{ type: "text", text: "Short reply." }], usage: reply.usage, seconds: expect.any(Number),
   });
   expect(response.usage).toMatchObject({ input: usageChunk.prompt_tokens, output: usageChunk.completion_tokens,

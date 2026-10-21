@@ -1,0 +1,19 @@
+{
+  "type": "trace",
+  "name": "streamEvent",
+  "event": {
+    "id": "chatcmpl-faux",
+    "object": "chat.completion.chunk",
+    "created": 1792595107,
+    "model": "openai/gpt-6-luna",
+    "choices": [
+      {
+        "index": 0,
+        "delta": {
+          "content": "Hello there."
+        },
+        "finish_reason": null
+      }
+    ]
+  }
+}

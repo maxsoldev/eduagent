@@ -1,0 +1,15 @@
+{
+  "method": "trace/streamEvent",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "event": {
+      "type": "response.output_text.delta",
+      "item_id": "msg_1",
+      "delta": "Hello there."
+    },
+    "_seq": 15,
+    "_ts": 1792595087.82
+  }
+}

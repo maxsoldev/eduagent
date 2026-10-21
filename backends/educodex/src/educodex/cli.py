@@ -20,7 +20,7 @@ from educodex.observe.tracer import Tracer
 console = Console()
 
 QUIET = {"item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/commandExecution/outputDelta",
-         "trace/historyChanged", "trace/sseEvent", "thread/tokenUsage/updated"}
+         "trace/historyChanged", "trace/streamEvent", "thread/tokenUsage/updated"}
 
 
 def print_event(event: Event, verbose: bool) -> None:

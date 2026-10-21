@@ -165,7 +165,7 @@ JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over st
 `turn/start` takes `sandboxPolicy: {"type": "readOnly" | "workspaceWrite" | "dangerFullAccess"}`, as in Codex. `thread/start` takes the kebab-case mode.
 
 **educodex extensions:**
-- `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `sseEvent` (opt-in), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
+- `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `streamEvent` (opt-in, `traceSse`), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
 - `trace/pricing` and `trace/cost`: prices from OpenRouter's `/models`, and each request's cost split into uncached input, cache reads, cache writes and output, with the savings from caching (`observe/pricing.py`). Codex reports tokens, not money.
 - `debug/*` requests: `debug/stepMode/set`, `debug/continue`, `debug/context/get`.
 - `memory/update/start`: run the memory write path now (Codex starts it on its own), with a `memoryUpdate` item and `trace/memory*` events. Also `trace/skillsLoaded` and `trace/skillInjected`.

@@ -30,8 +30,8 @@ export class Tracer implements Probe {
   }
 
   modelResponse(message: AssistantMessage) {
-    const { api, stopReason, errorMessage, responseId, content, usage } = message;
+    const { stopReason, errorMessage, responseId, content, usage } = message;
     const seconds = Math.round(performance.now() - this.started) / 1000;
-    this.emit("modelResponse", { api, stopReason, errorMessage, responseId, content, usage, seconds });
+    this.emit("modelResponse", { stopReason, errorMessage, responseId, content, usage, seconds });
   }
 }

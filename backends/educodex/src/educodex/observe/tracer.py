@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 class Tracer(Probe):
     def __init__(self, trace_sse: bool = False) -> None:
-        self.trace_sse = trace_sse  # opt-in: one trace event per raw SSE event
+        self.trace_sse = trace_sse  # opt-in: one trace/streamEvent per raw SSE event
         self.stepper = Stepper()
         self.pricing: Pricing | None = None  # fetched from the provider (OpenRouter /models)
         self.total_cost: dict = {}  # running cost totals (pricing.add_totals)
@@ -97,7 +97,7 @@ class Tracer(Probe):
 
     async def model_request(self, ctx, body) -> None:
         self._started, self._event_counts, self._output_items = time.monotonic(), {}, []
-        await self._turn(ctx, "trace/modelRequest", url=f"{ctx.config.base_url}/responses", body=body,
+        await self._turn(ctx, "trace/modelRequest", api="openai-responses", url=f"{ctx.config.base_url}/responses", body=body,
                          inputTokensEstimate=sum(approx_tokens(i) for i in body["input"]))
 
     async def sse_event(self, ctx, event) -> None:
@@ -105,7 +105,7 @@ class Tracer(Probe):
         if event.type == "response.output_item.done":
             self._output_items.append(clean_output_item(event.data["item"]))
         if self.trace_sse:
-            await self._turn(ctx, "trace/sseEvent", event=event.data)
+            await self._turn(ctx, "trace/streamEvent", event=event.data)
 
     async def model_response(self, ctx, body, usage) -> None:
         cost = None
