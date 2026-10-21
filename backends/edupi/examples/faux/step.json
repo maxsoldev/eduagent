@@ -1,0 +1,18 @@
+{
+  "description": "Faux script for step mode, the Context tab and the cost panel: OpenRouter's list prices the model, the model runs one bash command, then answers.",
+  "models": [
+    {
+      "id": "openai/gpt-6-luna", "name": "OpenAI: GPT-6 Luna", "context_length": 200000,
+      "top_provider": { "context_length": 200000, "max_completion_tokens": 32000 },
+      "supported_parameters": ["reasoning", "tools"],
+      "pricing": { "prompt": "0.000001", "completion": "0.000008", "input_cache_read": "0.0000001" }
+    }
+  ],
+  "responses": [
+    {
+      "content": [{ "type": "toolCall", "id": "call_echo", "name": "bash", "arguments": { "command": "echo hello from bash" } }],
+      "stopReason": "toolUse"
+    },
+    "The command printed a greeting."
+  ]
+}

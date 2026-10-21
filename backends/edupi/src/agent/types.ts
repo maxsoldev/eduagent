@@ -48,7 +48,15 @@ export interface AgentProbe extends ProviderProbe {
   toolDispatch?(call: { toolCall: AgentToolCall; parallel: boolean }): void | Promise<void>;
   /** A tool call ended (after tool_execution_end), with the result the model will read. */
   toolOutput?(outcome: { toolCall: AgentToolCall; result: AgentToolResult<unknown>; isError: boolean; durationMs?: number }): void | Promise<void>;
+  /**
+   * A point where step mode may pause the loop: the loop waits until the returned promise
+   * settles. signal is the run's abort signal, so an abort also ends the wait.
+   */
+  checkpoint?(name: Checkpoint, info: Record<string, unknown>, signal?: AbortSignal): void | Promise<void>;
 }
+
+/** The loop's step-mode checkpoints (the same names as educodex's). */
+export type Checkpoint = "beforeModelRequest" | "beforeToolCall" | "afterToolCall";
 
 /** "one-at-a-time" (pi's default): a queue gives one message per drain point. "all": every queued message. */
 export type QueueMode = "all" | "one-at-a-time";

@@ -227,9 +227,14 @@ export function stream(model: Model, context: TranscriptContext, options?: OpenA
  * thinking level to what the model supports and passes it on as the reasoning effort.
  */
 export function streamSimple(model: Model, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream {
+  return stream(model, context, toCompletionsOptions(model, options));
+}
+
+/** streamSimple's option mapping. edupi exports it, so the context inspector builds the same body. */
+export function toCompletionsOptions(model: Model, options?: SimpleStreamOptions): OpenAICompletionsOptions {
   const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
   const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
-  return stream(model, context, { ...options, maxTokens: options?.maxTokens ?? model.maxTokens, reasoningEffort });
+  return { ...options, maxTokens: options?.maxTokens ?? model.maxTokens, reasoningEffort };
 }
 
 function createClient(model: Model, apiKey: string, optionsHeaders?: Record<string, string>,

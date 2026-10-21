@@ -24,5 +24,17 @@
       "total": 0
     }
   },
-  "seconds": 0.84
+  "seconds": 0.84,
+  "cost": {
+    "tokens": {
+      "input": 15,
+      "uncached": 15,
+      "cached": 0,
+      "cacheWrite": 0,
+      "output": 3,
+      "reasoning": 0
+    },
+    "cacheHitRate": 0,
+    "billedUsd": null
+  }
 }

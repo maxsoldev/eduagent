@@ -33,6 +33,8 @@ export interface SkillsLoadedInfo {
  * loop hooks (tool dispatch, tool output) in agent/types.ts. Coding-agent hooks are added here.
  */
 export interface Probe extends AgentProbe {
+  /** An AgentSession was made (at start and on new_session), as educodex's thread_started. */
+  sessionStarted?(session: { sessionId: string }): void;
   /** Before a run: the system prompt for its requests (agent-session.ts _prepareRun). */
   promptAssembled?(info: PromptAssembledInfo): void;
   /** The skills found when the session's resources were loaded. */

@@ -154,7 +154,6 @@ function ContextView({ view, adapter, links }: { view: View; adapter: Adapter; l
       <div className="pinned-top">
       <p className="explain">This is <b>exactly</b> what the next request sends: the whole history, every time.
         Colours show where each item came from. <Links ex={adapter.explain} links={links} name="promptAssembled" /></p>
-      {ctx.note && <p className="muted small" data-testid="ctx-note">{ctx.note}</p>}
       <ContextBar segments={segments} total={total} scale={scale} contextWindow={ctx.contextWindow}
         autoCompactLimit={ctx.autoCompactLimit} zoom={zoom} hl={hl} setHl={setHl} onSelect={select} />
       <div className="muted small">

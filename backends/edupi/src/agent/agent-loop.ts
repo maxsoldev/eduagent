@@ -206,6 +206,8 @@ async function streamAssistantResponse(
 
   // Resolved per request, so an expiring key can be refreshed.
   const resolvedApiKey = (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+  // edupi: step mode may pause here, before the request is built and sent.
+  await config.probe?.checkpoint?.("beforeModelRequest", { messages: llmMessages.length, tools: getCurrentTools(llmMessages).length }, signal);
 
   const response = await streamFunction(config.model, llmContext, { ...config, apiKey: resolvedApiKey, signal });
   // Record the requested level, whichever stream function answered.
@@ -301,11 +303,12 @@ async function executeToolCallsSequential(currentContext: AgentContext, toolCall
   for (const toolCall of toolCalls) {
     await emit({ type: "tool_execution_start", toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments });
     await config.probe?.toolDispatch?.({ toolCall, parallel: false });
+    await config.probe?.checkpoint?.("beforeToolCall", { tool: toolCall.name, callId: toolCall.id }, signal);
     const preparation = prepareToolCall(currentContext, toolCall, signal);
     const finalized: ToolCallOutcome = preparation.kind === "immediate"
       ? { toolCall, result: preparation.result, isError: preparation.isError }
       : { toolCall, ...(await executePreparedToolCall(preparation, signal, emit)) };
-    await emitToolExecutionEnd(finalized, emit, config);
+    await emitToolExecutionEnd(finalized, emit, config, signal);
     const toolResultMessage = createToolResultMessage(finalized);
     await emitToolResultMessage(toolResultMessage, emit);
     messages.push(toolResultMessage);
@@ -325,10 +328,11 @@ async function executeToolCallsParallel(currentContext: AgentContext, toolCalls:
   for (const toolCall of toolCalls) {
     await emit({ type: "tool_execution_start", toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments });
     await config.probe?.toolDispatch?.({ toolCall, parallel: true });
+    await config.probe?.checkpoint?.("beforeToolCall", { tool: toolCall.name, callId: toolCall.id }, signal);
     const preparation = prepareToolCall(currentContext, toolCall, signal);
     if (preparation.kind === "immediate") {
       const finalized = { toolCall, result: preparation.result, isError: preparation.isError };
-      await emitToolExecutionEnd(finalized, emit, config);
+      await emitToolExecutionEnd(finalized, emit, config, signal);
       finalizedCalls.push(finalized);
       if (signal?.aborted) break;
       continue;
@@ -336,11 +340,11 @@ async function executeToolCallsParallel(currentContext: AgentContext, toolCalls:
     finalizedCalls.push(async () => {
       if (signal?.aborted) {
         const finalized = { toolCall, result: createErrorToolResult("Operation aborted"), isError: true };
-        await emitToolExecutionEnd(finalized, emit, config);
+        await emitToolExecutionEnd(finalized, emit, config, signal);
         return finalized;
       }
       const finalized = { toolCall, ...(await executePreparedToolCall(preparation, signal, emit)) };
-      await emitToolExecutionEnd(finalized, emit, config);
+      await emitToolExecutionEnd(finalized, emit, config, signal);
       return finalized;
     });
     if (signal?.aborted) break;
@@ -398,7 +402,7 @@ function createErrorToolResult(message: string): AgentToolResult<any> {
   return { content: [{ type: "text", text: message }], details: {} };
 }
 
-async function emitToolExecutionEnd(finalized: ToolCallOutcome, emit: AgentEventSink, config?: AgentLoopConfig): Promise<void> {
+async function emitToolExecutionEnd(finalized: ToolCallOutcome, emit: AgentEventSink, config?: AgentLoopConfig, signal?: AbortSignal): Promise<void> {
   await emit({
     type: "tool_execution_end",
     toolCallId: finalized.toolCall.id,
@@ -408,6 +412,7 @@ async function emitToolExecutionEnd(finalized: ToolCallOutcome, emit: AgentEvent
     ...(finalized.durationMs === undefined ? {} : { durationMs: finalized.durationMs }),
   });
   await config?.probe?.toolOutput?.(finalized);
+  await config?.probe?.checkpoint?.("afterToolCall", { tool: finalized.toolCall.name, callId: finalized.toolCall.id }, signal);
 }
 
 /** The message the model reads: content and isError. details stay for the user interface. */

@@ -1,0 +1,15 @@
+{
+  "method": "trace/paused",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "breakpoint": "beforeModelRequest",
+    "info": {
+      "inputItems": 4,
+      "tools": 4
+    },
+    "_seq": 11,
+    "_ts": 1792599293.99
+  }
+}

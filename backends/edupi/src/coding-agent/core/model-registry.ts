@@ -21,6 +21,11 @@ export class ModelRegistry {
     return new ModelRegistry(models);
   }
 
+  /** The models OpenRouter's list gave (none offline). */
+  getAll(): Model[] {
+    return [...this.models.values()];
+  }
+
   /** The model with this id. edupi has one provider, so other providers find nothing. */
   find(provider: string, modelId: string): Model | undefined {
     if (provider !== "openrouter") return undefined;

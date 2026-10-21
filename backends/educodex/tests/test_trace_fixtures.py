@@ -1,4 +1,4 @@
-"""Seam A against the protocol spec: educodex's model and tool trace events have the shapes of the fixtures
+"""Seam A against the protocol spec: educodex's model, tool, cost and step-mode trace events have the shapes of the fixtures
 in protocol/fixtures/trace/educodex/ and the shared fields of protocol/fixtures/trace/shared.json."""
 
 import json
@@ -36,8 +36,11 @@ def test_model_trace_events_match_the_protocol_fixtures(app_server):
     server.request("initialize", {"clientInfo": {"name": "test", "version": "1"}})
     server.send({"method": "initialized"})
     thread = server.request("thread/start", {"traceSse": True})["result"]["thread"]
+    # Step mode on, for the paused and resumed events: release each pause until the turn completes.
+    server.request("debug/stepMode/set", {"threadId": thread["id"], "enabled": True})
     server.request("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": "Hi?"}]})
-    server.until("turn/completed")
+    while (msg := server.until_any("trace/paused", "turn/completed"))["method"] == "trace/paused":
+        server.send({"id": f"continue-{msg['params']['_seq']}", "method": "debug/continue", "params": {"threadId": thread["id"]}})
     server.request("thread/compact/start", {"threadId": thread["id"]})
     server.until("thread/compacted")
 

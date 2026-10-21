@@ -1,0 +1,48 @@
+{
+  "type": "trace",
+  "name": "cost",
+  "last": {
+    "tokens": {
+      "input": 389,
+      "uncached": 389,
+      "cached": 0,
+      "cacheWrite": 0,
+      "output": 1,
+      "reasoning": 0
+    },
+    "cacheHitRate": 0,
+    "billedUsd": null,
+    "usd": {
+      "uncachedInput": 0.000389,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 8e-06,
+      "total": 0.000397,
+      "withoutCache": 0.000397,
+      "savedByCache": 0
+    }
+  },
+  "total": {
+    "tokens": {
+      "input": 389,
+      "uncached": 389,
+      "cached": 0,
+      "cacheWrite": 0,
+      "output": 1,
+      "reasoning": 0
+    },
+    "requests": 1,
+    "cacheHitRate": 0,
+    "usd": {
+      "uncachedInput": 0.000389,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 8e-06,
+      "total": 0.000397,
+      "withoutCache": 0.000397,
+      "savedByCache": 0
+    }
+  },
+  "inputItems": 2,
+  "toolsTokens": 620
+}

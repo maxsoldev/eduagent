@@ -2,10 +2,13 @@
 // observe/tracer.py does. pi has no trace events. edupi sends them in pi's type-tagged style,
 // {type: "trace", name, ...payload}, on the same stdout as the RPC events. Names and payloads
 // are the shared trace vocabulary in protocol/README.md section 6.
-import type { AgentMessage, AgentToolCall, AgentToolResult } from "../agent/types.ts";
+import type { AgentMessage, AgentToolCall, AgentToolResult, Checkpoint } from "../agent/types.ts";
 import type { AssistantMessage } from "../ai/types.ts";
 import type { CompactionResult } from "../coding-agent/core/compaction/compaction.ts";
 import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-agent/core/probe.ts";
+import type { ModelCost } from "../ai/types.ts";
+import { addTotals, type CostTotal, costBreakdown, pricingJson } from "./pricing.ts";
+import { Stepper } from "./stepper.ts";
 
 /** Where each prompt section comes from (pi's file, or the files the user wrote). */
 function sectionSource(name: string, info: PromptAssembledInfo): string {
@@ -25,10 +28,29 @@ const approxTokens = (text: string) => Math.ceil(text.length / 4);
 
 export type TraceOutput = (message: object) => void;
 
+export interface TracerOptions {
+  /** A model's prices (pi's Model.cost), if OpenRouter's list has it. */
+  findPricing?: (modelId: string) => ModelCost | undefined;
+}
+
 export class Tracer implements Probe {
   private output: TraceOutput | null = null;
   private started = 0; // when the current model request was sent (ms)
+  private body: { messages?: unknown[]; tools?: unknown[] } = {}; // the current request's body
+  private billedUsd: number | null = null; // OpenRouter's usage.cost of the current response
+  private pricedModel: string | undefined; // the model the last pricing event was for
+  private pricing: ModelCost | undefined;
+  private totalCost: CostTotal | undefined; // this session's running cost
+
   private registeredTools = new Map<string | undefined, string>(); // the last tool specs sent, per session (JSON)
+  /** Step mode; the debug_ commands drive it. */
+  readonly stepper = new Stepper();
+
+  constructor(private readonly options: TracerOptions = {}) {}
+
+  sessionStarted() {
+    this.totalCost = undefined;
+  }
 
   /** RPC mode calls this once it owns stdout. Events before that are dropped. */
   connect(output: TraceOutput) {
@@ -37,6 +59,12 @@ export class Tracer implements Probe {
 
   private emit(name: string, payload: object) {
     this.output?.({ type: "trace", name, ...payload });
+  }
+
+  /** Step mode: pause here (paused, then resumed) until debug_continue or an abort. */
+  async checkpoint(name: Checkpoint, info: Record<string, unknown>, signal?: AbortSignal) {
+    if (!this.stepper.shouldPause(name)) return;
+    if (await this.stepper.pause(() => this.emit("paused", { breakpoint: name, info }), signal)) this.emit("resumed", { breakpoint: name });
   }
 
   /** Before the request: the tool specs the model gets, when they are new for this session (educodex's toolsRegistered). */
@@ -48,11 +76,24 @@ export class Tracer implements Probe {
       this.registeredTools.set(sessionId, JSON.stringify(tools));
       this.emit("toolsRegistered", { tools });
     }
+    this.ensurePricing((request.body as { model: string }).model);
     this.started = performance.now();
+    this.body = request.body as typeof this.body;
+    this.billedUsd = null;
     this.emit("modelRequest", request);
   }
 
+  /** Once per model: its prices from OpenRouter's list, as educodex's pricing event. */
+  private ensurePricing(model: string) {
+    if (model === this.pricedModel) return;
+    this.pricedModel = model;
+    this.pricing = this.options.findPricing?.(model);
+    this.emit("pricing", { model, pricing: this.pricing ? pricingJson(model, this.pricing) : null, source: "GET /models" });
+  }
+
   streamEvent(event: unknown) {
+    const cost = (event as { usage?: { cost?: unknown } }).usage?.cost; // OpenRouter's bill, in the last chunk
+    if (typeof cost === "number") this.billedUsd = cost;
     this.emit("streamEvent", { event });
   }
 
@@ -86,10 +127,16 @@ export class Tracer implements Probe {
     });
   }
 
+  /** Also the response's cost (when the provider reported usage), and the session's running total. */
   modelResponse(message: AssistantMessage) {
     const { stopReason, errorMessage, responseId, content, usage } = message;
     const seconds = Math.round(performance.now() - this.started) / 1000;
-    this.emit("modelResponse", { stopReason, errorMessage, responseId, content, usage, seconds });
+    const cost = usage.totalTokens > 0 ? costBreakdown(usage, this.pricing, this.billedUsd) : undefined;
+    this.emit("modelResponse", { stopReason, errorMessage, responseId, content, usage, seconds, cost });
+    if (!cost) return;
+    this.totalCost = addTotals(this.totalCost, cost);
+    const toolsTokens = approxTokens(JSON.stringify({ tools: this.body.tools ?? [] }));
+    this.emit("cost", { last: cost, total: this.totalCost, inputItems: this.body.messages?.length ?? 0, toolsTokens });
   }
 
   compactionRequest(request: { reason: string; tokensBefore: number; body: unknown }) {

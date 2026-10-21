@@ -1,0 +1,17 @@
+{
+  "type": "trace",
+  "name": "pricing",
+  "model": "openai/gpt-6-luna",
+  "pricing": {
+    "model": "openai/gpt-6-luna",
+    "perMillionTokens": {
+      "prompt": 1,
+      "completion": 8,
+      "cache_read": 0.1,
+      "cache_write": 0
+    },
+    "longContext": null,
+    "longContextFromTokens": null
+  },
+  "source": "GET /models"
+}

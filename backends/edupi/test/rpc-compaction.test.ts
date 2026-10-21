@@ -257,8 +257,9 @@ test("trace events show the summary request body and the context rebuilt from th
   await prompt("q1");
   await edupi.command("compact");
   const names = edupi.seen.filter((m) => m.type === "compaction_start" || m.type === "compaction_end" || (m.type === "trace" && m.name !== "streamEvent"))
-    .slice(-6).map((m) => m.name ?? m.type);
-  expect(names).toEqual(["compaction_start", "compactionRequest", "modelRequest", "modelResponse", "compacted", "compaction_end"]);
+    .slice(-7).map((m) => m.name ?? m.type);
+  // The summary request costs money too: its cost follows its response.
+  expect(names).toEqual(["compaction_start", "compactionRequest", "modelRequest", "modelResponse", "cost", "compacted", "compaction_end"]);
 
   const request = edupi.seen.find((m) => m.name === "compactionRequest")!;
   const end = edupi.seen.find((m) => m.type === "compaction_end")!;
