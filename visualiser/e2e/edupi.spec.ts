@@ -200,6 +200,7 @@ test("a session already in progress shows in the chat when the viewer connects",
   const wire = page.getByTestId("protocol-view");
   await expect(wire.locator(".t-title").getByText("response get_messages", { exact: true })).toBeVisible();
   await expect(wire.locator(".t-title").getByText("response new_session", { exact: true })).toHaveCount(0);
+});
 
 test("a manual compaction with custom instructions shows in the chat and the timeline", async ({ page }) => {
   // pi keeps the last 20000 tokens by default, so this short chat would have nothing to compact.
