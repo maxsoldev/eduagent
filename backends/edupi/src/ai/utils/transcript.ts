@@ -1,9 +1,10 @@
-// Mirrors pi packages/ai/src/utils/transcript.ts and text.ts (pinned 16f5f0af4). In pi the tools
-// the model may call are declared inside the transcript, as toolsAdded and toolsRemoved on system
-// messages. Replaying those changes in order gives the current tool set; replaying the system
-// messages gives the current system message (a compaction entry stores it).
-// edupi leaves out the per-API tool placement.
-import type { ImageContent, SystemMessage, TextContent, ThinkingContent, Tool, ToolCall, ToolReference } from "../types.ts";
+// Mirrors pi packages/ai/src/utils/transcript.ts and text.ts (pinned 16f5f0af4). In pi the system
+// prompt and the tools the model may call live inside the transcript, on system messages:
+// `sections` patch the prompt by name, toolsAdded and toolsRemoved change the tools. Replaying
+// those changes in order gives the current tool set and the current system message (the request
+// starts with it; a compaction entry stores it).
+// edupi leaves out the per-API tool placement (pi's Kimi-style mid-conversation tool messages).
+import type { ImageContent, Message, SystemMessage, TextContent, ThinkingContent, Tool, ToolCall, ToolReference, TranscriptContext } from "../types.ts";
 
 type TranscriptMessages = readonly { role: string }[];
 
@@ -100,4 +101,23 @@ export function getCurrentSystemMessage(messages: TranscriptMessages): SystemMes
     ...(tools.length > 0 ? { toolsAdded: tools } : {}),
     timestamp: timestamp ?? 0,
   };
+}
+
+/** A system message as one prompt text: its content, then its sections (pi's utils/text.ts). */
+export function getSystemMessageText(message: SystemMessage): string {
+  const parts = [contentText(message.content)];
+  for (const text of Object.values(message.sections ?? {})) {
+    if (text !== null) parts.push(text);
+  }
+  return parts.filter((part) => part.length > 0).join("\n\n");
+}
+
+/**
+ * For APIs without mid-conversation system messages (OpenRouter's Chat Completions in pi): the
+ * replayed system message leads, and every later system message is dropped.
+ */
+export function collapseSystemMessages(context: TranscriptContext): TranscriptContext {
+  const head = getCurrentSystemMessage(context.messages);
+  const messages = context.messages.filter((message) => message.role !== "system");
+  return { messages: head ? [head, ...messages] : messages } as { messages: Message[] };
 }

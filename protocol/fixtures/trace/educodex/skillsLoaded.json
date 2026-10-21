@@ -1,0 +1,29 @@
+{
+  "method": "trace/skillsLoaded",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 0,
+    "roots": [
+      {
+        "path": "/tmp/edx/home/skills",
+        "scope": "user"
+      },
+      {
+        "path": "/tmp/edx/home/skills/.system",
+        "scope": "system"
+      }
+    ],
+    "skills": [
+      {
+        "name": "greet",
+        "description": "Greets the user.",
+        "path": "/tmp/edx/home/skills/greet/SKILL.md",
+        "scope": "user"
+      }
+    ],
+    "errors": [],
+    "_seq": 5,
+    "_ts": 1792597665.83
+  }
+}

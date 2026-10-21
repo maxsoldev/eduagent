@@ -6,7 +6,7 @@
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { toJsonEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.ts";
+import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
 
 /**
  * Keeps stdout for protocol lines only: anything else that writes to stdout (console.log) goes
@@ -122,6 +122,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 
       case "get_messages": {
         return success(id, "get_messages", { messages: session.messages });
+      }
+
+      case "get_commands": {
+        const commands: RpcSlashCommand[] = session.resourceLoader.getSkills().skills.map((skill) => ({
+          name: `skill:${skill.name}`,
+          description: skill.description,
+          source: "skill",
+          sourceInfo: skill.sourceInfo,
+        }));
+        return success(id, "get_commands", { commands });
       }
 
       case "compact": {

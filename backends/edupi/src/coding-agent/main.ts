@@ -8,8 +8,10 @@ import { fauxProvider, loadFauxScript } from "../ai/providers/faux.ts";
 import { OPENROUTER_API_KEY_ENV } from "../ai/providers/openrouter.ts";
 import { Tracer } from "../observe/tracer.ts";
 import { type Args, parseArgs } from "./cli/args.ts";
+import { getAgentDir } from "./config.ts";
 import { AgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import { ModelRegistry } from "./core/model-registry.ts";
+import { resolveProjectTrusted } from "./core/project-trust.ts";
 import { createAgentSession } from "./core/sdk.ts";
 import { SessionManager } from "./core/session-manager.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
@@ -39,8 +41,10 @@ export async function main(argv: string[]): Promise<void> {
 
   const settingsManager = SettingsManager.create();
   const cwd = process.cwd();
+  // RPC mode cannot ask, so <cwd>/.pi is trusted only with --approve or a saved decision.
+  const projectTrusted = resolveProjectTrusted({ cwd, agentDir: getAgentDir(), trustOverride: parsed.projectTrustOverride });
   const createRuntime = (sessionManager: SessionManager) =>
-    createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, cwd, probe: tracer });
+    createAgentSession({ sessionManager, model, modelRegistry, streamFn, getApiKey, settingsManager, cwd, probe: tracer, projectTrusted });
   const session = createRuntime(createSessionManager(parsed, cwd));
   // Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
   await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), { connect: (output) => tracer.connect(output) });

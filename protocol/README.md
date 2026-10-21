@@ -179,6 +179,8 @@ Events that mean the same thing have the same name and the same **shared fields*
 | `modelResponse` | when the stream ended | `usage` (object: the harness's usage record), `seconds` (number) | `eventCounts`, `outputItems`, `cost` (the Codex usage is the Responses `usage`) | `stopReason`, `errorMessage` (on errors), `responseId`, `content` (the assistant content blocks); `usage` is pi's `Usage` |
 | `toolDispatch` | a tool call starts | `tool` (string: the tool name), `callId` (string), `parallel` (boolean: the calls of this reply run at the same time) | `kind` (the Responses item type), `arguments` or `input` (custom tools) | `arguments` (object); sent right after pi's `tool_execution_start` |
 | `toolOutput` | a tool call ended | `tool`, `callId`, `output` (string: the text the model reads), `tokens` (number: bytes / 4, rounded up) | | `isError` (boolean), `durationMs` (absent if the call failed before it ran); sent right after pi's `tool_execution_end` |
+| `promptAssembled` | the prompt for a turn (educodex) or a run (edupi) is built | `fragments` (array of `{kind, role, source, text, tokens, changed}`: one per prompt part, `changed` = new in this turn's request), `firstTurn` (boolean) | `baseInstructions`; fragments are the developer and user context items | fragments are the system prompt's sections (`preamble`, `tools`, `rules`, `addendum`, `project_context`, `skills`, `cwd`); `removed` (section names); sent before `agent_start` |
+| `skillsLoaded` | the skill folders were scanned | `roots` (array of `{path, scope}`), `skills` (array of `{name, description, path, scope}`), `errors` (array of `{path, message}`) | sent every turn (Codex rescans per turn) | `skills[].disableModelInvocation`, `projectTrusted` (boolean: were `<cwd>/.pi` files read); sent once per session, before its first `promptAssembled` |
 | `compactionRequest` | just before the compaction's summary request | `reason` (string), `tokensBefore` (number: the context size that triggered it), `body` (object: the exact summary request body) | `reason`: `manual`, `pre-turn` or `auto` | `reason`: `manual`, `threshold` or `overflow`; one event per summary request (a split turn has two) |
 | `compacted` | the shorter context replaced the old one | `reason` (string), `summary` (string), `tokensBefore` (number), `tokensAfter` (number: the new context's size, estimated) | `itemsBefore`, `itemsAfter`, `newHistory` (the replacement history) | `firstKeptEntryId`, `details` (`readFiles`, `modifiedFiles`), `messages` (the context rebuilt from the compaction entry) |
 
@@ -186,7 +188,7 @@ Events that mean the same thing have the same name and the same **shared fields*
 - edupi sends a `modelResponse` for failed requests too (`stopReason: "error"`), but only after a `modelRequest`.
 - edupi's summary request goes through the same provider as every request, so `modelRequest`, `streamEvent` and `modelResponse` follow its `compactionRequest`. educodex sends only `compactionRequest` for it. edupi's compaction events come between pi's own `compaction_start` and `compaction_end` events.
 
-Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `loopIteration`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
+Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `loopIteration`, and the step-mode events `paused` and `resumed`.
 
 ### Backend-only events
 

@@ -7,11 +7,13 @@ import type { StreamFn, ThinkingLevel } from "../../agent/types.ts";
 import { clampThinkingLevel } from "../../ai/models.ts";
 import { DEFAULT_MODEL_ID } from "../../ai/providers/openrouter.ts";
 import type { Model } from "../../ai/types.ts";
+import { getAgentDir } from "../config.ts";
 import { AgentSession } from "./agent-session.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { convertToLlm } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import type { Probe } from "./probe.ts";
+import { DefaultResourceLoader } from "./resource-loader.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import { createCodingTools } from "./tools/index.ts";
@@ -29,6 +31,8 @@ export interface CreateAgentSessionOptions {
   cwd?: string;
   /** edupi: the teaching extras' hooks. */
   probe?: Probe;
+  /** May files from <cwd>/.pi be loaded? Resolved by main.ts (pi: SettingsManager projectTrusted). Default: no. */
+  projectTrusted?: boolean;
 }
 
 export function createAgentSession(options: CreateAgentSessionOptions): AgentSession {
@@ -49,7 +53,12 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
   thinkingLevel = clampThinkingLevel(model, thinkingLevel);
 
   // pi's default coding tools, working in the session's directory.
-  const tools = createCodingTools(options.cwd ?? sessionManager.getCwd());
+  const cwd = options.cwd ?? sessionManager.getCwd();
+  const tools = createCodingTools(cwd);
+
+  // AGENTS.md files, skills and SYSTEM.md, read once per session.
+  const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir(), projectTrusted: options.projectTrusted ?? false });
+  resourceLoader.reload();
 
   const agent = new Agent({
     initialState: { model, thinkingLevel, tools, messages: existingSession.messages },
@@ -68,5 +77,5 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
 
-  return new AgentSession({ agent, sessionManager, settingsManager: options.settingsManager, getApiKey: options.getApiKey, probe: options.probe });
+  return new AgentSession({ agent, sessionManager, settingsManager: options.settingsManager, getApiKey: options.getApiKey, resourceLoader, probe: options.probe });
 }

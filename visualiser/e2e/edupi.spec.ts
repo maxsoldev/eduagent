@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { E2E_DIR } from "./env";
 
 // An edupi viewer through the launcher. The test entry "edupi" runs edupi with the faux provider
@@ -79,12 +79,14 @@ test("the Requests tab shows an edupi request as Chat Completions messages", asy
   await expect(items).toHaveAttribute("data-api", "openai-completions");
   await expect(items).toContainText("Chat Completions messages");
   const rows = items.getByTestId("request-item");
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(0)).toContainText("user");
-  await expect(rows.nth(0)).toContainText("Say hello.");
-  await expect(rows.nth(1)).toContainText("assistant");
-  await expect(rows.nth(1)).toContainText("Hello from edupi.");
-  await expect(rows.nth(2)).toContainText("And again?");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText("system"); // pi's prompt, replayed at the head of every request
+  await expect(rows.nth(0)).toContainText("You are an expert coding assistant operating inside pi");
+  await expect(rows.nth(1)).toContainText("user");
+  await expect(rows.nth(1)).toContainText("Say hello.");
+  await expect(rows.nth(2)).toContainText("assistant");
+  await expect(rows.nth(2)).toContainText("Hello from edupi.");
+  await expect(rows.nth(3)).toContainText("And again?");
   await expect(view).toContainText("stopReason"); // the modelResponse trace event
 
   // The timeline lists edupi's trace events with their explanations.
@@ -131,6 +133,55 @@ test("edupi's tool calls show their output and the edit's diff, in the chat and 
   await page.getByTestId("tab-Timeline").click();
   await expect(page.locator('.t-row[data-event="toolDispatch"]').first()).toContainText("Tool call");
   await expect(page.locator('.t-row[data-event="toolOutput"]').first()).toContainText("Tool output");
+});
+
+/** Writes a file, making its folders. */
+function put(path: string, text: string) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+}
+
+// The test entry "edupi-skills" runs with --approve (the project's .pi folder is trusted) and
+// backends/edupi/examples/faux/skills.json: the model reads .pi/skills/greet/SKILL.md, then answers.
+test("the Context tab shows the parts of edupi's prompt: pi's sections, AGENTS.md and the skills list", async ({ page }) => {
+  const ws = join(E2E_DIR, "ws-skills");
+  put(join(ws, "AGENTS.md"), "Answer in plain English.");
+  put(join(ws, ".pi", "skills", "greet", "SKILL.md"), "---\nname: greet\ndescription: Greets the user warmly.\n---\n\nSay hello and name the skill.\n");
+  put(join(E2E_DIR, "home-edupi-skills", "agent", "skills", "release", "SKILL.md"),
+    "---\nname: release\ndescription: Cuts a release.\ndisable-model-invocation: true\n---\n\nTag and push.\n");
+
+  await page.goto(`/?backend=edupi-skills&cwd=${encodeURIComponent(ws)}`);
+  await expect(page.getByTestId("conn")).toHaveText("open");
+  await send(page, "Please greet me.");
+  await expect(page.getByTestId("turn-sep")).toHaveCount(1);
+  await expect(page.getByTestId("agent-message").last()).toHaveText(/I followed the greet skill/);
+  // The lazy load: the model read the skill's file with pi's read tool.
+  await expect(page.getByTestId("tool-call").filter({ has: page.locator(".badge", { hasText: "read" }) })).toContainText("Say hello and name the skill.");
+
+  await page.getByTestId("tab-Context").click();
+  const items = page.getByTestId("ctx-item");
+  await expect(items.first()).toContainText("system prompt");
+  await expect(page.getByTestId("context-view")).toContainText("tool output: SKILL.md");
+  await items.first().locator(".t-head").click();
+  const parts = page.getByTestId("ctx-part");
+  await expect(parts.locator(".part-head code")).toHaveText(["preamble", "tools", "rules", "project_context", "skills", "cwd"]);
+  await expect(parts.nth(3)).toContainText("Answer in plain English.");
+  await expect(parts.nth(3)).toContainText(join(realpathSync(ws), "AGENTS.md"));
+  await expect(parts.nth(4)).toContainText("<name>greet</name>");
+  await expect(parts.nth(4)).not.toContainText("release"); // opted out of model use
+  await expect(page.getByTestId("ctx-breakdown")).toContainText("tool definitions");
+
+  // "$" lists the skills from pi's get_commands, also the one hidden from the model.
+  await page.getByTestId("composer").fill("use $");
+  await expect(page.getByTestId("skill-popup")).toContainText("$greet");
+  await expect(page.getByTestId("skill-popup")).toContainText("$release");
+  await page.getByTestId("composer").fill("");
+
+  // The timeline explains the two trace events.
+  await page.getByTestId("tab-Timeline").click();
+  await expect(page.locator('.t-row[data-event="skillsLoaded"]').first()).toContainText("Skills loaded");
+  await expect(page.locator('.t-row[data-event="skillsLoaded"]').first()).toContainText("2 skills");
+  await expect(page.locator('.t-row[data-event="promptAssembled"]').first()).toContainText("Prompt assembled");
 });
 
 // The test entry "edupi-queues" runs backends/edupi/examples/faux/queues.json: a bash call that

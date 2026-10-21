@@ -16,9 +16,13 @@ afterEach(async () => {
   await edupi?.close();
 });
 
-test("edupi's model and tool trace events match the protocol fixtures", async () => {
+test("edupi's model, tool, prompt and skill trace events match the protocol fixtures", async () => {
   const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "echo hi" } };
-  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] });
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+  const skill = join(dir, "home", "agent", "skills", "greet");
+  mkdirSync(skill, { recursive: true });
+  writeFileSync(join(skill, "SKILL.md"), "---\nname: greet\ndescription: Greets the user.\n---\n\nSay hi.\n");
+  edupi = startEdupi({ responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] }, [], { dir });
   edupi.sendLine(JSON.stringify({ type: "prompt", message: "Hi?" }));
   await edupi.until("agent_settled");
 
@@ -30,7 +34,10 @@ test("edupi's model and tool trace events match the protocol fixtures", async ()
     toolOutput: first("toolOutput"),
     streamEvent: first("streamEvent", (m) => Boolean(m.event.choices[0]?.delta?.content)), // a text chunk, as in the fixture
     modelResponse: first("modelResponse"),
+    promptAssembled: first("promptAssembled"),
+    skillsLoaded: first("skillsLoaded"),
   };
+  expect(actual.skillsLoaded!.skills.map((s: Message) => s.name)).toEqual(["greet"]);
   // Every shared event is checked: the compaction events in the next test.
   expect([...Object.keys(actual), "compactionRequest", "compacted"].sort()).toEqual(Object.keys(shared).sort());
   for (const [name, message] of Object.entries(actual)) {

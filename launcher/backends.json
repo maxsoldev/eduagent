@@ -14,7 +14,7 @@
       "protocol": "pi-rpc",
       "description": "TypeScript re-implementation of the pi harness (OpenRouter Chat Completions)",
       "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc"],
-      "capabilities": ["trace", "compaction", "queues"]
+      "capabilities": ["trace", "skills", "compaction", "queues", "contextInspector"]
     }
   ]
 }

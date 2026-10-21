@@ -1,0 +1,24 @@
+{
+  "type": "trace",
+  "name": "promptAssembled",
+  "fragments": [
+    {
+      "kind": "preamble",
+      "role": "system",
+      "source": "system-prompt.ts",
+      "text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tokens": 42,
+      "changed": true
+    },
+    {
+      "kind": "cwd",
+      "role": "system",
+      "source": "process cwd",
+      "text": "<cwd>\n/private/tmp/edupi/ws\n</cwd>",
+      "tokens": 9,
+      "changed": true
+    }
+  ],
+  "removed": [],
+  "firstTurn": true
+}

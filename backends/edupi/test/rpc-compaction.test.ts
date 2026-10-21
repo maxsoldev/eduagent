@@ -15,13 +15,17 @@ afterEach(async () => {
 
 const FIXTURES = new URL("./fixtures/pi/", import.meta.url).pathname;
 
-/** A test dir whose edupi home has this settings.json. */
-function dirWithSettings(settings: object): string {
+/** A test dir whose edupi home has this settings.json (and this SYSTEM.md, if given). */
+function dirWithSettings(settings: object, systemPrompt?: string): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
   mkdirSync(join(dir, "home", "agent"), { recursive: true });
   writeFileSync(join(dir, "home", "agent", "settings.json"), JSON.stringify(settings));
+  if (systemPrompt) writeFileSync(join(dir, "home", "agent", "SYSTEM.md"), systemPrompt);
   return dir;
 }
+
+/** The threshold tests use a tiny context window. A one-line SYSTEM.md (it replaces pi's preamble, tools and rules) keeps the prompt small. */
+const SHORT_PROMPT = "Be brief.";
 
 async function prompt(message: string) {
   const settled = edupi.seen.filter((m) => m.type === "agent_settled").length;
@@ -84,14 +88,17 @@ test("manual compaction with custom instructions: pi's events, prompt and compac
     type: "compaction", id: expect.any(String), parentId: file.at(-2)!.id, timestamp: expect.any(String),
     summary: "## Goal\nFIRST SUMMARY", firstKeptEntryId: q2.id, tokensBefore: lastUsage.totalTokens,
     details: { readFiles: [], modifiedFiles: [] }, usage: expect.any(Object),
-    // The current system message: here only pi's tools (edupi has no system prompt yet).
-    systemMessage: { role: "system", content: "", toolsAdded: expect.any(Array), timestamp: Date.parse(compaction.timestamp) },
+    // The current system message: the prompt's sections and pi's tools, replayed from the transcript.
+    systemMessage: { role: "system", content: "", sections: expect.objectContaining({ preamble: expect.any(String), cwd: expect.any(String) }),
+      toolsAdded: expect.any(Array), timestamp: expect.any(Number) },
   });
   expect(response.data.firstKeptEntryId).toBe(q2.id);
 
-  // The next request: the summary as a user message, then the kept messages, then the new prompt.
+  // The next request: the system prompt (from the entry's system message), the summary as a user
+  // message, then the kept messages, then the new prompt.
   await prompt("q3");
   expect(edupi.requests()[3].body.messages).toEqual([
+    edupi.requests()[0].body.messages[0],
     summaryMessage("## Goal\nFIRST SUMMARY"),
     user("q2"),
     { role: "assistant", content: "Second answer with some words." },
@@ -108,6 +115,7 @@ test("compaction follows real pi: a split turn, then the update prompt with the 
     top_provider: { context_length: 272000, max_completion_tokens: 128000 }, supported_parameters: ["tools", "reasoning"] }];
   edupi = startEdupi({ models, responses: ["First answer with some words.", "Second answer with some words.", "## Goal\nFIRST SUMMARY",
     "Third answer.", "## Goal\nSECOND SUMMARY", "Fourth.", "Fourth."] }, [], { dir: dirWithSettings({ compaction: { keepRecentTokens: 10 } }) });
+  const dir = edupi.dir;
   await edupi.command("get_state");
   await prompt("q1");
   await prompt("q2");
@@ -135,9 +143,12 @@ test("compaction follows real pi: a split turn, then the update prompt with the 
   expect(summarize(ours)).toEqual(summarize(piEntries));
   expect(summarize(ours).map((c) => c.kept)).toEqual(["First answer with some words.", "Second answer with some words."]);
 
-  // The q4 request is pi's, without pi's system prompt (edupi has none yet).
+  // The q4 request is pi's. Only the system prompt differs: edupi has no <docs> section, and its cwd is this test's.
   const q4 = JSON.parse(readFileSync(join(FIXTURES, "session-compact.q4-request.json"), "utf8")).messages;
-  expect(requests[6]).toEqual(q4.slice(1));
+  expect(requests[6]).toEqual([
+    { role: "developer", content: q4[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace("/private/tmp/pi-try/cwd", dir) },
+    ...q4.slice(1),
+  ]);
 });
 
 test("compact on a session with nothing to summarise ends with pi's error", async () => {
@@ -159,10 +170,10 @@ test("threshold: after a run whose context passed contextWindow - reserveTokens,
   const long = "x".repeat(400); // 100 estimated tokens
   // Window 200, reserve 100: compact above 100 tokens. keepRecentTokens 101 keeps q2 (1) and its answer (100).
   edupi = startEdupi({ models: tinyModel(200), responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."] },
-    [], { dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 101 } }) });
+    [], { dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 101 } }, SHORT_PROMPT) });
   await edupi.command("get_state");
   await prompt("q1");
-  expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // 18 tokens: below the threshold
+  expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // a few dozen tokens: below the threshold
 
   const start = edupi.seen.length;
   await prompt("q2");
@@ -180,7 +191,7 @@ test("threshold: after a run whose context passed contextWindow - reserveTokens,
   // reply's usage predates it, so the check before the prompt does not compact again).
   await prompt("q3");
   expect(edupi.requests()[3].body.messages).toEqual([
-    summaryMessage("## Goal\nTHRESHOLD SUMMARY"), user("q2"), { role: "assistant", content: long }, user("q3"),
+    edupi.requests()[0].body.messages[0], summaryMessage("## Goal\nTHRESHOLD SUMMARY"), user("q2"), { role: "assistant", content: long }, user("q3"),
   ]);
 });
 
@@ -213,7 +224,7 @@ test("overflow: the provider refuses the context; edupi drops the failed reply, 
   // The retry is rebuilt from the compaction: the summary, then q3. The failed reply is not in it.
   const requests = edupi.requests().map((r) => r.body.messages);
   expect(requests[3][1].content[0].text).toMatch(/^<conversation>\n\[User\]: q1\n\n\[Assistant\]: First answer\.\n\n\[User\]: q2\n\n\[Assistant\]: Second answer\.\n<\/conversation>/);
-  expect(requests[4]).toEqual([summaryMessage("## Goal\nOVERFLOW SUMMARY"), user("q3")]);
+  expect(requests[4]).toEqual([requests[0][0], summaryMessage("## Goal\nOVERFLOW SUMMARY"), user("q3")]);
 
   // The session file keeps the failed reply; a context_edit entry leaves it out of the context.
   const file = entries();
@@ -265,7 +276,7 @@ test("threshold inside a run: after tool results fill the context, edupi compact
   // Window 200, reserve 100: compact above 100 tokens. The tool result alone is estimated at 100.
   edupi = startEdupi({ models: tinyModel(200), responses: ["First answer.", { content: [bash], stopReason: "toolUse" },
     "## Goal\nHISTORY", "## Original Request\nPREFIX", "Done.", "## Goal\nAFTER", "## Original Request\nAFTER"] },
-  [], { dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 50 } }) });
+  [], { dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 50 } }, SHORT_PROMPT) });
   await edupi.command("get_state");
   await prompt("q1");
   const start = edupi.seen.length;
@@ -279,9 +290,10 @@ test("threshold inside a run: after tool results fill the context, edupi compact
   expect(events[firstCompaction]).toEqual({ type: "compaction_start", reason: "threshold" });
   expect(types.filter((t) => t === "agent_start")).toHaveLength(1);
 
-  // The model call after it: the summary, then the kept tool call and its result (no q1, no first answer).
+  // The model call after it: the prompt, the summary, then the kept tool call and its result (no q1, no first answer).
   const afterCompaction = edupi.requests()[4].body.messages;
-  expect(afterCompaction[0].content[0].text).toMatch(/^The conversation history before this point was compacted/);
-  expect(afterCompaction.map((m: Message) => m.role)).toEqual(["user", "assistant", "tool"]);
-  expect(afterCompaction[2].content).toBe("x".repeat(400));
+  expect(afterCompaction[0]).toEqual({ role: "system", content: `Be brief.\n\n<cwd>\n${edupi.dir}\n</cwd>` });
+  expect(afterCompaction[1].content[0].text).toMatch(/^The conversation history before this point was compacted/);
+  expect(afterCompaction.map((m: Message) => m.role)).toEqual(["system", "user", "assistant", "tool"]);
+  expect(afterCompaction[3].content).toBe("x".repeat(400));
 });

@@ -8,6 +8,7 @@ export interface Args {
   session?: string; // a session file to open (pi also takes a partial session id)
   continue?: boolean; // open the newest session of this cwd
   noSession?: boolean; // keep the session in memory only
+  projectTrustOverride?: boolean; // --approve / --no-approve: trust the project's .pi folder or not
   offline?: boolean; // do not read OpenRouter's model list (pi: --offline, also PI_OFFLINE)
   faux?: string; // faux script file: answer from scripted replies instead of OpenRouter
   fauxLog?: string; // append every request the faux provider gets to this JSONL file
@@ -30,6 +31,10 @@ export function parseArgs(args: string[]): Args {
       result.continue = true;
     } else if (arg === "--no-session") {
       result.noSession = true;
+    } else if (arg === "--approve" || arg === "-a") {
+      result.projectTrustOverride = true;
+    } else if (arg === "--no-approve" || arg === "-na") {
+      result.projectTrustOverride = false;
     } else if (arg === "--offline") {
       result.offline = true;
     } else if (arg === "--faux" && i + 1 < args.length) {
