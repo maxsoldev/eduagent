@@ -170,3 +170,23 @@ test("SIGHUP exits with 129 and SIGTERM with 143, as pi's RPC mode does", async 
 		expect((await run.done).code).toBe(expected);
 	}
 });
+
+test("--session works in the cwd of the file's header: its AGENTS.md and cwd go into the prompt", async () => {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
+	const project = join(dir, "project");
+	put(join(project, "AGENTS.md"), "Project rules from the header's cwd.");
+	const file = join(dir, "sessions", "s.jsonl");
+	const header = {
+		type: "session",
+		version: 3,
+		id: "01a15f55-0000-7000-8000-000000000001",
+		timestamp: new Date().toISOString(),
+		cwd: project,
+	};
+	put(file, `${JSON.stringify(header)}\n`);
+	edupi = startEdupi({ responses: ["Hi."] }, ["--session", file], { dir, cwd: join(dir, "elsewhere") });
+	await prompt("hello");
+	const system = edupi.requests()[0].body.messages[0].content as string;
+	expect(system).toContain("Project rules from the header's cwd.");
+	expect(system).toContain(`<cwd>\n${project}\n</cwd>`);
+});

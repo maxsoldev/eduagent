@@ -1,7 +1,7 @@
 // Mirrors pi packages/coding-agent/src/main.ts (pinned 16f5f0af4): parse the arguments, build
 // the model, the Agent and the AgentSession, then run the chosen mode. edupi has one mode, RPC
 // (pi's `pi --mode rpc`), because the launcher talks to every backend over stdio.
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import type { StreamFn } from "../agent/types.ts";
 import { streamSimple } from "../ai/api/openai-completions.ts";
 import { fauxProvider, loadFauxScript } from "../ai/providers/faux.ts";
@@ -46,7 +46,10 @@ export async function main(argv: string[]): Promise<void> {
 	const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
 	const settingsManager = SettingsManager.create();
-	const cwd = process.cwd();
+	const sessionManager = createSessionManager(parsed, process.cwd());
+	// As pi: the runtime works in the session's cwd (an opened file's header). pi exits if that folder
+	// is gone; edupi then stays in the current folder, so session files from other machines open.
+	const cwd = existsSync(sessionManager.getCwd()) ? sessionManager.getCwd() : process.cwd();
 	// RPC mode cannot ask, so <cwd>/.pi is trusted only with --approve or a saved decision.
 	const projectTrusted = resolveProjectTrusted({
 		cwd,
@@ -65,7 +68,7 @@ export async function main(argv: string[]): Promise<void> {
 			probe: tracer,
 			projectTrusted,
 		});
-	const session = createRuntime(createSessionManager(parsed, cwd));
+	const session = createRuntime(sessionManager);
 	// Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
 	await runRpcMode(new AgentSessionRuntime(session, cwd, createRuntime), {
 		connect: (output) => tracer.connect(output),
