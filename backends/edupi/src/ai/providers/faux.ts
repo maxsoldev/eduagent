@@ -43,6 +43,13 @@ export function fauxAssistantMessage(content: string | FauxContentBlock | FauxCo
   };
 }
 
+/** A scripted HTTP error, e.g. a context overflow: `{error: {status: 400, message: "..."}}`. */
+export interface FauxError {
+  error: { status?: number; message: string };
+}
+
+export type FauxResponse = AssistantMessage | FauxError;
+
 export interface RegisterFauxProviderOptions {
   tokensPerSecond?: number; // delay between chunks; unset = as fast as possible
   tokenSize?: { min?: number; max?: number }; // chunk size in tokens (4 characters each)
@@ -53,8 +60,8 @@ export interface RegisterFauxProviderOptions {
 export interface FauxProvider {
   fetch: typeof globalThis.fetch;
   state: { callCount: number };
-  setResponses(responses: AssistantMessage[]): void;
-  appendResponses(responses: AssistantMessage[]): void;
+  setResponses(responses: FauxResponse[]): void;
+  appendResponses(responses: FauxResponse[]): void;
   getPendingResponseCount(): number;
 }
 
@@ -84,7 +91,7 @@ const FINISH_REASONS: Partial<Record<StopReason, string>> = { stop: "stop", leng
 export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxProvider {
   const minTokenSize = Math.max(1, Math.min(options.tokenSize?.min ?? DEFAULT_MIN_TOKEN_SIZE, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE));
   const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);
-  let pendingResponses: AssistantMessage[] = [];
+  let pendingResponses: FauxResponse[] = [];
   const state = { callCount: 0 };
 
   const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -96,6 +103,11 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
     const message = pendingResponses.shift();
     if (!message) {
       return Response.json({ error: { message: "No more faux responses queued" } }, { status: 500 });
+    }
+    if ("error" in message) {
+      // The error body OpenAI-compatible endpoints send; OpenRouter adds the HTTP status as code.
+      const status = message.error.status ?? 400;
+      return Response.json({ error: { message: message.error.message, code: status } }, { status });
     }
 
     // The SSE chunks a Chat Completions endpoint sends for this message.
@@ -164,14 +176,18 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 
 /**
  * Reads a faux script file: `{"models"?: [...], "tokensPerSecond"?: n, "responses": [...]}`.
- * `models` is the GET /models list (OpenRouter's fields); tokensPerSecond slows the stream down. A response is a string (one text reply) or `{"content": string |
- * blocks, "stopReason"?: ...}`, the arguments of fauxAssistantMessage.
- * A block is `{"type": "text", "text"}`, `{"type": "thinking", "thinking"}` or
- * `{"type": "toolCall", "id", "name", "arguments"}`.
+ * `models` is the GET /models list (OpenRouter's fields); tokensPerSecond slows the stream down.
+ * A response is a string (one text reply), `{"content": string | blocks, "stopReason"?: ...}`
+ * (the arguments of fauxAssistantMessage), or `{"error": {"status"?, "message"}}`, an HTTP error
+ * (a context overflow, for example). A block is `{"type": "text", "text"}`,
+ * `{"type": "thinking", "thinking"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
  */
-export function loadFauxScript(path: string): { models: OpenRouterModel[]; tokensPerSecond?: number; responses: AssistantMessage[] } {
+export function loadFauxScript(path: string): { models: OpenRouterModel[]; tokensPerSecond?: number; responses: FauxResponse[] } {
   const script = JSON.parse(readFileSync(path, "utf8"));
-  const responses = script.responses.map((step: string | { content: string | FauxContentBlock[]; stopReason?: StopReason }) =>
-    typeof step === "string" ? fauxAssistantMessage(step) : fauxAssistantMessage(step.content, { stopReason: step.stopReason }));
+  type Step = string | FauxError | { content: string | FauxContentBlock[]; stopReason?: StopReason };
+  const responses = script.responses.map((step: Step): FauxResponse =>
+    typeof step === "string" ? fauxAssistantMessage(step)
+      : "error" in step ? step
+      : fauxAssistantMessage(step.content, { stopReason: step.stopReason }));
   return { models: script.models ?? [], tokensPerSecond: script.tokensPerSecond, responses };
 }

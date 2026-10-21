@@ -229,3 +229,14 @@ test("reasoning streams as thinking events and goes back to the model in the rea
   ]);
   expect(edupi.requests()[1].body.messages.at(-2)).toEqual({ role: "assistant", content: "Hello!", reasoning: "The user greets me. I greet back." });
 });
+
+test("compact during a run aborts the run first, as pi does", async () => {
+  edupi = startEdupi({ responses: [slowBash] });
+  edupi.sendLine(JSON.stringify({ type: "prompt", message: "run slow" }));
+  await edupi.until("tool_execution_start");
+  const reply = await edupi.command("compact");
+  const settled = edupi.seen.findIndex((m) => m.type === "agent_settled");
+  expect(edupi.seen[settled]).toEqual({ type: "agent_settled", aborted: true });
+  expect(settled).toBeLessThan(edupi.seen.findIndex((m) => m.type === "compaction_start"));
+  expect(reply.command).toBe("compact"); // here an error: the short session has nothing to compact
+});

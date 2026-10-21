@@ -13,6 +13,7 @@ import { convertToLlm } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import type { Probe } from "./probe.ts";
 import type { SessionManager } from "./session-manager.ts";
+import type { SettingsManager } from "./settings-manager.ts";
 import { createCodingTools } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
@@ -23,6 +24,7 @@ export interface CreateAgentSessionOptions {
   modelRegistry: ModelRegistry;
   streamFn: StreamFn;
   getApiKey: (provider: string) => string | undefined;
+  settingsManager: SettingsManager;
   /** Where the tools work. Default: the session's cwd. */
   cwd?: string;
   /** edupi: the teaching extras' hooks. */
@@ -66,5 +68,5 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
 
-  return new AgentSession({ agent, sessionManager, getApiKey: options.getApiKey });
+  return new AgentSession({ agent, sessionManager, settingsManager: options.settingsManager, getApiKey: options.getApiKey, probe: options.probe });
 }

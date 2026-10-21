@@ -124,6 +124,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
         return success(id, "get_messages", { messages: session.messages });
       }
 
+      case "compact": {
+        const result = await session.compact(command.customInstructions);
+        return success(id, "compact", result);
+      }
+
       default: {
         const unknownCommand = command as { type: string };
         return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);

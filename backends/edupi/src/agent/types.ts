@@ -65,6 +65,11 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
   /** Follow-up messages, polled only when the agent would stop. */
   getFollowUpMessages?: () => Promise<AgentMessage[]>;
   probe?: AgentProbe;
+  /**
+   * Called after a turn when the loop goes on, just before the next turn starts. A returned
+   * context replaces the loop's context (the coding agent compacts here).
+   */
+  prepareNextTurn?: (turn: { context: AgentContext }) => Promise<{ context?: AgentContext } | undefined>;
 }
 
 export interface AgentState {

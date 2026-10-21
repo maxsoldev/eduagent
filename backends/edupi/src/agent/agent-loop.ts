@@ -44,6 +44,32 @@ export async function runAgentLoop(
 }
 
 /**
+ * Continues from the current context without a new message, e.g. to retry after the context was
+ * compacted. The last message must not be an assistant message: the model answers what is there.
+ */
+export async function runAgentLoopContinue(
+  context: AgentContext,
+  config: AgentLoopConfig,
+  emit: AgentEventSink,
+  signal: AbortSignal | undefined,
+  streamFn: StreamFn,
+): Promise<AgentMessage[]> {
+  if (context.messages.length === 0) throw new Error("Cannot continue: no messages in context");
+  if (context.messages[context.messages.length - 1].role === "assistant") {
+    throw new Error("Cannot continue from message role: assistant");
+  }
+
+  const newMessages: AgentMessage[] = [];
+  const currentContext: AgentContext = { ...context };
+
+  await emit({ type: "agent_start" });
+  await emit({ type: "turn_start" });
+
+  await runLoop(currentContext, newMessages, config, signal, emit, streamFn);
+  return newMessages;
+}
+
+/**
  * The loop shared by every run. Inner loop: call the model; if it called tools, run them and call
  * the model again. Steering messages go in before the next model call (drain points A, B, C).
  * Outer loop: when the agent would stop, queued follow-up messages start another inner loop.
@@ -67,8 +93,11 @@ async function runLoop(
     // Inner loop: tool calls and steering messages.
     while (hasMoreToolCalls || pendingMessages.length > 0) {
       if (!firstTurn) {
-        // Drain point B: poll again only if the last poll gave nothing, else one-at-a-time mode
-        // would put two messages into this turn.
+        // The session may compact here, before the next model call (pi's prepareNextTurn).
+        const nextTurn = await config.prepareNextTurn?.({ context: currentContext });
+        currentContext = nextTurn?.context ?? currentContext;
+        // Drain point B: preparation can take long (compaction), so pick up steering sent meanwhile.
+        // Poll only if the last poll gave nothing, else one-at-a-time mode would put two messages in this turn.
         if (pendingMessages.length === 0) pendingMessages = (await config.getSteeringMessages?.()) || [];
         await emit({ type: "turn_start" });
       }

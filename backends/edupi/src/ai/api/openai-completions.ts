@@ -91,7 +91,9 @@ export function stream(model: Model, context: TranscriptContext, options?: OpenA
       const apiKey = getClientApiKey(model.provider, options?.apiKey);
       const compat = getCompat(model);
       const client = createClient(model, apiKey, options?.headers, options?.fetch, options?.sessionId);
-      const params = buildParams(model, context, options, compat);
+      let params = buildParams(model, context, options, compat);
+      const nextParams = await options?.onPayload?.(params, model);
+      if (nextParams !== undefined) params = nextParams as ChatCompletionCreateParamsStreaming;
       requested = true;
       await options?.probe?.modelRequest?.({ api: model.api, url: `${model.baseUrl}/chat/completions`, body: params }, options?.sessionId);
       const openaiStream = await client.chat.completions.create(params, {

@@ -3,7 +3,7 @@
 // events, then passes each event to its listeners and awaits them in order. It also holds the
 // steering and follow-up queues that the loop drains while a run is active.
 import type { ImageContent, Message, Model, TextContent } from "../ai/types.ts";
-import { runAgentLoop } from "./agent-loop.ts";
+import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import type {
   AgentContext,
   AgentEvent,
@@ -85,6 +85,8 @@ export class Agent {
   public sessionId?: string;
   public toolExecution: ToolExecutionMode;
   public probe?: AgentProbe;
+  /** Before each later turn of a run; the session sets it (pi: prepareNextTurnWithContext). */
+  public prepareNextTurn?: AgentLoopConfig["prepareNextTurn"];
 
   constructor(options: AgentOptions) {
     this._state = {
@@ -167,6 +169,36 @@ export class Agent {
     await this.runPromptMessages(this.normalizePromptInput(input, images));
   }
 
+  /**
+   * Runs the loop again from the current messages, without a new prompt (after an overflow, the
+   * session compacts and continues). After an assistant reply it starts from the queued messages instead.
+   */
+  async continue(): Promise<void> {
+    if (this.activeRun) throw new Error("Agent is already processing. Wait for completion before continuing.");
+    const lastMessage = this._state.messages[this._state.messages.length - 1];
+    if (!lastMessage || this._state.messages.every((message) => message.role === "system")) {
+      throw new Error("No messages to continue from");
+    }
+    if (lastMessage.role === "assistant") {
+      // The drained steering message is this run's prompt, so the loop must not poll steering again at once.
+      const queuedSteering = this.steeringQueue.drain();
+      if (queuedSteering.length > 0) {
+        await this.runPromptMessages(queuedSteering, { skipInitialSteeringPoll: true });
+        return;
+      }
+      const queuedFollowUps = this.followUpQueue.drain();
+      if (queuedFollowUps.length > 0) {
+        await this.runPromptMessages(queuedFollowUps);
+        return;
+      }
+      throw new Error("Cannot continue from message role: assistant");
+    }
+    await this.runWithLifecycle(async (signal) => {
+      await runAgentLoopContinue(this.createContextSnapshot(), this.createLoopConfig(),
+        (event) => this.processEvents(event), signal, this.streamFunction);
+    });
+  }
+
   private normalizePromptInput(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]): AgentMessage[] {
     if (Array.isArray(input)) return input;
     if (typeof input !== "string") return [input];
@@ -174,9 +206,9 @@ export class Agent {
     return [{ role: "user", content, timestamp: Date.now() }];
   }
 
-  private async runPromptMessages(messages: AgentMessage[]): Promise<void> {
+  private async runPromptMessages(messages: AgentMessage[], options: { skipInitialSteeringPoll?: boolean } = {}): Promise<void> {
     await this.runWithLifecycle(async (signal) => {
-      await runAgentLoop(messages, this.createContextSnapshot(), this.createLoopConfig(),
+      await runAgentLoop(messages, this.createContextSnapshot(), this.createLoopConfig(options),
         (event) => this.processEvents(event), signal, this.streamFunction);
     });
   }
@@ -185,7 +217,8 @@ export class Agent {
     return { messages: this._state.messages.slice(), tools: this._state.tools.slice() };
   }
 
-  private createLoopConfig(): AgentLoopConfig {
+  private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
+    let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
     return {
       model: this._state.model,
       reasoning: this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel,
@@ -193,9 +226,16 @@ export class Agent {
       convertToLlm: this.convertToLlm,
       getApiKey: this.getApiKey,
       toolExecution: this.toolExecution,
-      getSteeringMessages: async () => this.steeringQueue.drain(),
+      getSteeringMessages: async () => {
+        if (skipInitialSteeringPoll) {
+          skipInitialSteeringPoll = false;
+          return [];
+        }
+        return this.steeringQueue.drain();
+      },
       getFollowUpMessages: async () => this.followUpQueue.drain(),
       probe: this.probe,
+      prepareNextTurn: this.prepareNextTurn,
     };
   }
 

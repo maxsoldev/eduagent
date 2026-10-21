@@ -1,8 +1,9 @@
-// Mirrors pi packages/ai/src/utils/transcript.ts (pinned 16f5f0af4), the tool part: in pi the
-// tools the model may call are declared inside the transcript, as toolsAdded and toolsRemoved on
-// system messages. Replaying those changes in order gives the current tool set.
-// edupi leaves out the system-prompt replay helpers and the per-API tool placement.
-import type { Tool, ToolReference } from "../types.ts";
+// Mirrors pi packages/ai/src/utils/transcript.ts and text.ts (pinned 16f5f0af4). In pi the tools
+// the model may call are declared inside the transcript, as toolsAdded and toolsRemoved on system
+// messages. Replaying those changes in order gives the current tool set; replaying the system
+// messages gives the current system message (a compaction entry stores it).
+// edupi leaves out the per-API tool placement.
+import type { ImageContent, SystemMessage, TextContent, ThinkingContent, Tool, ToolCall, ToolReference } from "../types.ts";
 
 type TranscriptMessages = readonly { role: string }[];
 
@@ -57,5 +58,46 @@ export function getToolStateChanges(previous: readonly Tool[], current: readonly
         return currentTool === undefined || !declarationsEqual(tool, currentTool);
       })
       .map((tool) => ({ name: tool.name })),
+  };
+}
+
+type Content = TextContent | ImageContent | ThinkingContent | ToolCall;
+
+/** The text blocks of some content, joined (pi's utils/text.ts). */
+export function contentText(content: string | readonly Content[], separator = "\n"): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((block): block is TextContent => block.type === "text")
+    .map((block) => block.text)
+    .join(separator);
+}
+
+/**
+ * Replays every system message into one: later content is appended, sections are patched by
+ * name (null removes one), tools come from getCurrentTools. Undefined if there is none.
+ */
+export function getCurrentSystemMessage(messages: TranscriptMessages): SystemMessage | undefined {
+  const content: string[] = [];
+  const sections = new Map<string, string>();
+  let timestamp: number | undefined;
+  for (const message of messages) {
+    if (message.role !== "system") continue;
+    const system = message as SystemMessage;
+    timestamp ??= system.timestamp;
+    const text = contentText(system.content);
+    if (text.length > 0) content.push(text);
+    for (const [name, value] of Object.entries(system.sections ?? {})) {
+      if (value === null) sections.delete(name);
+      else sections.set(name, value);
+    }
+  }
+  const tools = getCurrentTools(messages);
+  if (timestamp === undefined && tools.length === 0) return undefined;
+  return {
+    role: "system",
+    content: content.join("\n\n"),
+    ...(sections.size > 0 ? { sections: Object.fromEntries(sections) } : {}),
+    ...(tools.length > 0 ? { toolsAdded: tools } : {}),
+    timestamp: timestamp ?? 0,
   };
 }

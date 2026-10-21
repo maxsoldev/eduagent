@@ -28,8 +28,9 @@ The `parentId` links make the entries a **tree**. An entry is appended as a chil
 | `model_change` | `provider` and `modelId` |
 | `thinking_level_change` | `thinkingLevel` |
 | `compaction` | `summary`, `firstKeptEntryId`, `tokensBefore`, and the `systemMessage` at that point (chapter 07) |
+| `context_edit` | `targetId` and `replacement`; `null` leaves the target entry out of the context (chapter 07) |
 
-Entry ids are 8 hex characters, checked for collisions in the file. pi has more entry types (labels, branch summaries, extension data, context edits). edupi reads and writes the ones above.
+Entry ids are 8 hex characters, checked for collisions in the file. pi has more entry types (labels, branch summaries, extension data). edupi reads and writes the ones above, plus `context_edit` (chapter 07).
 
 ### The context is rebuilt from the entries
 
@@ -159,13 +160,12 @@ The Codex side: [`RolloutRecorder`](https://github.com/openai/codex/blob/1c7c43c
 ## Where edupi is simpler
 
 - **One linear branch.** No `/tree`, fork, clone, labels or branch summaries. The reader still follows `parentId` from the last entry, so a branched pi file opens on its newest branch.
-- **Fewer entry types.** No `custom`, `custom_message`, `label`, `session_info`, `usage` or `context_edit` entries. A pi file that has them opens, but those entries add nothing to the context.
+- **Fewer entry types.** No `custom`, `custom_message`, `label`, `session_info` or `usage` entries. A pi file that has them opens, but those entries add nothing to the context. edupi writes `context_edit` entries only to omit a failed overflow attempt (chapter 07).
 - **Version 3 only.** pi migrates older files (v1 without ids, v2) and rewrites them. edupi refuses them.
 - **`--session` takes a path only.** pi also takes a partial session id and searches the folders, and has `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`).
 - **Models from OpenRouter only.** An opened session's model is restored only if its provider is `openrouter`; otherwise edupi uses its default model.
 - **`new_session` waits** for an active run to end, because edupi has no abort yet. pi aborts the run first.
 - **Simpler ids and reads.** `uuidv7` leaves out pi's counter for ids made in the same millisecond. Files are read whole, without pi's streaming reader and header scan limits.
-- **No compaction yet.** edupi reads compaction entries but does not write them; chapter 07 adds that.
 
 ## Try it
 

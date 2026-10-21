@@ -67,7 +67,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
     // Both reply "queued" at once; queue_update events show the queues, and the message starts later.
     async steer(text) { await rpc.command("steer", { message: text }); },
     async followUp(text) { await rpc.command("follow_up", { message: text }); },
-    async compact() { await rpc.command("compact"); },
+    async compact(customInstructions) { await rpc.command("compact", customInstructions ? { customInstructions } : {}); },
     async listSkills(): Promise<SkillInfo[]> {
       const { commands } = await rpc.command("get_commands");
       return commands.filter((c: Json) => c.source === "skill").map((c: Json) => ({
