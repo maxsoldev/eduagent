@@ -19,6 +19,29 @@ Every chapter uses the same blocks:
 | **Try it** | Something to run: the CLI, the web UI, or offline with `--fake-model` |
 | **Further reading** | Articles, docs, posts |
 
+## The web UI
+
+educodex itself speaks only stdio. To use the web UI (the visualiser), start the launcher at the repo root. It serves the UI and starts one educodex process per browser tab:
+
+```bash
+(cd ../.. && pnpm install && pnpm build)   # once: build the visualiser
+(cd ../.. && pnpm eduagent)                # then open http://127.0.0.1:8765 and pick educodex
+```
+
+The directory field in the picker is educodex's working directory (`--cwd`). It is prefilled with the launcher's directory; set it with `pnpm eduagent --cwd DIR`. The `educodex` entry uses a real model and needs `OPENROUTER_API_KEY` in the repo-root `.env`.
+
+**Offline, or with other flags.** Add your own entries to `launcher/backends.local.json` (git-ignored, same format as [`launcher/backends.json`](../../../launcher/backends.json)) and restart the launcher. Each entry is an `app-server` command line, so any educodex flag works there. The process runs in the viewer's directory, so use `${REPO}` for paths. The chapters call this offline entry **educodex-demo**:
+
+```json
+{ "backends": [
+  { "name": "educodex-demo", "harness": "Codex", "protocol": "codex-app-server",
+    "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server",
+                "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"] }
+] }
+```
+
+For `--mcp`, `--memories` or `--approval never`, add an entry with those flags in `command`.
+
 **Pinned Codex version:** [`1c7c43cd85`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs) (2026-10-07). Codex changes weekly, so links point to this commit and line numbers stay valid.
 
 ## Chapters

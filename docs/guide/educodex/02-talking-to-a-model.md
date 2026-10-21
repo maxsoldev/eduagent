@@ -189,9 +189,9 @@ uv run educodex exec -v "What is 2+2? Answer with one word."
 
 Check that `input[0]` is the 18k-character base prompt with role `developer`.
 
-In the web UI, run `uv run educodex app-server` and open http://127.0.0.1:8765. Send a message, then open the **Requests** tab. It shows each request body and the response (output items, usage, event counts). With two or more requests, it also tells you whether earlier items stayed unchanged.
+In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**), send a message, then open the **Requests** tab. It shows each request body and the response (output items, usage, event counts). With two or more requests, it also tells you whether earlier items stayed unchanged.
 
-Offline, add `--fake-model examples/fake/demo.json` to `exec` or `app-server` (no API key needed). To see what a raw SSE stream looks like, print the events the fake model sends:
+Offline (no API key needed), add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the web UI. To see what a raw SSE stream looks like, print the events the fake model sends:
 
 ```bash
 uv run python -c "import json; from educodex.testing.fake_model import sse_events; [print('data:', json.dumps(e)) for e in sse_events([{'type': 'message', 'text': 'forty-two!'}])]"

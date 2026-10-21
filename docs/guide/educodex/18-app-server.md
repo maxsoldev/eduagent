@@ -33,9 +33,12 @@ The App Server is two things: a **protocol**, and a **long-lived process** that 
 
 **Both sides can send requests.** This is the important part. When the agent needs approval, the *server* sends a request to the *client* and the turn waits for the answer.
 
-**Framing:**
-- **stdio:** JSONL, one JSON object per line. This is what IDEs and the desktop app use: they start the App Server as a child process.
-- **WebSocket:** one JSON message per text frame.
+**Transports.** The same messages can travel in three ways. Codex picks one with `codex app-server --listen URL`:
+- **`stdio://` (the default):** JSONL, one JSON object per line on stdin and stdout. This is what IDEs and the desktop app use: they start the App Server as a child process, and the process ends when its stdin closes.
+- **`ws://IP:PORT`:** a WebSocket listener, with one JSON message per text frame. Many clients can connect to one long-lived server.
+- **`unix://` or `unix://PATH`:** the same WebSocket protocol, but over a Unix domain socket (a file) instead of a TCP port. Codex uses it as a local control socket for a shared background server. Only processes that can open the file can connect.
+
+educodex has only stdio. In the visualiser, the launcher starts one educodex process per viewer and passes WebSocket frames to its stdin and stdout (chapter 19).
 
 ### The handshake
 
@@ -57,7 +60,7 @@ This is captured from `educodex app-server --listen stdio://` with a fake model 
 
 ```text
 >> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"demo","version":"0"}}}
-<< {"id":1,"result":{"userAgent":"educodex/0.1.0","codexHome":"/Users/you/.educodex","platformFamily":"unix","platformOs":"darwin"}}
+<< {"id":1,"result":{"userAgent":"educodex/0.1.0","codexHome":"/Users/you/.eduagent/.educodex","platformFamily":"unix","platformOs":"darwin"}}
 >> {"method":"initialized"}
 >> {"id":2,"method":"thread/start","params":{}}
 << {"method":"thread/started","params":{"thread":{"id":"04da…","model":"openai/gpt-6-luna","cwd":"/private/tmp/edx-demo/ws","status":"idle",…}}}
@@ -98,7 +101,7 @@ The server is three files in [`app_server/`](../../../backends/educodex/src/educ
 |---|---|
 | [`connection.py`](../../../backends/educodex/src/educodex/app_server/connection.py) | One client: send messages, apply opt-outs, send server→client requests and match their responses |
 | [`processor.py`](../../../backends/educodex/src/educodex/app_server/processor.py) | Method table; turns requests into session calls and core events into notifications |
-| [`main.py`](../../../backends/educodex/src/educodex/app_server/main.py) | Transports: WebSocket (and the built web UI) or stdio |
+| [`main.py`](../../../backends/educodex/src/educodex/app_server/main.py) | The stdio transport: one JSON message per line on stdin/stdout |
 
 **Server→client requests** are a future stored by id. When a message has no `method`, it is a response, and `resolve` completes the future:
 
@@ -117,7 +120,15 @@ async def request(self, method: str, params: dict[str, Any]) -> Any:
 
 The `finally` also runs when the turn is interrupted: cancelling the turn cancels the `await`, and the client still learns that the request is gone. Only the interrupted thread's request is affected. When a connection closes, `cancel_pending` answers its open requests with `cancel`.
 
-The transports handle **every message in its own task**. Otherwise a turn waiting for approval would block the reader that has to receive that approval.
+The stdio transport handles **every line in its own task**. Otherwise a turn waiting for approval would block the reader that has to receive that approval:
+
+```python
+while line := await reader.readline():
+    ...
+    task = asyncio.create_task(processor.handle(conn, message))
+```
+
+At end of input (the client closed stdin) it disconnects and shuts the threads down, as Codex's stdio transport does. Any other `--listen` URL is refused with Codex's error text: `` unsupported --listen URL `ws://127.0.0.1:8765`; expected `stdio://` ``.
 
 **Core events become notifications.** The core never imports `app_server` (see [the design doc](../../design.md#architecture)). It emits events on an `EventBus` ([`events.py`](../../../backends/educodex/src/educodex/core/events.py)). `MessageProcessor._broadcast` sends each event only to the connections subscribed to that thread (the one that started it, plus any that called `thread/read` or `turn/start` on it), adding `_seq`/`_ts` fields so UIs can order their timeline. A failing listener is logged and skipped; it never breaks the turn. `Connection.notify` drops methods listed in `optOutNotificationMethods`.
 
@@ -134,14 +145,7 @@ The transports handle **every message in its own task**. Otherwise a turn waitin
 - `thread/read` with `includeTrace: true` returns the full event log, so a UI that reconnects can rebuild its timeline.
 - `memory/update/start {threadId}` runs the memory write path now and replies `{}` at once; a `memoryUpdate` item and `trace/memory*` events follow (chapter 17). Codex starts that pipeline on its own and has no method for it.
 
-**Origin check.** A web page on any site can open a WebSocket to `127.0.0.1`. If it could talk to the server, it could start turns and approve its own commands. Codex rejects *any* request with an `Origin` header. educodex has to serve its own UI, so it allows only loopback origins:
-
-```python
-origin = ws.headers.get("origin")
-if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1"):
-    await ws.close(code=1008)
-    return
-```
+**Origin check.** A web page on any site can open a WebSocket to `127.0.0.1`. If it could talk to the server, it could start turns and approve its own commands. Codex's WebSocket listener rejects *any* request with an `Origin` header. educodex has no listener, so the check moved to the launcher: it accepts only loopback origins, because it must allow the visualiser's own page (chapter 19).
 
 ## In Codex
 
@@ -149,7 +153,7 @@ if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1")
 - **Method table:** [`protocol/common.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L500) maps names to typed params with macros: [`initialize`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L500), [`thread/start`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L552), [`turn/start`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L1044), server requests such as [`item/commandExecution/requestApproval`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L1784), notifications such as [`turn/completed` and `item/started`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L1967), and the client notification [`initialized`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/common.rs#L2083).
 - **Handshake types:** [`InitializeParams`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v1.rs#L29), [`InitializeCapabilities`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v1.rs#L46) (with `optOutNotificationMethods`, `experimentalApi`, …) and [`InitializeResponse`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v1.rs#L74). The ["Not initialized"](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src/message_processor.rs#L975) guard is in the message processor.
 - **v2 shapes:** [`protocol/v2/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2): [`ThreadItem`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/item.rs#L236), [`CommandExecutionApprovalDecision`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/item.rs#L66), [`ThreadStartParams`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L62), [`TurnStartParams`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L167). The same Rust types generate TypeScript (`codex app-server generate-ts`) and JSON Schema for clients in other languages.
-- **Transports:** [`app-server-transport/src/transport/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport). The [`--listen`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/mod.rs#L100) options are `stdio://` (the default), `unix://`, `ws://IP:PORT` or `off`. [`stdio.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/stdio.rs#L141) appends `\n` to each message. [`websocket.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/websocket.rs#L89) rejects any request with an `Origin` header.
+- **Transports:** [`app-server-transport/src/transport/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport). [`from_listen_url`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/mod.rs#L122) parses `--listen`: `stdio://` is the [default](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/mod.rs#L120), and the others are `unix://`, `unix://PATH`, `ws://IP:PORT` and `off` ([error text](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/mod.rs#L100); the [CLI flag](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/cli/src/main.rs#L583)). [`stdio.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/stdio.rs#L141) appends `\n` to each message. [`websocket.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/websocket.rs#L129) is the WebSocket listener (with `/readyz` and `/healthz`), and it [rejects any request with an `Origin` header](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/websocket.rs#L89). [`unix_socket.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/unix_socket.rs#L43) accepts WebSocket connections on a Unix control socket.
 - **Server:** [`app-server/`](https://github.com/openai/codex/tree/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src) (message processor, request processors, thread manager). [`in_process.rs`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server/src/in_process.rs) runs the same protocol without a process boundary (chapter 19).
 
 ## Where educodex is simpler
@@ -157,14 +161,14 @@ if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1")
 - **A small subset** of methods. Codex also has thread resume/fork/archive, turn steering, review mode, config, auth, MCP and plugin management, file search and many more.
 - **Loose types.** Params are plain dicts. Codex generates every type from Rust, and that schema is the contract with clients. educodex copies the main fields, but small differences remain (for example, `turn/completed` items and some optional fields).
 - **No versioning or experimental gating.** Codex hides experimental methods and fields unless the client sets `experimentalApi`.
-- **Origin check** allows loopback origins instead of rejecting all of them.
+- **stdio only.** Codex also has a WebSocket listener (`ws://IP:PORT`) and a Unix socket listener (`unix://`), where many clients share one long-lived server. educodex has one process per client, and the launcher (not part of Codex) connects the browser to it. The launcher's origin check allows loopback origins instead of rejecting all of them.
 - **No backpressure or bounded queues.** Codex carefully bounds its channels so a slow client cannot block the core.
 
 ## Try it
 
 1. **Talk to the server by hand.** Start it on stdio and paste one line at a time (no API key needed):
    ```bash
-   mkdir -p /tmp/edx && uv run educodex app-server --listen stdio:// --fake-model examples/fake/demo.json --cwd /tmp/edx
+   mkdir -p /tmp/edx && uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/edx
    ```
    ```json
    {"id":1,"method":"initialize","params":{"clientInfo":{"name":"me","version":"0"},"capabilities":{"optOutNotificationMethods":["trace/historyChanged","trace/sseEvent"]}}}
@@ -175,7 +179,8 @@ if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1")
    When `item/commandExecution/requestApproval` arrives, answer it with its id: `{"id":"srv-…","result":{"decision":"decline"}}`.
 2. **Remove the noise.** Add `"trace/promptAssembled"`, `"trace/modelRequest"` and other `trace/*` names to `optOutNotificationMethods`. What is left is what a Codex client would see.
 3. **Step mode.** After `thread/start`, send `{"id":4,"method":"debug/stepMode/set","params":{"threadId":"…","enabled":true}}`. Then start a turn and send `{"id":5,"method":"debug/continue","params":{"threadId":"…"}}` after each `trace/paused`.
-4. **Watch the wire in the browser.** Run `uv run educodex app-server --fake-model examples/fake/demo.json` (build the UI first: `(cd ../.. && pnpm install && pnpm build)`), open http://127.0.0.1:8765 and use the **Protocol** tab. It lists every message in both directions.
+4. **Watch the wire in the browser.** Build the visualiser and start the launcher at the repo root: `(cd ../.. && pnpm install && pnpm build && pnpm eduagent)`. Open http://127.0.0.1:8765, pick **educodex** and use the **Protocol** tab. It lists every message in both directions, exactly as educodex wrote them on stdout. For an offline run, pick **educodex-demo** ([the fake-model entry](README.md#the-web-ui)).
+5. **See the refusal.** Run `uv run educodex app-server --listen ws://127.0.0.1:8765` and read the error. Compare it with Codex's [`--listen` parser](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/app-server-transport/src/transport/mod.rs#L122).
 
 ## Further reading
 - [Unlocking the Codex harness: how we built the App Server](https://openai.com/index/unlocking-the-codex-harness/): why JSON-RPC, the three primitives, and how IDEs, web and the TUI embed it.

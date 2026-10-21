@@ -200,12 +200,12 @@ uv run educodex exec -v --model openai/gpt-6-luna "Say hi"
 
 The `tools` line is followed by a `note:` that says how Codex would call this model (code mode and Responses Lite for `gpt-6-luna` and `gpt-6-sol`). The "prompt assembly" block shows the base instructions' size and source, and the `loop` line shows `compact at 244800`. With `-v` you also get the request body: `input[0]` (the base instructions) and `reasoning.effort` change with the model (`gpt-6-sol` and `gpt-6-luna` both default to `medium`; try `openai/gpt-6-astra` for `low`).
 
-In the web UI (`uv run educodex app-server`, then open http://127.0.0.1:8765):
+In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex**):
 - **Context** tab: the first item is the base instructions, labelled with its source (`vendor/codex/models.json → gpt-6-luna.model_messages.instructions_template`), and the bar shows usage against the context window.
 - **Requests** tab: the full body, with `reasoning`, `text.verbosity` and `parallel_tool_calls` taken from the catalog.
 - **Timeline** tab: `trace/loopIteration` shows `autoCompactLimit` (244,800 for `gpt-6-luna`), and `trace/toolsRegistered` carries `codexToolModeNote`.
 
-Offline, no API key needed: add `--fake-model examples/fake/demo.json` to `exec` or `app-server`.
+Offline, no API key needed: add `--fake-model examples/fake/demo.json` to `exec`, or pick **educodex-demo** in the web UI.
 
 See what changed upstream after a sync:
 

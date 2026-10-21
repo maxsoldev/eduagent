@@ -206,7 +206,7 @@ Codex also reads an optional `agents/openai.yaml` next to `SKILL.md`. It holds a
 
 3. Use it implicitly: run it again with `"Write me a poem about this project"` and no `$`. Now there is no injection. Watch for a tool call that reads `.agents/skills/haiku/SKILL.md`: the model found the skill in the catalog.
 
-4. In the web UI (`uv run educodex app-server --cwd /tmp/skills-demo`), type `$` in the message box. The list shows `$haiku` (repo) and `$skill-creator` (system). In **Context**, the developer message is labelled `developer: skills + permissions + collaboration mode`. Expand it to see the catalog.
+4. In the web UI ([start the launcher](README.md#the-web-ui) and pick **educodex** with the directory `/tmp/skills-demo`), type `$` in the message box. The list shows `$haiku` (repo) and `$skill-creator` (system). In **Context**, the developer message is labelled `developer: skills + permissions + collaboration mode`. Expand it to see the catalog.
 
 5. Ask for a new skill: `"Use $skill-creator to make a skill that formats commit messages"`. Then type `$` again: the new skill is in the list, because skills are scanned on every turn.
 

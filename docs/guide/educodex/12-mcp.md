@@ -218,17 +218,18 @@ uv run educodex exec --mcp notes="python examples/mcp/notes_server.py" \
 
 Watch for `trace/mcpToolExposed` at the start, then a `policy` line for each call. Notes are stored in `~/.eduagent/.educodex/notes.json`. Set `NOTES_FILE=/tmp/notes.json` to keep them elsewhere.
 
-In the web UI:
+In the web UI, add this entry to `launcher/backends.local.json` ([the web UI](README.md#the-web-ui)), start the launcher, open http://127.0.0.1:8765 and pick **educodex-mcp**:
 
-```bash
-uv run educodex app-server --mcp notes="python examples/mcp/notes_server.py"
+```json
+{ "name": "educodex-mcp", "harness": "Codex", "protocol": "codex-app-server",
+  "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server",
+              "--mcp", "notes=python ${REPO}/backends/educodex/examples/mcp/notes_server.py"] }
 ```
 
-Open http://127.0.0.1:8765:
 1. In the **Tools** tab, put the raw `tools/list` entry next to the exposed namespace spec. What disappeared? What was renamed?
 2. Ask "clear all my notes". The chat shows an approval card for the elicitation. Decline it and read what the model gets back.
 3. In the **Guardrails** tab, find the `trace/policyDecision` for each call. The reason shows which annotations led to it.
-4. Restart with `--approval never` and try `add_note` again. It is refused without a prompt.
+4. Add `"--approval", "never"` to the entry's `command`, restart the launcher and try `add_note` again. It is refused without a prompt.
 
 ## Further reading
 - [Model Context Protocol specification](https://modelcontextprotocol.io/specification/latest), especially [Tools](https://modelcontextprotocol.io/specification/latest/server/tools) for annotations and `structuredContent`.

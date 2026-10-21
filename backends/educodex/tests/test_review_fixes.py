@@ -6,12 +6,7 @@ import sys
 import time
 
 import pytest
-from starlette.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
-from educodex.app_server.main import build_app
-from educodex.app_server.processor import MessageProcessor
-from educodex.core.config import Config
 from educodex.core.items import message_text
 from educodex.core.policy.approval import decide_exec, decide_patch
 from educodex.core.policy.rules import PrefixRule
@@ -74,14 +69,6 @@ async def test_background_child_does_not_block(tmp_path):
     assert result.exit_code == 0 and "hi" in result.output
     assert time.monotonic() - started < 2.5
     await manager.terminate_all()
-
-
-def test_websocket_rejects_foreign_origin(workspace, tmp_path):
-    processor = MessageProcessor(Config(cwd=workspace, home=tmp_path / "h", api_key="t"))
-    with TestClient(build_app(processor)) as client:
-        with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/", headers={"origin": "https://evil.example"}) as ws:
-                ws.receive_text()
 
 
 async def test_interrupt_records_turn_aborted(make_session):
