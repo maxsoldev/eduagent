@@ -1,0 +1,16 @@
+{
+  "description": "Faux script for steering, follow-up and abort: a slow bash call, then a reply that thinks first, then a plain reply. The model reasons, so the thinking level becomes OpenRouter's reasoning effort.",
+  "models": [
+    { "id": "openai/gpt-6-luna", "name": "OpenAI: GPT-6 Luna (faux)", "context_length": 400000,
+      "top_provider": { "context_length": 272000, "max_completion_tokens": 128000 },
+      "pricing": { "prompt": "0.00000125", "completion": "0.00001" }, "supported_parameters": ["tools", "reasoning"] }
+  ],
+  "responses": [
+    {
+      "content": [{ "type": "toolCall", "id": "call_slow", "name": "bash", "arguments": { "command": "echo started; sleep 3; echo finished" } }],
+      "stopReason": "toolUse"
+    },
+    { "content": [{ "type": "thinking", "thinking": "The user sent a new message while the command ran." }, { "type": "text", "text": "Noted: I read your message after the command finished." }] },
+    "Summary: the command printed started and finished."
+  ]
+}

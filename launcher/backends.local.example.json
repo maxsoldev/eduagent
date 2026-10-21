@@ -8,7 +8,7 @@
       "command": ["node", "--import", "${PI_DIR}/packages/coding-agent/src/experimental/source-resolver.ts",
                   "${PI_DIR}/packages/coding-agent/src/cli.ts", "--mode", "rpc", "--provider", "openrouter", "--model", "openai/gpt-6-luna"],
       "env": { "PI_CODING_AGENT_DIR": "${HOME}/.eduagent/.pi/agent", "PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0" },
-      "capabilities": ["skills", "compaction"]
+      "capabilities": ["skills", "compaction", "queues"]
     }
   ]
 }

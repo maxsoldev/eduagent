@@ -33,6 +33,9 @@ export interface Adapter {
   startSession(settings: Settings): Promise<{ model?: string; cwd?: string }>; // what the backend chose
   send(settings: Settings, text: string, skills: { name: string; path: string }[]): Promise<void>;
   interrupt(): Promise<void>;
+  // While a turn runs (capability "queues"): pi's steering and follow-up queues.
+  steer?(text: string): Promise<void>;
+  followUp?(text: string): Promise<void>;
   compact(): Promise<void>;
   listSkills(cwd: string): Promise<SkillInfo[]>;
   runCommand(name: string): Promise<string | void>; // adapter-only slash commands; returns a note

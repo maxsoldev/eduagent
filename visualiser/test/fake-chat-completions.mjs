@@ -3,6 +3,7 @@
 //
 // A script is a list of replies, used in order (the last one repeats):
 //   {"text": ["Hel", "lo"], "delayMs": 50}           streamed text pieces
+//   {"reasoning": ["Thin", "king"], "text": [...]}    reasoning pieces (delta.reasoning) before the text
 //   {"toolCalls": [{"id", "name", "arguments"}]}      tool calls (finish_reason "tool_calls")
 //   {"error": {"status": 400, "message": "..."}}      an HTTP error
 //   "promptTokens": N                                 the reported prompt tokens (default 100)
@@ -32,6 +33,7 @@ export function startFakeChatCompletions(script, { port = 0, onRequest = () => {
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
       send(chunk({ role: "assistant", content: "" }));
+      for (const piece of reply.reasoning ?? []) send(chunk({ reasoning: piece }));
       for (const piece of reply.text ?? []) {
         if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
         if (res.destroyed) return; // the client aborted

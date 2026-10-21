@@ -50,6 +50,13 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
     await adapter!.send(settings, text, skills).catch((err) => note(String(err.message ?? err), true));
   };
 
+  // pi's queues: while a turn runs, a message steers the agent or waits as a follow-up.
+  const queues = caps.has("queues") && adapter?.steer && adapter.followUp ? {
+    onSteer: (text: string) => adapter.steer!(text).catch((err) => note(String(err.message ?? err), true)),
+    onFollowUp: (text: string) => adapter.followUp!(text).catch((err) => note(String(err.message ?? err), true)),
+  } : null;
+  const queued = [...(view.queue?.steering ?? []).map((t) => ["steer", t]), ...(view.queue?.followUp ?? []).map((t) => ["follow-up", t])];
+
   const loadSkills = useCallback(() => adapterRef.current!.listSkills(settings.cwd), [settings.cwd]);
 
   // Slash commands from the composer. Like Codex, each maps to one backend request.
@@ -117,9 +124,15 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
               ...(caps.has("skills") ? ["Type $ to use a skill."] : []),
               ...(caps.has("stepMode") ? ["Turn on Step mode to pause before each model call."] : []),
             ]} />
+          {queued.length > 0 && (
+            <div className="queue" data-testid="queue">
+              {queued.map(([kind, text], i) => <div key={i} className="queued" data-testid="queued"><span className="badge">{kind}</span> {text}</div>)}
+            </div>
+          )}
           <Composer disabled={!ready} turnRunning={view.running} commands={commands} loadSkills={caps.has("skills") ? loadSkills : null}
-            placeholder={!ready ? "starting thread…" : view.running ? "agent is working…" : "Ask the agent to do something (/ for commands, $ for skills, Shift+Enter for newline)"}
-            onSend={send} onCommand={runCommand} onInterrupt={() => adapter?.interrupt()} />
+            placeholder={!ready ? "starting thread…" : view.running ? (queues ? "agent is working… Enter steers, Alt+Enter queues a follow-up" : "agent is working…")
+              : "Ask the agent to do something (/ for commands, $ for skills, Shift+Enter for newline)"}
+            onSend={send} onCommand={runCommand} onInterrupt={() => adapter?.interrupt()} queues={queues} />
         </section>
         <section className="right"><Inspector view={view} adapter={adapter} capabilities={caps} links={links} /></section>
       </main>

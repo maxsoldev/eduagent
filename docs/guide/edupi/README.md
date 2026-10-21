@@ -53,13 +53,13 @@ The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-ro
   { "name": "edupi-faux", "harness": "pi", "protocol": "pi-rpc",
     "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc",
                 "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
-    "capabilities": ["trace"] }
+    "capabilities": ["trace", "queues"] }
 ] }
 ```
 
 `examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04).
 
-List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs.
+List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `queues` the steer and follow-up buttons.
 
 For another model, add `"--model", "<any OpenRouter model id>"` to `command`.
 
