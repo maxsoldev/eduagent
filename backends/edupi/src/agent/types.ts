@@ -128,8 +128,6 @@ export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T
 /** A tool the agent can run: the model-facing Tool plus the code that executes it. */
 export interface AgentTool<TParams = any, TDetails = any> extends Tool {
 	label: string;
-	/** Repairs common argument mistakes before validation (pi's edit takes a JSON-string edits field). */
-	prepareArguments?: (args: unknown) => unknown;
 	/** Throw to fail: the error message becomes the tool result. */
 	execute: (
 		toolCallId: string,

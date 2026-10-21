@@ -57,7 +57,7 @@ The model sends one or more replacements for one file. pi's rules, all checked b
 For each tool call in the model's reply, pi's agent loop:
 
 1. emits `tool_execution_start {toolCallId, toolName, args}`;
-2. finds the tool (`Tool grep not found` if there is none), lets the tool repair the arguments (pi's edit does; edupi's does not), and checks them against the schema. A failure is a result, not a crash: `Validation failed for tool "read":\n  - path: must have required properties path ...`;
+2. finds the tool (`Tool grep not found` if there is none), and checks the arguments against the schema. A failure is a result, not a crash: `Validation failed for tool "read":\n  - path: must have required properties path ...`;
 3. calls `execute(toolCallId, args, signal, onUpdate)`. Each `onUpdate(partialResult)` becomes `tool_execution_update`. bash sends one with empty content at the start, then the tail of its output so far (pi: at most every 100 ms; edupi: after each chunk);
 4. emits `tool_execution_end {result, isError, durationMs}`. A thrown error becomes a result whose text is the error message, with `isError: true`;
 5. emits the `toolResult` message (`message_start`, `message_end`), which goes into the context and the session file.
@@ -188,7 +188,7 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 - **Simpler bash.** No spawn hook or command prefix, no other shells (only `/bin/bash`), no checks of the timeout value or of the working directory, no exit code from a kill signal (128 + N). A partial result after each output chunk (pi throttles to 100 ms). edupi does not remove `PI_*` variables it inherited from a parent pi.
 - **Simpler truncation.** A single last line over 50KB is dropped from bash's tail; pi keeps its end and names its size. After the command exits, edupi waits at most 100 ms for the output pipes; pi waits until they are idle. pi kills running commands when it exits; edupi leaves them running.
 - **Simpler paths.** No Unicode-space repair, no `file://` URLs, no macOS file-name variants (NFD, curly quotes, screenshot names) in `read`.
-- **Simpler edit.** No `prepareEditArguments` (pi repairs `edits` sent as a JSON string, one object instead of an array, or `oldText`/`newText` at the top level), no byte-order mark or CRLF handling, no access check before reading (a missing file fails with the system's `ENOENT` message). The per-file queue is keyed by the absolute path, not the real path.
+- **Simpler edit.** No `prepareArguments` hook on tools and no `prepareEditArguments` (pi repairs `edits` sent as a JSON string, one object instead of an array, or `oldText`/`newText` at the top level), no byte-order mark or CRLF handling, no access check before reading (a missing file fails with the system's `ENOENT` message). The per-file queue is keyed by the absolute path, not the real path.
 - **Parallel only.** No sequential mode (`toolExecution`, a tool's `executionMode`): none of the four tools needs it.
 - **No check for cut-off replies.** pi fails every tool call of a reply that stopped at the output token limit (`failToolCallsFromTruncatedMessage`); edupi runs them, and cut-off arguments fail the schema check.
 - **No `beforeToolCall` / `afterToolCall` hooks** (pi uses them for extensions), no `terminate` flag, no `grep`, `find` and `ls` tools, no tool set changes after the first prompt (so no `toolsRemoved` in practice).

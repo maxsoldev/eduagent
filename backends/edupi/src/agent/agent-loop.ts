@@ -312,10 +312,7 @@ type PreparedToolCall = { kind: "prepared"; toolCall: AgentToolCall; tool: Agent
 type ImmediateToolCallOutcome = { kind: "immediate"; result: AgentToolResult<any>; isError: boolean };
 type ExecutedToolCallOutcome = { result: AgentToolResult<any>; isError: boolean; durationMs: number };
 
-/**
- * Finds the tool, lets it repair its arguments (prepareArguments), and checks them against its
- * schema. A failure is an error result, not an exception.
- */
+/** Finds the tool and checks the arguments against its schema. A failure is an error result, not an exception. */
 function prepareToolCall(
 	currentContext: AgentContext,
 	toolCall: AgentToolCall,
@@ -324,10 +321,7 @@ function prepareToolCall(
 	if (!tool)
 		return { kind: "immediate", result: createErrorToolResult(`Tool ${toolCall.name} not found`), isError: true };
 	try {
-		const prepared = tool.prepareArguments
-			? { ...toolCall, arguments: tool.prepareArguments(toolCall.arguments) as AgentToolCall["arguments"] }
-			: toolCall;
-		return { kind: "prepared", toolCall, tool, args: validateToolArguments(tool, prepared) };
+		return { kind: "prepared", toolCall, tool, args: validateToolArguments(tool, toolCall) };
 	} catch (error) {
 		return {
 			kind: "immediate",
