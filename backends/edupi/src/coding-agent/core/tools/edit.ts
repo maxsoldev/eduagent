@@ -1,20 +1,12 @@
 // Mirrors pi packages/coding-agent/src/core/tools/edit.ts (pinned 16f5f0af4): the edit tool. The
-// model sends exact text replacements for one file; pi applies them all to the original text,
-// keeps the file's BOM and line endings, and returns a diff in details for the user interface.
-// The model reads only "Successfully replaced N block(s) in <path>.".
-import { constants } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
+// model sends exact text replacements for one file; pi applies them all to the original text and
+// returns a diff in details for the user interface. The model reads only "Successfully replaced N
+// block(s) in <path>.".
+// edupi leaves out pi's argument repair (prepareEditArguments) and its byte-order mark and CRLF handling.
+import { readFile, writeFile } from "node:fs/promises";
 import { type Static, Type } from "typebox";
 import type { AgentTool } from "../../../agent/types.ts";
-import {
-	applyEditsToNormalizedContent,
-	detectLineEnding,
-	type Edit,
-	generateDiffString,
-	generateUnifiedPatch,
-	normalizeToLF,
-	restoreLineEndings,
-} from "./edit-diff.ts";
+import { applyEditsToNormalizedContent, generateDiffString, generateUnifiedPatch } from "./edit-diff.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
 
@@ -44,57 +36,15 @@ export const editToolSystemPromptContribution = {
 	],
 } as const;
 
-export type EditToolInput = Static<typeof editSchema>;
+type EditToolInput = Static<typeof editSchema>;
 
-export interface EditToolDetails {
+interface EditToolDetails {
 	/** The diff for display: "+NN line", "-NN line", " NN line". */
 	diff: string;
 	/** A standard unified patch of the same change. */
 	patch: string;
 	/** First changed line in the new file. */
 	firstChangedLine?: number;
-}
-
-const isSingleEditInput = (value: unknown): value is Edit =>
-	!!value &&
-	typeof value === "object" &&
-	!Array.isArray(value) &&
-	typeof (value as Edit).oldText === "string" &&
-	typeof (value as Edit).newText === "string";
-
-/**
- * Models get the shape wrong in a few common ways: edits as a JSON string, one edit object
- * instead of an array, or oldText/newText at the top level (an older pi schema). pi accepts all three.
- */
-function prepareEditArguments(input: unknown): unknown {
-	if (!input || typeof input !== "object") return input;
-	const args = input as Record<string, unknown>;
-	if (typeof args.edits === "string") {
-		try {
-			const parsed = JSON.parse(args.edits);
-			if (Array.isArray(parsed)) args.edits = parsed;
-			else if (isSingleEditInput(parsed)) args.edits = [parsed];
-		} catch {}
-	} else if (isSingleEditInput(args.edits)) {
-		args.edits = [args.edits];
-	}
-	if (typeof args.oldText !== "string" || typeof args.newText !== "string") return args;
-	const edits = Array.isArray(args.edits) ? [...args.edits] : [];
-	edits.push({ oldText: args.oldText, newText: args.newText });
-	const { oldText: _oldText, newText: _newText, ...rest } = args;
-	return { ...rest, edits };
-}
-
-function validateEditInput(input: EditToolInput): { path: string; edits: Edit[] } {
-	if (!Array.isArray(input.edits) || input.edits.length === 0) {
-		throw new Error("Edit tool input is invalid. edits must contain at least one replacement.");
-	}
-	return { path: input.path, edits: input.edits };
-}
-
-/** The model never sends the invisible BOM, so it is stripped before matching and put back after (pi utils/text.ts). */
-function splitBom(text: string): { bom: string; text: string } {
-	return text.startsWith("\uFEFF") ? { bom: "\uFEFF", text: text.slice(1) } : { bom: "", text };
 }
 
 export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDetails | undefined> {
@@ -105,9 +55,7 @@ export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDe
 			"Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
 		parameters: editSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
-		prepareArguments: prepareEditArguments,
-		async execute(_toolCallId, input, signal) {
-			const { path, edits } = validateEditInput(input);
+		async execute(_toolCallId, { path, edits }, signal) {
 			const absolutePath = resolveToCwd(path, cwd);
 			return withFileMutationQueue(absolutePath, async () => {
 				// Check the signal after each await, not in an abort listener: a listener would release the
@@ -116,24 +64,10 @@ export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDe
 					if (signal?.aborted) throw new Error("Operation aborted");
 				};
 				throwIfAborted();
-				try {
-					await access(absolutePath, constants.R_OK | constants.W_OK);
-				} catch (error) {
-					throwIfAborted();
-					const errorMessage =
-						error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
-					throw new Error(`Could not edit file: ${path}. ${errorMessage}.`);
-				}
+				const content = await readFile(absolutePath, "utf-8"); // a missing file fails with the system's message (ENOENT ...)
 				throwIfAborted();
-				const rawContent = await readFile(absolutePath, "utf-8");
-				throwIfAborted();
-
-				const { bom, text: content } = splitBom(rawContent);
-				const originalEnding = detectLineEnding(content);
-				const { baseContent, newContent } = applyEditsToNormalizedContent(normalizeToLF(content), edits, path);
-				throwIfAborted();
-
-				await writeFile(absolutePath, bom + restoreLineEndings(newContent, originalEnding), "utf-8");
+				const { baseContent, newContent } = applyEditsToNormalizedContent(content, edits, path);
+				await writeFile(absolutePath, newContent, "utf-8");
 				throwIfAborted();
 
 				const diffResult = generateDiffString(baseContent, newContent);

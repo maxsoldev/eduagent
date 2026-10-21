@@ -3,20 +3,21 @@
 // model is dropped, and a tool call without a result gets a synthetic error result.
 import type { AssistantMessage, Message, Model, ToolCall, ToolResultMessage } from "../types.ts";
 
-/** pi's transformMessages, without image downgrades and tool call id normalization (OpenRouter needs neither). */
+/**
+ * pi's transformMessages, without image downgrades and tool call id normalization (OpenRouter
+ * needs neither), and without holding back system messages between a tool call and its results
+ * (edupi collapses the system messages before this runs).
+ */
 export function transformMessages(messages: Message[], model: Model): Message[] {
-	// Normalize null/undefined content from untyped callers (hand-built histories, old session files).
-	const normalizedMessages = messages.map((msg) => (msg.content == null ? ({ ...msg, content: [] } as Message) : msg));
-
 	// First pass: thinking blocks.
-	const transformed = normalizedMessages.map((msg): Message => {
+	const transformed = messages.map((msg): Message => {
 		if (msg.role !== "assistant") return msg;
 		const isSameModel = msg.provider === model.provider && msg.api === model.api && msg.model === model.id;
 		const content = msg.content.flatMap((block) => {
 			if (block.type !== "thinking") return block;
 			// Thinking from another model is dropped: the new model would read it as part of the visible reply.
 			if (!isSameModel) return [];
-			if (block.redacted || block.thinkingSignature) return block;
+			if (block.thinkingSignature) return block;
 			if (!block.thinking || block.thinking.trim() === "") return [];
 			return block;
 		});
@@ -27,8 +28,6 @@ export function transformMessages(messages: Message[], model: Model): Message[] 
 	const result: Message[] = [];
 	let pendingToolCalls: ToolCall[] = [];
 	let existingToolResultIds = new Set<string>();
-	// A system message between a tool call and its results waits until after the results.
-	const heldSystemMessages: Message[] = [];
 	const closePendingToolCalls = () => {
 		for (const tc of pendingToolCalls) {
 			if (!existingToolResultIds.has(tc.id)) {
@@ -44,8 +43,6 @@ export function transformMessages(messages: Message[], model: Model): Message[] 
 		}
 		pendingToolCalls = [];
 		existingToolResultIds = new Set();
-		result.push(...heldSystemMessages);
-		heldSystemMessages.length = 0;
 	};
 
 	for (const msg of transformed) {
@@ -56,17 +53,11 @@ export function transformMessages(messages: Message[], model: Model): Message[] 
 			const assistantMsg = msg as AssistantMessage;
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") continue;
 			const toolCalls = assistantMsg.content.filter((b): b is ToolCall => b.type === "toolCall");
-			if (toolCalls.length > 0) {
-				pendingToolCalls = toolCalls;
-				existingToolResultIds = new Set();
-			}
+			if (toolCalls.length > 0) pendingToolCalls = toolCalls;
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
 			existingToolResultIds.add(msg.toolCallId);
 			result.push(msg);
-		} else if (msg.role === "system") {
-			if (pendingToolCalls.length > 0) heldSystemMessages.push(msg);
-			else result.push(msg);
 		} else {
 			// A new user turn interrupts the tool flow: orphaned calls get their results first.
 			closePendingToolCalls();

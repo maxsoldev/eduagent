@@ -10,14 +10,12 @@ export type ProviderId = string; // edupi: always "openrouter"
 export interface TextContent {
 	type: "text";
 	text: string;
-	textSignature?: string;
 }
 
 export interface ThinkingContent {
 	type: "thinking";
 	thinking: string;
 	thinkingSignature?: string; // the Chat Completions field the reasoning came in, for replay
-	redacted?: boolean;
 }
 
 export interface ImageContent {
@@ -54,12 +52,12 @@ export interface Tool {
 	name: string;
 	description: string;
 	parameters: TSchema;
-	/** Ask for strict JSON-schema sampling where the API has it. OpenRouter's Chat Completions has none, so edupi sends no `strict`. */
-	constrainedSampling?: false | ConstrainedSamplingConfig;
+	/**
+	 * Ask for strict JSON-schema sampling where the API has it. OpenRouter's Chat Completions has
+	 * none, so edupi sends no `strict`. pi also has `{type: "grammar"}` (Lark or regex tools).
+	 */
+	constrainedSampling?: false | { type: "json_schema"; strict: "prefer" | "require" };
 }
-
-/** pi also has `{type: "grammar"}` (Lark or regex tools); edupi has only JSON-schema tools. */
-export type ConstrainedSamplingConfig = { type: "json_schema"; strict: "prefer" | "require" };
 
 /** A tool named in toolsRemoved. */
 export interface ToolReference {
@@ -98,13 +96,11 @@ export interface AssistantMessage {
 	api: Api;
 	provider: ProviderId;
 	model: string;
-	responseModel?: string;
 	responseId?: string;
 	thinkingLevel?: ThinkingLevel; // set by the agent loop: the level it asked for
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
-	rawStopReason?: string;
 	timestamp: number; // when the request started (Unix ms)
 	durationMs?: number;
 }
@@ -148,17 +144,14 @@ export interface Model {
 	cost: ModelCost;
 	contextWindow: number;
 	maxTokens: number;
-	headers?: Record<string, string>;
 }
 
 /** Options for one model request (pi: ProviderRequestOptions + StreamOptions + SimpleStreamOptions). */
 export interface SimpleStreamOptions {
 	signal?: AbortSignal;
 	apiKey?: string;
-	headers?: Record<string, string>;
 	fetch?: typeof globalThis.fetch; // edupi's faux provider replaces the HTTP call here
 	maxTokens?: number;
-	temperature?: number;
 	sessionId?: string;
 	/** "none": no prompt cache wanted (one-off requests), so no cache affinity header. edupi treats "long" as "short". */
 	cacheRetention?: CacheRetention;
