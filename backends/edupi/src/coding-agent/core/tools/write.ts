@@ -17,7 +17,7 @@ export const writeToolSystemPromptContribution = {
 	guidelines: ["Use write only for new files or complete rewrites."],
 } as const;
 
-export type WriteToolInput = Static<typeof writeSchema>;
+type WriteToolInput = Static<typeof writeSchema>;
 
 export function createWriteTool(cwd: string): AgentTool<WriteToolInput, undefined> {
 	return {
@@ -36,7 +36,6 @@ export function createWriteTool(cwd: string): AgentTool<WriteToolInput, undefine
 				};
 				throwIfAborted();
 				await mkdir(dirname(absolutePath), { recursive: true });
-				throwIfAborted();
 				await writeFile(absolutePath, content, "utf-8");
 				throwIfAborted();
 				return { content: [{ type: "text", text: `Successfully wrote to ${path}` }], details: undefined };

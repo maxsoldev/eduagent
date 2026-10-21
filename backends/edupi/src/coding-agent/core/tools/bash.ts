@@ -1,33 +1,13 @@
 // Mirrors pi packages/coding-agent/src/core/tools/bash.ts (pinned 16f5f0af4): the bash tool. It
 // runs one command in the working directory with stdout and stderr merged, streams the output so
-// far as partial results, and returns the tail of the output (2000 lines or 50KB). Longer output
-// is saved to a temp file, and the model gets its path. A non-zero exit code is an error result.
-// edupi leaves out pi's spawn hooks, command prefix and Windows shells.
+// far as partial results, and returns the tail of the output (2000 lines or 50KB). A non-zero exit
+// code is an error result.
+// edupi leaves out pi's spawn hooks, command prefix, other shells and the temp file with the full output.
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access } from "node:fs/promises";
-import { constants as osConstants } from "node:os";
 import { type Static, Type } from "typebox";
-import type { AgentTool, AgentToolUpdateCallback } from "../../../agent/types.ts";
-import { OutputAccumulator, type OutputSnapshot } from "./output-accumulator.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
-
-/** pi's throttle for partial output (renderers/bash.ts). */
-const BASH_UPDATE_THROTTLE_MS = 100;
-/** Node's timer limit: a longer setTimeout fires at once. */
-const MAX_TIMEOUT_MS = 2_147_483_647;
-const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
-
-function resolveTimeoutMs(timeout: number | undefined): number | undefined {
-	if (timeout === undefined) return undefined;
-	if (!Number.isFinite(timeout) || timeout <= 0) {
-		throw new Error("Invalid timeout: must be a finite number of seconds");
-	}
-	const timeoutMs = timeout * 1000;
-	if (timeoutMs > MAX_TIMEOUT_MS) throw new Error(`Invalid timeout: maximum is ${MAX_TIMEOUT_SECONDS} seconds`);
-	return timeoutMs;
-}
+import type { AgentTool } from "../../../agent/types.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.ts";
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Shell command to execute" }),
@@ -39,66 +19,44 @@ export const bashToolSystemPromptContribution = {
 	guidelines: ["You can inspect PI_* environment variables for current model and session details."],
 } as const;
 
-export type BashToolInput = Static<typeof bashSchema>;
+type BashToolInput = Static<typeof bashSchema>;
 
-export interface BashToolDetails {
+interface BashToolDetails {
 	truncation?: TruncationResult;
-	fullOutputPath?: string;
 }
 
 /** What pi exposes to commands as PI_* variables (pi reads them from the tool call's context). */
-export interface BashSessionEnvironment {
+interface BashSessionEnvironment {
 	sessionId: string;
 	sessionFile?: string;
-	provider?: string;
-	model?: string;
-	thinkingLevel?: string;
+	provider: string;
+	model: string;
+	thinkingLevel: string;
 }
 
 export interface BashToolOptions {
-	/** The current session, read at each call. Without it, commands get no PI_* variables. */
+	/** The current session, read at each call. */
 	getSessionEnvironment?: () => BashSessionEnvironment;
 }
 
-/** pi's resolveSpawnContext env: PI_* variables from a parent pi are dropped, then the session's are set. */
+/** pi's resolveSpawnContext env. spawn skips variables whose value is undefined. */
 function getCommandEnv(session: BashSessionEnvironment | undefined): NodeJS.ProcessEnv {
-	const env = { ...process.env };
-	delete env.PI_SESSION_ID;
-	delete env.PI_SESSION_FILE;
-	delete env.PI_PROVIDER;
-	delete env.PI_MODEL;
-	delete env.PI_REASONING_LEVEL;
-	if (session) {
-		env.PI_SESSION_ID = session.sessionId;
-		if (session.sessionFile) env.PI_SESSION_FILE = session.sessionFile;
-		if (session.provider && session.model) {
-			env.PI_PROVIDER = session.provider;
-			env.PI_MODEL = session.model;
-		}
-		if (session.thinkingLevel) env.PI_REASONING_LEVEL = session.thinkingLevel;
-	}
-	return env;
-}
-
-/** /bin/bash, else sh (pi utils/shell.ts getShellConfig also searches PATH). */
-async function getShell(): Promise<{ shell: string; args: string[] }> {
-	try {
-		await access("/bin/bash", constants.X_OK);
-		return { shell: "/bin/bash", args: ["-c"] };
-	} catch {
-		return { shell: "sh", args: ["-c"] };
-	}
+	if (!session) return process.env;
+	return {
+		...process.env,
+		PI_SESSION_ID: session.sessionId,
+		PI_SESSION_FILE: session.sessionFile,
+		PI_PROVIDER: session.provider,
+		PI_MODEL: session.model,
+		PI_REASONING_LEVEL: session.thinkingLevel,
+	};
 }
 
 /** Kills the command and everything it started: the shell runs detached, as its own process group. */
 function killProcessTree(pid: number) {
 	try {
 		process.kill(-pid, "SIGKILL");
-	} catch {
-		try {
-			process.kill(pid, "SIGKILL");
-		} catch {}
-	}
+	} catch {} // already gone
 }
 
 /**
@@ -125,27 +83,15 @@ async function exec(
 	signal?: AbortSignal,
 	timeout?: number,
 ): Promise<number> {
-	const timeoutMs = resolveTimeoutMs(timeout);
 	if (signal?.aborted) throw new Error("aborted");
-	try {
-		await access(cwd, constants.F_OK);
-	} catch {
-		throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
-	}
-	const { shell, args } = await getShell();
-	const child = spawn(shell, [...args, command], {
-		cwd,
-		detached: true,
-		env,
-		stdio: ["ignore", "pipe", "pipe"],
-	});
+	const child = spawn("/bin/bash", ["-c", command], { cwd, detached: true, env, stdio: ["ignore", "pipe", "pipe"] });
 	let timedOut = false;
 	const timer =
-		timeoutMs !== undefined
+		timeout !== undefined
 			? setTimeout(() => {
 					timedOut = true;
 					if (child.pid) killProcessTree(child.pid);
-				}, timeoutMs)
+				}, timeout * 1000)
 			: undefined;
 	const onAbort = () => child.pid && killProcessTree(child.pid);
 	signal?.addEventListener("abort", onAbort, { once: true });
@@ -155,13 +101,28 @@ async function exec(
 		const exitCode = await waitForChildProcess(child);
 		if (signal?.aborted) throw new Error("aborted");
 		if (timedOut) throw new Error(`timeout:${timeout}`);
-		// A shell killed by a signal has no exit code: report 128 + signal number, as shells do.
-		return exitCode ?? (child.signalCode ? 128 + (osConstants.signals[child.signalCode] ?? 0) : 1);
+		return exitCode ?? 1;
 	} finally {
 		if (timer) clearTimeout(timer);
 		signal?.removeEventListener("abort", onAbort);
 	}
 }
+
+/** The tail the model reads, with pi's note when lines were cut. */
+function formatOutput(output: string, emptyText = "(no output)"): { text: string; details?: BashToolDetails } {
+	const truncation = truncateTail(output);
+	const text = truncation.content || emptyText;
+	if (!truncation.truncated) return { text };
+	const startLine = truncation.totalLines - truncation.outputLines + 1;
+	const endLine = truncation.totalLines;
+	const limit = truncation.truncatedBy === "lines" ? "" : ` (${formatSize(DEFAULT_MAX_BYTES)} limit)`;
+	return {
+		text: `${text}\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}${limit}.]`,
+		details: { truncation },
+	};
+}
+
+const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
 
 export function createBashTool(
 	cwd: string,
@@ -170,83 +131,32 @@ export function createBashTool(
 	return {
 		name: "bash",
 		label: "bash",
+		// pi's text, so the tool spec equals pi's (edupi has no temp file).
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		parameters: bashSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
-		async execute(
-			_toolCallId,
-			{ command, timeout },
-			signal,
-			onUpdate?: AgentToolUpdateCallback<BashToolDetails | undefined>,
-		) {
-			const output = new OutputAccumulator();
-
-			// Partial results: one at the start, then at most one every 100 ms.
-			let updateTimer: NodeJS.Timeout | undefined;
-			let updateDirty = false; // output came since the last update
-			let lastUpdateAt = 0;
-			const emitOutputUpdate = async () => {
-				updateTimer = undefined;
-				updateDirty = false;
-				lastUpdateAt = Date.now();
-				const snapshot = await output.snapshot();
+		async execute(_toolCallId, { command, timeout }, signal, onUpdate) {
+			// A chunk may end inside a UTF-8 character: the streaming decoder keeps those bytes for the next chunk.
+			const decoder = new TextDecoder();
+			let output = "";
+			// Partial results: one at the start, then the tail so far after each chunk.
+			onUpdate?.({ content: [], details: undefined });
+			const handleData = (data: Buffer) => {
+				output += decoder.decode(data, { stream: true });
+				const truncation = truncateTail(output);
 				onUpdate?.({
-					content: [{ type: "text", text: snapshot.content }],
-					details: {
-						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
-						fullOutputPath: snapshot.fullOutputPath,
-					},
+					content: [{ type: "text", text: truncation.content }],
+					details: truncation.truncated ? { truncation } : undefined,
 				});
 			};
-			const scheduleOutputUpdate = () => {
-				updateDirty = true;
-				if (!onUpdate || updateTimer) return;
-				const delay = Math.max(0, BASH_UPDATE_THROTTLE_MS - (Date.now() - lastUpdateAt));
-				updateTimer = setTimeout(emitOutputUpdate, delay);
-			};
-			onUpdate?.({ content: [], details: undefined });
 
-			const handleData = (data: Buffer) => {
-				output.append(data);
-				scheduleOutputUpdate();
-			};
-
-			const finishOutput = async () => {
-				if (updateTimer) clearTimeout(updateTimer);
-				output.finish();
-				if (onUpdate && updateDirty) await emitOutputUpdate();
-				return output.snapshot();
-			};
-
-			const formatOutput = (snapshot: OutputSnapshot, emptyText = "(no output)") => {
-				const { truncation } = snapshot;
-				let text = snapshot.content || emptyText;
-				let details: BashToolDetails | undefined;
-				if (truncation.truncated) {
-					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
-					const startLine = truncation.totalLines - truncation.outputLines + 1;
-					const endLine = truncation.totalLines;
-					if (truncation.lastLinePartial) {
-						const lastLineSize = formatSize(output.getLastLineBytes());
-						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
-					} else if (truncation.truncatedBy === "lines") {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
-					} else {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
-					}
-				}
-				return { text, details };
-			};
-
-			const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
 			const startedAt = performance.now();
-
 			let exitCode: number;
 			try {
 				const env = getCommandEnv(options.getSessionEnvironment?.());
 				exitCode = await exec(command, cwd, env, handleData, signal, timeout);
 			} catch (err) {
-				const { text } = formatOutput(await finishOutput(), "");
+				const { text } = formatOutput(output + decoder.decode(), "");
 				if (err instanceof Error && err.message === "aborted") {
 					throw new Error(appendStatus(text, "Command aborted"));
 				}
@@ -257,22 +167,23 @@ export function createBashTool(
 				throw err;
 			}
 
-			const { text: outputText, details } = formatOutput(await finishOutput());
+			output += decoder.decode();
+			const { text, details } = formatOutput(output);
 			const structuredContent = {
-				output: output.readFullOutput(),
+				output,
 				truncated: false,
 				exit_code: exitCode,
 				wall_time_seconds: Math.round((performance.now() - startedAt) / 100) / 10,
 			};
 			if (exitCode !== 0) {
 				return {
-					content: [{ type: "text", text: appendStatus(outputText, `Command exited with code ${exitCode}`) }],
+					content: [{ type: "text", text: appendStatus(text, `Command exited with code ${exitCode}`) }],
 					details,
 					structuredContent,
 					isError: true,
 				};
 			}
-			return { content: [{ type: "text", text: outputText }], details, structuredContent };
+			return { content: [{ type: "text", text }], details, structuredContent };
 		},
 	};
 }
