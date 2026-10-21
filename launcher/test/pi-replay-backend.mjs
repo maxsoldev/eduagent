@@ -1,9 +1,7 @@
-// Test backend: a stand-in for `pi --mode rpc` that replays a transcript recorded from the real pi
-// (visualiser/test/fixtures/pi/*.out.jsonl, see visualiser/test/record-pi.mjs).
-// For each command it writes the recorded lines up to pi's reply to the next recorded command of
-// the same type, with the reply's id set to the command's id. After an accepted prompt it also
-// writes the run's events, up to agent_settled. A get_state with no recorded reply left gets the
-// last one again; any other command with no recorded reply gets an error reply.
+// Test backend: replays a real pi transcript (visualiser/test/fixtures/pi/*.out.jsonl) as `pi --mode rpc`.
+// Each command gets the recorded lines up to pi's reply to the next command of its type (with the
+// command's id); an accepted prompt also gets the run's events, up to agent_settled. With no recorded
+// reply left, get_state repeats the last one and other commands get an error reply.
 // Usage: node pi-replay-backend.mjs <transcript.out.jsonl> [delay ms between lines, default 15]
 import { readFileSync } from "node:fs";
 

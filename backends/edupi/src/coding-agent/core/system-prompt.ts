@@ -1,10 +1,8 @@
-// Mirrors pi packages/coding-agent/src/core/system-prompt.ts (pinned 16f5f0af4): builds the system
-// prompt as named sections, in pi's order and with pi's text: preamble, tools, rules, addendum
-// (APPEND_SYSTEM.md), project_context (AGENTS.md files), skills, cwd. Every section but the
-// preamble is wrapped in a tag of its own name. The sections go into a system message of the
-// transcript; a later prompt change is a system message with only the changed sections.
-// edupi leaves out pi's <docs> section (paths to pi's own docs), forced prompts, hidden tools,
-// extension sections and the PowerShell rules.
+// Mirrors pi packages/coding-agent/src/core/system-prompt.ts (pinned 16f5f0af4): the system prompt as
+// named sections, in pi's order and text: preamble, tools, rules, addendum (APPEND_SYSTEM.md),
+// project_context (AGENTS.md), skills, cwd; all but the preamble wrapped in a tag of their name.
+// A later change is a system message with only the changed sections. edupi leaves out the <docs>
+// section, forced prompts, hidden tools, extension sections and the PowerShell rules.
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {

@@ -1,10 +1,8 @@
-// Mirrors pi packages/coding-agent/src/core/resource-loader.ts (pinned 16f5f0af4), the parts that
-// feed the system prompt: AGENTS.md files (context files), skills, SYSTEM.md and APPEND_SYSTEM.md.
-// pi loads them once, when the session starts (and again on /reload), not before every prompt.
+// Mirrors pi packages/coding-agent/src/core/resource-loader.ts (pinned 16f5f0af4), the parts for the
+// system prompt: AGENTS.md files, skills, SYSTEM.md and APPEND_SYSTEM.md, loaded once per session.
 // Skill folders, in priority order (pi package-manager.ts addAutoDiscoveredResources):
-// <cwd>/.pi/skills (only in a trusted project), then <agentDir>/skills.
-// edupi leaves out extensions, prompt templates, themes, packages, the .agents/skills folders and
-// pi's rule for nested git worktrees.
+// <cwd>/.pi/skills (only in a trusted project), then <agentDir>/skills. edupi leaves out extensions,
+// prompt templates, themes, packages, the .agents/skills folders and nested git worktrees.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { PROJECT_CONFIG_DIR_NAME } from "../config.ts";

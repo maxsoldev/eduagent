@@ -1,8 +1,7 @@
 // Mirrors pi packages/coding-agent/src/core/skills.ts (pinned 16f5f0af4): finds skills, reads their
-// SKILL.md frontmatter, and formats the available-skills block of the system prompt. pi puts only
-// each skill's name, description and file path in the prompt; the model reads the file itself
-// (with the read tool) when a task matches. Skills with `disable-model-invocation: true` are left
-// out of the prompt: only the user can call them, with /skill:name.
+// SKILL.md frontmatter and formats the prompt's skills block: name, description and file path only;
+// the model reads the file with the read tool when a task matches. Skills with
+// `disable-model-invocation: true` stay out of the prompt (only /skill:name calls them).
 // edupi leaves out the .gitignore/.ignore/.fdignore rules of pi's directory scan.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -75,13 +74,10 @@ function createSkillSourceInfo(filePath: string, baseDir: string, source: string
   return { path: filePath, source: "local", scope, origin: "top-level", baseDir };
 }
 
-/**
- * Load skills from a directory.
- *
- * - if a directory contains SKILL.md, it is a skill root: take it and do not recurse further
- * - otherwise, load direct .md children in the root
- * - recurse into subdirectories (not dot folders or node_modules) to find SKILL.md
- */
+// Load skills from a directory:
+// - if a directory contains SKILL.md, it is a skill root: take it and do not recurse further
+// - otherwise, load direct .md children in the root
+// - recurse into subdirectories (not dot folders or node_modules) to find SKILL.md
 export function loadSkillsFromDir(dir: string, source: string): LoadSkillsResult {
   return loadSkillsFromDirInternal(dir, source, true);
 }

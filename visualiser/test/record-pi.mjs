@@ -1,13 +1,7 @@
-// Records the real pi fixtures for the pi adapter tests (seam C) and for edupi's tests. For each
-// scenario it starts the fake Chat Completions server, runs the pinned pi checkout in RPC mode from
-// source, sends the scenario's commands and saves what pi wrote. No network model call, no API key.
-//
-//   node visualiser/test/record-pi.mjs              (from the repo root; pi at <repo>/../pi)
-//   PI_DIR=/path/to/pi node visualiser/test/record-pi.mjs
-//
-// Output in test/fixtures/pi/: <scenario>.in.jsonl (commands), <scenario>.out.jsonl (stdout),
-// <scenario>.requests.jsonl (model request bodies) and meta.json (pi commit, date, Node version).
-// Scenarios with an `edupi` step write pi's session file and request bodies to
+// Records real pi fixtures: runs the pinned pi checkout (PI_DIR, default <repo>/../pi) in RPC mode
+// against the fake Chat Completions server, per scenario. Usage: node visualiser/test/record-pi.mjs [scenario...]
+// Writes test/fixtures/pi/<scenario>.{in,out,requests}.jsonl and meta.json for the pi adapter tests;
+// scenarios with an `edupi` step write pi's session file and request bodies to
 // backends/edupi/test/fixtures/pi/ instead. Ids, timestamps and durations change on each run.
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

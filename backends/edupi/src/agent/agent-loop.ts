@@ -161,12 +161,10 @@ async function runLoop(
   await emit({ type: "agent_end", messages: newMessages });
 }
 
-/**
- * Declares tool changes to the model. context.tools is what the agent can run; the transcript's
- * system messages declare what the model may call. The difference becomes toolsAdded and
- * toolsRemoved, on a pending system message if there is one, else on a new one before the first
- * other message.
- */
+// Declares tool changes to the model. context.tools is what the agent can run; the transcript's
+// system messages declare what the model may call. The difference becomes toolsAdded and
+// toolsRemoved, on a pending system message if there is one, else on a new one before the first
+// other message.
 function declareToolChanges(context: AgentContext, pendingMessages: AgentMessage[]): AgentMessage[] {
   const systemIndex = pendingMessages.findLastIndex((m) => m.role === "system");
   const pending = pendingMessages[systemIndex] as SystemMessage | undefined;

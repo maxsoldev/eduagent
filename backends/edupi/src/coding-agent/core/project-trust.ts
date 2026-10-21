@@ -1,8 +1,7 @@
-// Mirrors pi packages/coding-agent/src/core/project-trust.ts and core/trust-manager.ts (pinned
-// 16f5f0af4): is this project trusted? Files under <cwd>/.pi (skills, SYSTEM.md, ...) come with
-// the project, so they could come from anyone; pi loads them only from a trusted project. AGENTS.md
-// files do not need trust. pi asks in its TUI; RPC mode has no UI, so without --approve or a saved
-// decision in <agentDir>/trust.json the project is not trusted.
+// Mirrors pi packages/coding-agent/src/core/project-trust.ts and trust-manager.ts (pinned 16f5f0af4):
+// is this project trusted? Files under <cwd>/.pi (skills, SYSTEM.md, ...) could come from anyone, so pi
+// loads them only from a trusted project (AGENTS.md needs no trust). RPC mode cannot ask, so without
+// --approve or a saved decision in <agentDir>/trust.json the project is not trusted.
 // edupi leaves out the .agents/skills folders, extensions and the defaultProjectTrust setting.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
