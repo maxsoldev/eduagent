@@ -91,6 +91,8 @@ pi starts with a new session unless told otherwise:
 | `--continue`, `-c` | the newest file in the cwd's folder, or a new session |
 | `--no-session` | in memory only; `get_state` has no `sessionFile` |
 
+`--session` checks the file first. A missing file becomes a new session at that path. An empty file gets a header at once. A file whose first entry is not a `session` header is refused, and stays as it was. If the last line has no newline (a write that stopped half way), pi adds one, so the next entry starts on its own line. `--continue` likewise skips files in the folder that are not sessions.
+
 When a file already has messages, the agent starts from its rebuilt context, with the session's thinking level (clamped to what the model supports) and, if pi knows it, the session's model. New entries are appended to the same file, as children of its last entry.
 
 ## In edupi
@@ -128,7 +130,7 @@ export function buildContextEntries(entries: SessionEntry[], leafId?: string | n
 }
 ```
 
-The tests in [`test/rpc-session.test.ts`](../../../backends/edupi/test/rpc-session.test.ts) check the written file against pi's format, `new_session`, `get_messages`, `--continue` and `--no-session`. Two tests open files written by the real pi ([`test/fixtures/pi/`](../../../backends/edupi/test/fixtures/pi/), recorded by `visualiser/test/record-pi.mjs`). One has two compactions; its test checks that edupi's next request is the request the real pi sent, plus the new turn.
+The tests in [`test/rpc-session.test.ts`](../../../backends/edupi/test/rpc-session.test.ts) check the written file against pi's format, `new_session`, `get_messages`, `--continue` and `--no-session`, and how `--session` treats empty, broken and hand-edited files. Two tests open files written by the real pi ([`test/fixtures/pi/`](../../../backends/edupi/test/fixtures/pi/), recorded by `visualiser/test/record-pi.mjs`). One has two compactions; its test checks that edupi's next request is the request the real pi sent, plus the new turn.
 
 ## In pi
 
@@ -162,7 +164,7 @@ The Codex side: [`RolloutRecorder`](https://github.com/openai/codex/blob/1c7c43c
 - **One linear branch.** No `/tree`, fork, clone, labels or branch summaries. The reader still follows `parentId` from the last entry, so a branched pi file opens on its newest branch.
 - **Fewer entry types.** No `custom`, `custom_message`, `label`, `session_info` or `usage` entries. A pi file that has them opens, but those entries add nothing to the context. edupi writes `context_edit` entries only to omit a failed overflow attempt (chapter 07).
 - **Version 3 only.** pi migrates older files (v1 without ids, v2) and rewrites them. edupi refuses them.
-- **`--session` takes a path only.** pi also takes a partial session id and searches the folders, and has `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`).
+- **`--session` takes a path only.** pi also takes a partial session id and searches the folders, and has `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`). So `--continue` never filters by the header's `cwd` (pi does that only in a custom `--session-dir`), and a `~` in the path is not expanded (the shell does it).
 - **Models from OpenRouter only.** An opened session's model is restored only if its provider is `openrouter`; otherwise edupi uses its default model.
 - **Simpler ids and reads.** `uuidv7` leaves out pi's counter for ids made in the same millisecond. Files are read whole, without pi's streaming reader and header scan limits.
 
