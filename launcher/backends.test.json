@@ -21,6 +21,14 @@
       "capabilities": []
     },
     {
+      "name": "edupi",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "edupi with the faux provider (backends/edupi/examples/faux/demo.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
+      "capabilities": []
+    },
+    {
       "name": "pi-replay",
       "harness": "pi",
       "protocol": "pi-rpc",

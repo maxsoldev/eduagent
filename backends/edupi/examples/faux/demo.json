@@ -1,0 +1,6 @@
+{
+  "responses": [
+    "Hello from edupi. This reply comes from the faux provider, streamed in small chunks like a real model.",
+    "This is the second reply. edupi sent the whole conversation again, as every Chat Completions request does."
+  ]
+}
