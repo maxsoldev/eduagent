@@ -17,7 +17,7 @@ afterEach(async () => {
 	await edupi?.close();
 });
 
-test("the shipped edupi entry trusts the chosen directory, so its project skills load", async () => {
+test("the shipped edupi entry loads the project skills of the chosen directory", async () => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
 	const skill = join(dir, "project", ".pi", "skills", "greet");
 	mkdirSync(skill, { recursive: true });

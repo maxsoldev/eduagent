@@ -1,13 +1,13 @@
 // Seam A: AgentSession paths checked against pi's agent-session.ts (pinned 16f5f0af4): abort
 // also cancels a compaction, waits for it, and stops a run that starts meanwhile; a prompt is
 // refused only during a manual compaction; steer and follow_up expand /skill: commands. Also
-// main.ts and rpc-mode.ts: a bad --session file and SIGHUP exit as pi does.
+// rpc-mode.ts: SIGHUP exits as pi does.
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi, tinyModel } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -19,23 +19,13 @@ function put(path: string, text: string) {
 	writeFileSync(path, text);
 }
 
-/** A test dir whose edupi home has this settings.json and a one-line SYSTEM.md (a small prompt). */
+/** A test dir whose edupi home has this settings.json. */
 function dirWithSettings(settings: object): string {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
 	put(join(dir, "home", "agent", "settings.json"), JSON.stringify(settings));
-	put(join(dir, "home", "agent", "SYSTEM.md"), "Be brief.");
 	return dir;
 }
 
-const tinyModel = (contextLength: number) => [
-	{
-		id: "openai/gpt-6-luna",
-		name: "Tiny Luna",
-		context_length: contextLength,
-		top_provider: { context_length: contextLength, max_completion_tokens: 50 },
-		supported_parameters: ["tools"],
-	},
-];
 
 const settledCount = () => edupi.seen.filter((m) => m.type === "agent_settled").length;
 const untilSettled = (count = settledCount() + 1) => edupi.until(() => settledCount() >= count, 15_000);
@@ -69,10 +59,10 @@ test("abort during a manual compact cancels the summary; the abort response come
 });
 
 test("during an automatic compaction a prompt gets pi's busy error, and abort cancels the compaction and the run", async () => {
-	// Window 200, reserve 100: the 100-token reply puts the context above the threshold.
+	// Window 200 after the system prompt, reserve 100: the 100-token reply puts the context above the threshold.
 	edupi = startEdupi(
 		{
-			models: tinyModel(200),
+			models: await tinyModel(200),
 			tokensPerSecond: 100,
 			responses: ["First answer.", LONG, SLOW_SUMMARY, SLOW_SUMMARY, "Never sent."],
 		},
@@ -148,15 +138,6 @@ function runEdupi(args: string[], onStart?: (proc: ReturnType<typeof spawn>) => 
 		),
 	};
 }
-
-test("--session with a file that is not a session prints pi's one-line error and exits with 1", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
-	const file = join(dir, "bad.jsonl");
-	writeFileSync(file, `${JSON.stringify({ type: "message", id: "a" })}\n`);
-	const { code, stderr } = await runEdupi(["--session", file]).done;
-	expect(code).toBe(1);
-	expect(stderr).toMatch(/^Error: .+\n$/);
-});
 
 test("SIGHUP exits with 129 and SIGTERM with 143, as pi's RPC mode does", async () => {
 	for (const [signal, expected] of [

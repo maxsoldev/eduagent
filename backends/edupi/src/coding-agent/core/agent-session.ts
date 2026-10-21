@@ -82,7 +82,7 @@ export interface AgentSessionConfig {
 	settingsManager: SettingsManager;
 	/** The key for a provider, or undefined if none is configured. */
 	getApiKey: (provider: string) => string | undefined;
-	/** The loaded AGENTS.md files, skills and SYSTEM.md files. */
+	/** The loaded AGENTS.md files and skills. */
 	resourceLoader: DefaultResourceLoader;
 	/** edupi's teaching hooks (prompt, skills, compaction); pi has none. */
 	probe?: Probe;
@@ -326,7 +326,7 @@ export class AgentSession {
 		return this.agent.followUpMode;
 	}
 
-	/** The session file, or undefined with --no-session. It exists once the first message is saved. */
+	/** The session file. It exists once the first message is saved. */
 	get sessionFile(): string | undefined {
 		return this.sessionManager.getSessionFile();
 	}
@@ -335,7 +335,7 @@ export class AgentSession {
 		return this.sessionManager.getSessionId();
 	}
 
-	/** Gathers the prompt's inputs: cwd, skills, AGENTS.md files, SYSTEM.md, APPEND_SYSTEM.md, tool snippets and guidelines. */
+	/** Gathers the prompt's inputs: cwd, skills, AGENTS.md files, tool snippets and guidelines. */
 	private _rebuildSystemPrompt(toolNames: string[]): void {
 		const toolSnippets: Record<string, string> = {};
 		const toolGuidelines: Record<string, string[]> = {};
@@ -345,13 +345,10 @@ export class AgentSession {
 			toolSnippets[name] = contribution.snippet;
 			toolGuidelines[name] = [...contribution.guidelines];
 		}
-		const appendSystemPrompt = this.resourceLoader.getAppendSystemPrompt();
 		this._baseSystemPromptOptions = {
 			cwd: this.resourceLoader.cwd,
 			skills: this.resourceLoader.getSkills().skills,
 			contextFiles: this.resourceLoader.getAgentsFiles().agentsFiles,
-			customPrompt: this.resourceLoader.getSystemPrompt(),
-			appendSystemPrompt: appendSystemPrompt.length > 0 ? appendSystemPrompt.join("\n\n") : "",
 			selectedTools: toolNames,
 			toolSnippets,
 			toolGuidelines,
@@ -381,19 +378,13 @@ export class AgentSession {
 		if (!this._skillsReported) {
 			this._skillsReported = true;
 			const { skills, diagnostics } = loader.getSkills();
-			this._probe.skillsLoaded?.({
-				roots: loader.getSkillRoots(),
-				skills,
-				diagnostics,
-				projectTrusted: loader.projectTrusted,
-			});
+			this._probe.skillsLoaded?.({ roots: loader.getSkillRoots(), skills, diagnostics });
 		}
 		this._probe.promptAssembled?.({
 			sections,
 			patch,
 			firstTurn,
 			contextFiles: loader.getAgentsFiles().agentsFiles.map((file) => file.path),
-			customPromptFiles: loader.getPromptFiles(),
 		});
 	}
 

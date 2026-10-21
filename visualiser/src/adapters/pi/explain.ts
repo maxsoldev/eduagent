@@ -207,7 +207,7 @@ const TRACE: Record<string, Info> = {
 		category: "prompt",
 		chapter: "05",
 		source: "packages/coding-agent/src/core/skills.ts",
-		text: "pi scanned <cwd>/.pi/skills (only in a trusted project) and its home's skills folder, once for the session. The prompt lists each skill's name, description and file; the model reads the file itself when it needs it.",
+		text: "pi scanned <cwd>/.pi/skills and its home's skills folder, once for the session. The prompt lists each skill's name, description and file; the model reads the file itself when it needs it.",
 	},
 	pricing: {
 		title: "Pricing",
@@ -293,7 +293,7 @@ function summary(e: TimelineEvent): string {
 			return e.trace ? p.fragments.map((f: Json) => `${f.kind}${f.changed ? "+" : ""}`).join(" · ") : "";
 		case "skillsLoaded":
 			return e.trace
-				? `${p.skills.length} skills in ${p.roots.length} folders${p.projectTrusted ? "" : " · project not trusted"}${p.errors.length ? ` · ${p.errors.length} warnings` : ""}`
+				? `${p.skills.length} skills in ${p.roots.length} folders${p.errors.length ? ` · ${p.errors.length} warnings` : ""}`
 				: "";
 		case "loopIteration":
 			return e.trace ? `needsFollowUp=${p.needsFollowUp} → ${p.decision}` : "";

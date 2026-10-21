@@ -156,8 +156,7 @@ function put(path: string, text: string) {
 	writeFileSync(path, text);
 }
 
-// The test entry "edupi-skills" runs with --approve (the project's .pi folder is trusted) and
-// backends/edupi/examples/faux/skills.json: the model reads .pi/skills/greet/SKILL.md, then answers.
+// The test entry "edupi-skills" runs backends/edupi/examples/faux/skills.json: the model reads .pi/skills/greet/SKILL.md, then answers.
 test("the Context tab shows the parts of edupi's prompt: pi's sections, AGENTS.md and the skills list", async ({
 	page,
 }) => {

@@ -272,33 +272,6 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
 	]);
 });
 
-test("--continue reopens the newest session of the working directory", async () => {
-	edupi = startEdupi({ responses: ["Remembered."] });
-	await prompt("Remember this.");
-	const first = (await edupi.command("get_state")).data;
-	await edupi.close();
-
-	edupi = startEdupi({ responses: ["Yes."] }, ["--continue"], { dir: edupi.dir });
-	const state = (await edupi.command("get_state")).data;
-	expect(state).toMatchObject({ sessionId: first.sessionId, sessionFile: first.sessionFile, messageCount: 3 });
-	await prompt("Do you remember?");
-	expect(
-		edupi
-			.requests()
-			.at(-1)!
-			.body.messages.map((m: Message) => m.role),
-	).toEqual(["system", "user", "assistant", "user"]);
-});
-
-test("--no-session keeps the session in memory and writes no file", async () => {
-	edupi = startEdupi({ responses: ["Hi."] }, ["--no-session"]);
-	await prompt("Hello?");
-	const state = (await edupi.command("get_state")).data;
-	expect(state.sessionFile).toBeUndefined();
-	expect(state.messageCount).toBe(3); // system (tools), user, assistant
-	expect(existsSync(join(edupi.dir, "home", "agent", "sessions"))).toBe(false);
-});
-
 test("--session on an empty file writes a header into it, then appends the conversation", async () => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
 	const file = join(dir, "empty.jsonl");
@@ -339,20 +312,6 @@ test("--session refuses a file whose first entry is not a session header, and le
 	expect(await edupi.close()).not.toBe(0);
 	expect(edupi.stderrText).toContain(`Session file is not a valid edupi session: ${file}`);
 	expect(readFileSync(file, "utf8")).toBe(content);
-});
-
-test("--continue skips a newer file in the session folder that is not a session", async () => {
-	edupi = startEdupi({ responses: ["Remembered."] });
-	await prompt("Remember this.");
-	const first = (await edupi.command("get_state")).data;
-	await edupi.close();
-	const junk = join(first.sessionFile, "..", "zz-notes.jsonl");
-	writeFileSync(junk, '{"note":"not a session"}\n');
-	utimesSync(junk, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
-
-	edupi = startEdupi({ responses: [] }, ["--continue"], { dir: edupi.dir });
-	const state = (await edupi.command("get_state")).data;
-	expect(state).toMatchObject({ sessionId: first.sessionId, sessionFile: first.sessionFile });
 });
 
 test("a message saved with null content is read as empty content, as pi reads hand-edited files", async () => {
