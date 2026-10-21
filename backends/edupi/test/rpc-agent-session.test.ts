@@ -205,3 +205,24 @@ test("bash commands see the session as PI_* variables, read when the command run
 		`${state.sessionId}|${state.sessionFile}|openrouter|openai/gpt-6-luna|off`,
 	);
 });
+
+test("model-registry: an OpenRouter model without tool support is left out, as pi's catalog does", async () => {
+	const listed = (id: string, params: string[]) => ({
+		id,
+		name: id,
+		context_length: 1234,
+		top_provider: { context_length: 1234, max_completion_tokens: 50 },
+		supported_parameters: params,
+	});
+	edupi = startEdupi({
+		models: [listed("openai/gpt-6-luna", ["reasoning"]), listed("x/with-tools", ["tools"])],
+		responses: [],
+	});
+	expect((await edupi.command("get_state")).data.model).toMatchObject({
+		id: "openai/gpt-6-luna",
+		contextWindow: 128000,
+	});
+	await edupi.close();
+	edupi = startEdupi({ models: [listed("x/with-tools", ["tools"])], responses: [] }, ["--model", "x/with-tools"]);
+	expect((await edupi.command("get_state")).data.model).toMatchObject({ id: "x/with-tools", contextWindow: 1234 });
+});
