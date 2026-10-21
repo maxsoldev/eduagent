@@ -50,12 +50,7 @@ export interface AgentProbe extends ProviderProbe {
 	/** A tool call starts (after tool_execution_start). parallel: the reply's calls run at once. */
 	toolDispatch?(call: { toolCall: AgentToolCall; parallel: boolean }): void | Promise<void>;
 	/** A tool call ended (after tool_execution_end), with the result the model will read. */
-	toolOutput?(outcome: {
-		toolCall: AgentToolCall;
-		result: AgentToolResult<unknown>;
-		isError: boolean;
-		durationMs?: number;
-	}): void | Promise<void>;
+	toolOutput?(outcome: AgentToolCallOutcome): void | Promise<void>;
 	/**
 	 * A point where step mode may pause the loop: the loop waits until the returned promise
 	 * settles. signal is the run's abort signal, so an abort also ends the wait.
@@ -159,6 +154,15 @@ export interface AgentTool<TParams = any, TDetails = any> extends Tool {
 		onUpdate?: AgentToolUpdateCallback<TDetails>,
 	) => Promise<AgentToolResult<TDetails>>;
 	executionMode?: ToolExecutionMode;
+}
+
+/** One finished tool call: the result the model reads, and how long execute() took. */
+export interface AgentToolCallOutcome {
+	toolCall: AgentToolCall;
+	result: AgentToolResult<any>;
+	isError: boolean;
+	/** Absent when the tool did not run (unknown tool, bad arguments, abort). */
+	durationMs?: number;
 }
 
 /** The transcript one run starts from, and the tools it may run. */

@@ -120,7 +120,8 @@ This is the request the real pi sent (`test/fixtures/pi/tools-request.json`). An
 |---|---|---|
 | [`src/coding-agent/core/tools/index.ts`](../../../backends/edupi/src/coding-agent/core/tools/index.ts) | `coding-agent/src/core/tools/index.ts` | `createCodingTools(cwd)`: read, bash, edit, write |
 | [`src/coding-agent/core/tools/read.ts`](../../../backends/edupi/src/coding-agent/core/tools/read.ts) | `tools/read.ts` | The read tool, offset and limit, the continuation hints |
-| [`src/coding-agent/core/tools/bash.ts`](../../../backends/edupi/src/coding-agent/core/tools/bash.ts) | `tools/bash.ts` | The bash tool: spawn, kill the process group on abort or timeout, partial output, the temp file |
+| [`src/coding-agent/core/tools/bash.ts`](../../../backends/edupi/src/coding-agent/core/tools/bash.ts) | `tools/bash.ts` | The bash tool: spawn, kill the process group on abort or timeout, partial output |
+| [`src/coding-agent/core/tools/output-accumulator.ts`](../../../backends/edupi/src/coding-agent/core/tools/output-accumulator.ts) | `tools/output-accumulator.ts` | `OutputAccumulator`: bash's output so far, its tail, and the temp file with all of it |
 | [`src/coding-agent/core/tools/edit.ts`](../../../backends/edupi/src/coding-agent/core/tools/edit.ts), [`edit-diff.ts`](../../../backends/edupi/src/coding-agent/core/tools/edit-diff.ts) | `tools/edit.ts`, `tools/edit-diff.ts` | The edit tool, `prepareArguments`, the match rules and pi's diff |
 | [`src/coding-agent/core/tools/write.ts`](../../../backends/edupi/src/coding-agent/core/tools/write.ts) | `tools/write.ts` | The write tool |
 | [`src/coding-agent/core/tools/file-mutation-queue.ts`](../../../backends/edupi/src/coding-agent/core/tools/file-mutation-queue.ts) | `tools/file-mutation-queue.ts` | `withFileMutationQueue`: one `edit` or `write` per file at a time |
@@ -187,10 +188,9 @@ The Codex side: [`ToolCallRuntime`](https://github.com/openai/codex/blob/1c7c43c
 - **No fuzzy match in edit.** pi tries the exact text first, then a normalised match (no trailing spaces, straight quotes, ASCII dashes). edupi matches exact text only.
 - **No images.** pi's `read` sends images as attachments (resized); edupi reads every file as text.
 - **Simpler bash.** No spawn hook or command prefix, no Windows shells, no `bash` search on `PATH` (only `/bin/bash`, else `sh`). The output is kept in memory (pi streams it to the temp file), and `structuredContent.output` is not capped at 1MB (so it never has `truncated: true` or `full_output_path`). After the command exits, edupi waits at most 100 ms for the output pipes; pi waits until they are idle. pi kills running commands when it exits; edupi leaves them running.
-- **No `constrainedSampling` on the tools.** pi's four tools ask for strict JSON-schema sampling (`strict: "prefer"`); it is in their `toolsAdded` declarations. OpenRouter gets no `strict` field either way, so the requests are the same, but edupi's session files do not have the field.
 - **Simpler paths.** No macOS file-name variants (NFD, curly quotes, screenshot names) in `read`.
 - **No `beforeToolCall` / `afterToolCall` hooks** (pi uses them for extensions), no `terminate` flag, no `grep`, `find` and `ls` tools, no tool set changes after the first prompt (so no `toolsRemoved` in practice).
-- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser and repairs bad string escapes.
+- **Simpler argument parsing.** While a call streams, edupi shows its arguments only once the JSON so far parses; pi uses a partial-JSON parser. As in pi, a `null` for an optional argument counts as left out (it is deleted before validation).
 
 ## Try it
 

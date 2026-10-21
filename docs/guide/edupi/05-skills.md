@@ -105,7 +105,7 @@ So `pi --mode rpc` in a new repo ignores `.pi/skills`, but loads the home's skil
 |---|---|---|
 | [`src/coding-agent/core/skills.ts`](../../../backends/edupi/src/coding-agent/core/skills.ts) | `coding-agent/src/core/skills.ts` | `loadSkillsFromDir`, `loadSkillFromFile` (frontmatter, validation), `loadSkills` (collisions), `formatSkillsForPrompt` |
 | [`src/coding-agent/utils/frontmatter.ts`](../../../backends/edupi/src/coding-agent/utils/frontmatter.ts) | `coding-agent/src/utils/frontmatter.ts` | YAML frontmatter with pi's `yaml` package |
-| [`src/coding-agent/core/resource-loader.ts`](../../../backends/edupi/src/coding-agent/core/resource-loader.ts) | `coding-agent/src/core/resource-loader.ts`, `package-manager.ts` | `DefaultResourceLoader.reload()`: the skill folders in pi's order, `.pi/skills` only if trusted |
+| [`src/coding-agent/core/resource-loader.ts`](../../../backends/edupi/src/coding-agent/core/resource-loader.ts) | `coding-agent/src/core/resource-loader.ts`, `package-manager.ts` | `DefaultResourceLoader.reload()`: the skill folders in pi's order, `.pi/skills` only if trusted; `updateSkillsFromPaths` loads them and sets their source info |
 | [`src/coding-agent/core/project-trust.ts`](../../../backends/edupi/src/coding-agent/core/project-trust.ts) | `coding-agent/src/core/project-trust.ts`, `trust-manager.ts` | `resolveProjectTrusted`: the flag, the trust-requiring files, `trust.json` |
 | [`src/coding-agent/core/agent-session.ts`](../../../backends/edupi/src/coding-agent/core/agent-session.ts) | `coding-agent/src/core/agent-session.ts` | `_expandSkillCommand` (`/skill:name`) |
 | [`src/coding-agent/modes/rpc/rpc-mode.ts`](../../../backends/edupi/src/coding-agent/modes/rpc/rpc-mode.ts) | `modes/rpc/rpc-mode.ts` | `get_commands` |
