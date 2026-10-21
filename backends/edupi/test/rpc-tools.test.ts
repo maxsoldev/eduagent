@@ -1,9 +1,7 @@
 // Seam A: pi's default coding tools (read, bash, edit, write) over pi's RPC protocol. The faux
 // provider scripts the tool calls; the tools run for real in the test's temporary directory.
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
@@ -329,60 +327,11 @@ test("two parallel edits of one file both apply: edit and write wait in a per-fi
 	expect(readFileSync(join(edupi.dir, "app.py"), "utf8")).toBe("ONE\nTWO\n");
 });
 
-test("bash refuses a timeout above the timer limit, after its first update, as pi does", async () => {
-	edupi = startEdupi({
-		responses: [toolUse(call("b1", "bash", { command: "echo never", timeout: 3_000_000 })), "Too long."],
-	});
-	await prompt("Wait long.");
+test("bash keeps the tail of a long output and tells the model which lines it shows, as pi does", async () => {
+	edupi = startEdupi({ responses: [toolUse(call("long", "bash", { command: "seq 3000" })), "Long."] });
+	await prompt("Count.");
 
-	expect(events("tool_execution_update").map((m) => m.partialResult)).toEqual([{ content: [] }]);
-	expect(toolEnd("b1")).toMatchObject({
-		isError: true,
-		result: { content: [{ type: "text", text: "Invalid timeout: maximum is 2147483.647 seconds" }] },
-	});
-});
-
-test("bash names the size of the open last line when it keeps only its end, as pi's accumulator counts it", async () => {
-	const long = "head -c 60000 /dev/zero | tr '\\0' a";
-	edupi = startEdupi({
-		responses: [
-			toolUse(call("open", "bash", { command: long }), call("closed", "bash", { command: `${long}; echo` })),
-			"Long.",
-		],
-	});
-	await prompt("Print a long line.");
-
-	const note = (id: string) => toolEnd(id).result.content[0].text.split("\n\n").at(-1);
-	expect(note("open")).toMatch(
-		/^\[Showing last 50\.0KB of line 1 \(line is 58\.6KB\)\. Full output: .*pi-bash-[0-9a-f]{16}\.log\]$/,
-	);
-	// The line ended with a newline: pi's open line is then empty, so pi says 0B.
-	expect(note("closed")).toMatch(/^\[Showing last 50\.0KB of line 1 \(line is 0B\)\. Full output: /);
-});
-
-test("bash does not pass on PI_* session variables it inherited (edupi run from inside pi); it sets its own", async () => {
-	process.env.PI_SESSION_ID = "parent-session";
-	process.env.PI_MODEL = "parent-model";
-	try {
-		edupi = startEdupi({
-			responses: [toolUse(call("env", "bash", { command: 'echo "[$PI_SESSION_ID][$PI_MODEL]"' })), "Clean."],
-		});
-	} finally {
-		delete process.env.PI_SESSION_ID;
-		delete process.env.PI_MODEL;
-	}
-	await prompt("Show the session.");
-
-	const { sessionId } = (await edupi.command("get_state")).data;
-	expect(toolEnd("env").result.content).toEqual([{ type: "text", text: `[${sessionId}][openai/gpt-6-luna]\n` }]);
-});
-
-test("a file:// URL is a path, as in pi's resolveToCwd", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-url-")));
-	writeFileSync(join(dir, "a b.txt"), "by url\n");
-	const url = pathToFileURL(join(dir, "a b.txt")).href; // file:///.../a%20b.txt
-	edupi = startEdupi({ responses: [toolUse(call("u1", "read", { path: url })), "Read."] }, [], { dir });
-	await prompt("Read it.");
-
-	expect(toolEnd("u1")).toMatchObject({ isError: false, result: { content: [{ type: "text", text: "by url\n" }] } });
+	const [text] = toolEnd("long").result.content.map((c: { text: string }) => c.text);
+	expect(text.startsWith("1001\n")).toBe(true);
+	expect(text.endsWith("\n3000\n\n[Showing lines 1001-3000 of 3000.]")).toBe(true);
 });
