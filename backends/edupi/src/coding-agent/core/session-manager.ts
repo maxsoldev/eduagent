@@ -280,7 +280,7 @@ export class SessionManager {
 	}
 
 	/** Starts a fresh session in memory: a new header and id. Returns the file it will write. */
-	newSession(options?: { parentSession?: string }): string {
+	newSession(): string {
 		this.sessionId = uuidv7();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -289,7 +289,6 @@ export class SessionManager {
 			id: this.sessionId,
 			timestamp,
 			cwd: this.cwd,
-			parentSession: options?.parentSession,
 		};
 		this.fileEntries = [header];
 		this.byId.clear();

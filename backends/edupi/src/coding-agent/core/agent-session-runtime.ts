@@ -23,9 +23,8 @@ export class AgentSessionRuntime {
 	}
 
 	/** A fresh session in the same session dir. */
-	async newSession(options?: { parentSession?: string }): Promise<{ cancelled: boolean }> {
+	async newSession(): Promise<{ cancelled: boolean }> {
 		const sessionManager = SessionManager.create(this.cwd, this._session.sessionManager.getSessionDir());
-		if (options?.parentSession) sessionManager.newSession({ parentSession: options.parentSession });
 		await this.teardownCurrent();
 		this._session = this.createRuntime(sessionManager);
 		return { cancelled: false };

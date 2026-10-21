@@ -123,8 +123,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 			}
 
 			case "new_session": {
-				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-				const result = await runtimeHost.newSession(options);
+				const result = await runtimeHost.newSession();
 				if (!result.cancelled) rebindSession();
 				return success(id, "new_session", result);
 			}
