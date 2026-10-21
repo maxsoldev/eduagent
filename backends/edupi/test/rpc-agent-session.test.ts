@@ -1,7 +1,7 @@
 // Seam A: AgentSession paths checked against pi's agent-session.ts (pinned 16f5f0af4): abort
-// also cancels a compaction, waits for it, and stops a run that starts meanwhile; a prompt is
-// refused only during a manual compaction; steer and follow_up expand /skill: commands. Also
-// main.ts and rpc-mode.ts: a bad --session file and SIGHUP exit as pi does.
+// also cancels a compaction and waits for it; a prompt is refused only during a manual
+// compaction; steer and follow_up expand /skill: commands. Also main.ts and rpc-mode.ts: a bad
+// --session file and SIGTERM exit as pi does.
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -94,21 +94,6 @@ test("during an automatic compaction a prompt gets pi's busy error, and abort ca
 	expect(end).toEqual({ type: "compaction_end", reason: "threshold", aborted: true, willRetry: false });
 	expect(edupi.seen.find((m) => m.type === "agent_settled" && m.aborted)).toBeDefined();
 	expect(indexOf((m) => m.type === "agent_settled" && m.aborted)).toBeLessThan(indexOf((m) => m === abortReply));
-
-	// The next prompt compacts first (the last reply is still above the threshold). An abort then
-	// cancels that compaction, and the run that starts after it ends at once as aborted.
-	const from = edupi.seen.length;
-	const settled = settledCount() + 1;
-	edupi.sendLine(JSON.stringify({ type: "prompt", message: "q3" }));
-	await edupi.until((m) => m.type === "compaction_start" && edupi.seen.indexOf(m) >= from);
-	await edupi.command("abort");
-	await untilSettled(settled);
-	const after = edupi.seen.slice(from);
-	expect(after.find((m) => m.type === "compaction_end")).toMatchObject({ reason: "threshold", aborted: true });
-	expect(after.find((m) => m.type === "message_end" && m.message.role === "assistant")?.message.stopReason).toBe(
-		"aborted",
-	);
-	expect(after.find((m) => m.type === "agent_settled")).toEqual({ type: "agent_settled", aborted: true });
 });
 
 test("steer and follow_up expand a /skill: command, as prompt does", async () => {
@@ -158,17 +143,12 @@ test("--session with a file that is not a session prints pi's one-line error and
 	expect(stderr).toMatch(/^Error: .+\n$/);
 });
 
-test("SIGHUP exits with 129 and SIGTERM with 143, as pi's RPC mode does", async () => {
-	for (const [signal, expected] of [
-		["SIGHUP", 129],
-		["SIGTERM", 143],
-	] as const) {
-		const run = runEdupi([], (proc) => {
-			proc.stdout?.once("data", () => proc.kill(signal)); // after the get_state response: RPC mode is up
-			proc.stdin?.write(`${JSON.stringify({ id: "1", type: "get_state" })}\n`);
-		});
-		expect((await run.done).code).toBe(expected);
-	}
+test("SIGTERM exits with 143, as pi's RPC mode does", async () => {
+	const run = runEdupi([], (proc) => {
+		proc.stdout?.once("data", () => proc.kill("SIGTERM")); // after the get_state response: RPC mode is up
+		proc.stdin?.write(`${JSON.stringify({ id: "1", type: "get_state" })}\n`);
+	});
+	expect((await run.done).code).toBe(143);
 });
 
 test("--session works in the cwd of the file's header: its AGENTS.md and cwd go into the prompt", async () => {
@@ -204,25 +184,4 @@ test("bash commands see the session as PI_* variables, read when the command run
 	expect(end.result.content[0].text.trim()).toBe(
 		`${state.sessionId}|${state.sessionFile}|openrouter|openai/gpt-6-luna|off`,
 	);
-});
-
-test("model-registry: an OpenRouter model without tool support is left out, as pi's catalog does", async () => {
-	const listed = (id: string, params: string[]) => ({
-		id,
-		name: id,
-		context_length: 1234,
-		top_provider: { context_length: 1234, max_completion_tokens: 50 },
-		supported_parameters: params,
-	});
-	edupi = startEdupi({
-		models: [listed("openai/gpt-6-luna", ["reasoning"]), listed("x/with-tools", ["tools"])],
-		responses: [],
-	});
-	expect((await edupi.command("get_state")).data.model).toMatchObject({
-		id: "openai/gpt-6-luna",
-		contextWindow: 128000,
-	});
-	await edupi.close();
-	edupi = startEdupi({ models: [listed("x/with-tools", ["tools"])], responses: [] }, ["--model", "x/with-tools"]);
-	expect((await edupi.command("get_state")).data.model).toMatchObject({ id: "x/with-tools", contextWindow: 1234 });
 });

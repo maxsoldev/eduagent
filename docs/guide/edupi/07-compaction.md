@@ -203,7 +203,9 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 - **Global settings only.** pi also reads `<cwd>/.pi/settings.json` once the project is trusted, and has per-model overrides (`compaction.modelOverrides`) and `set_auto_compaction`. edupi reads `<home>/settings.json`.
 - **Simpler overflow bookkeeping.** pi checks that the failed reply is still part of the context and has more cases for omissions of omissions. edupi omits the failed reply and its tool results.
 - **No projection guards in `_checkCompaction`.** pi first checks that the reply is still in the projected context (`assistantIsProjected`, `assistantRetainedForExplicitRecovery`). edupi checks the reply as it is.
-- **Entry order, not timestamps.** A reply is "from before the latest compaction" (its usage is stale) if its entry comes before the compaction entry in the session file. pi compares millisecond timestamps; with the fast faux provider both can fall in the same millisecond. A message with no entry yet falls back to pi's timestamp rule.
+- **Entry order, not timestamps.** A reply is "from before the latest compaction" (its usage is stale) if its entry comes before the compaction entry in the session file. pi compares millisecond timestamps; with the fast faux provider both can fall in the same millisecond.
+- **No truncated-reply recovery.** pi also compacts and retries when a reply stops at `length` below the model's output limit (`isRecoverableLength`): maybe context pressure. edupi treats it as a normal reply.
+- **One estimate for the threshold.** After a failed reply or one without usage, edupi estimates the projected context. pi estimates the Agent's messages and first checks that their last usage is not from before the compaction.
 
 ## Try it
 
