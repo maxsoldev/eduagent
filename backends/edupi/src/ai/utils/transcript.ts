@@ -36,9 +36,14 @@ export function getCurrentTools(messages: TranscriptMessages): Tool[] {
 	return [...tools.values()];
 }
 
-/** What the model sees of a tool: name, description and a plain-JSON copy of the schema. */
+/** What the model sees of a tool: name, description, a plain-JSON copy of the schema and its sampling setting. */
 export function toToolDeclaration(tool: Tool): Tool {
-	return { name: tool.name, description: tool.description, parameters: JSON.parse(JSON.stringify(tool.parameters)) };
+	return {
+		name: tool.name,
+		description: tool.description,
+		parameters: JSON.parse(JSON.stringify(tool.parameters)),
+		...(tool.constrainedSampling === undefined ? {} : { constrainedSampling: tool.constrainedSampling }),
+	};
 }
 
 /** Same interface to the model? The JSON round-trip drops typebox's symbol keys, so string comparison is exact. */

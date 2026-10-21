@@ -121,7 +121,7 @@ test("debug_get_context while paused is the exact body of the request that follo
 			id: "openai/gpt-6-luna",
 			name: "Luna",
 			context_length: 200000,
-			supported_parameters: ["reasoning"],
+			supported_parameters: ["reasoning", "tools"],
 			top_provider: { context_length: 200000, max_completion_tokens: 32000 },
 			pricing: { prompt: "0.000001", completion: "0.000008" },
 		},

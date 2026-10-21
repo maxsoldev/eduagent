@@ -41,6 +41,9 @@ function copyFixture(name: string): { dir: string; file: string } {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
 	const file = join(dir, name);
 	copyFileSync(join(FIXTURES, name), file);
+	// edupi works in the header's cwd, as pi: point it at the test dir, which exists on every machine.
+	const [header, ...rest] = readFileSync(file, "utf8").split("\n");
+	writeFileSync(file, [JSON.stringify({ ...JSON.parse(header), cwd: dir }), ...rest].join("\n"));
 	return { dir, file };
 }
 
@@ -257,7 +260,12 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
 		/^The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSECOND SUMMARY/,
 	);
 	expect(edupi.requests()[0].body.messages).toEqual([
-		{ role: "system", content: pi[0].content.replace(/\n\n<docs>[\s\S]*<\/docs>/, "").replace(recorded[0].cwd, dir) },
+		{
+			role: "system",
+			content: pi[0].content
+				.replace(/\n\n<docs>[\s\S]*<\/docs>/, "")
+				.replace(readEntries(join(FIXTURES, "session-compact.jsonl"))[0].cwd, dir),
+		},
 		...pi.slice(1),
 		{ role: "assistant", content: "Fourth." },
 		{ role: "user", content: [{ type: "text", text: "q5" }] },
