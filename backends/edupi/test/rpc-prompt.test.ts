@@ -93,6 +93,7 @@ test("get_state answers with pi's session state, before and after a prompt", asy
     isCompacting: false,
     steeringMode: "one-at-a-time",
     followUpMode: "one-at-a-time",
+    sessionFile: expect.any(String),
     sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     autoCompactionEnabled: false,
     messageCount: 0,

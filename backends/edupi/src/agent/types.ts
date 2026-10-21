@@ -18,8 +18,16 @@ export type { ThinkingLevel } from "../ai/types.ts";
 export type StreamFn = (model: Model, context: TranscriptContext, options?: SimpleStreamOptions) =>
   AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
 
-/** pi lets apps add their own message roles; edupi uses only the provider's. */
-export type AgentMessage = Message;
+/**
+ * Apps add their own message roles by declaration merging into this interface. The coding
+ * agent adds "compactionSummary" (coding-agent/core/messages.ts).
+ */
+export interface CustomAgentMessages {
+  // Empty by default
+}
+
+/** The provider's messages plus the app's own. convertToLlm turns them into provider messages. */
+export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
 
 export interface AgentLoopConfig extends SimpleStreamOptions {
   model: Model;

@@ -121,8 +121,7 @@ Codex messages are JSON-RPC lite ([`rpc.rs`](https://github.com/openai/codex/blo
 
 ## Where edupi is simpler
 
-- **Two commands so far:** `prompt` and `get_state`. pi has about forty. Steering, follow-up, abort, new sessions, compaction and thinking levels come with their features; everything else gets pi's `Unknown command` error.
-- **No session file yet**, so `get_state` has no `sessionFile` (as pi with `--no-session`), and the session id is a random UUID, not pi's time-ordered UUIDv7.
+- **Four commands so far:** `prompt`, `get_state`, `new_session` and `get_messages` (chapter 06). pi has about forty. Steering, follow-up, abort, compaction and thinking levels come with their features; everything else gets pi's `Unknown command` error.
 - **No extensions**, so no `extension_ui_request` records and no `disposition: "handled"`.
 - **No backpressure.** pi's agent waits when stdout is full, so a slow client slows the loop down. edupi lets Node buffer the output.
 - **Simpler shutdown.** pi disposes the session and kills the child processes it started. edupi flushes stdout and exits when stdin closes, and exits with 143 on SIGTERM, as pi does.

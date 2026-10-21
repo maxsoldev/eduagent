@@ -2,6 +2,9 @@
 // Completions endpoint and records each request.
 import { afterEach, expect, test } from "vitest";
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startEdupi, type RpcClient } from "./rpc-client.ts";
 
 let edupi: RpcClient;
@@ -38,7 +41,7 @@ test("each request is a stateless Chat Completions body on OpenRouter with the w
 });
 
 test("any OpenRouter model id is accepted with --model", async () => {
-  edupi = startEdupi({ responses: ["Hi."] }, "--model", "anthropic/claude-sonnet-5");
+  edupi = startEdupi({ responses: ["Hi."] }, ["--model", "anthropic/claude-sonnet-5"]);
   const state = await edupi.command("get_state");
   expect(state.data.model).toMatchObject({ id: "anthropic/claude-sonnet-5", provider: "openrouter", api: "openai-completions" });
   await prompt("Hi?");
@@ -55,8 +58,9 @@ test("unknown commands and bad JSON get pi's error responses", async () => {
 });
 
 test("without an API key a prompt is refused before the run starts", async () => {
+  const home = mkdtempSync(join(tmpdir(), "edupi-home-"));
   const proc = spawn(process.execPath, [new URL("../bin/edupi.mjs", import.meta.url).pathname, "--mode", "rpc"],
-    { env: { ...process.env, OPENROUTER_API_KEY: "" } });
+    { env: { ...process.env, OPENROUTER_API_KEY: "", EDUPI_CODING_AGENT_DIR: home } });
   let out = "";
   const firstLine = new Promise((resolve) => proc.stdout.on("data", (d) => (out += d) && out.includes("\n") && resolve(out)));
   proc.stdin.write(`${JSON.stringify({ id: "1", type: "prompt", message: "Hi" })}\n`);
