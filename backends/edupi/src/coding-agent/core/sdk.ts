@@ -31,15 +31,12 @@ export interface CreateAgentSessionOptions {
 	cwd?: string;
 	/** edupi: the teaching extras' hooks. */
 	probe?: Probe;
-	/** May files from <cwd>/.pi be loaded? Resolved by main.ts (pi: SettingsManager projectTrusted). Default: no. */
-	projectTrusted?: boolean;
 }
 
 export function createAgentSession(options: CreateAgentSessionOptions): AgentSession {
 	const { sessionManager } = options;
 	const existingSession = sessionManager.buildSessionContext();
 	const hasExistingSession = existingSession.messages.length > 0;
-	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
 	// pi looks the session's model up in its model registry. edupi knows only OpenRouter models.
 	let model = options.model;
@@ -49,10 +46,7 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 	model ??= options.modelRegistry.find("openrouter", DEFAULT_MODEL_ID)!;
 
 	// The session's level, else pi's default; then clamped to what the model supports.
-	const sessionLevel: ThinkingLevel =
-		hasExistingSession && hasThinkingEntry
-			? (existingSession.thinkingLevel as ThinkingLevel)
-			: DEFAULT_THINKING_LEVEL;
+	const sessionLevel = hasExistingSession ? (existingSession.thinkingLevel as ThinkingLevel) : DEFAULT_THINKING_LEVEL;
 	const thinkingLevel = clampThinkingLevel(model, sessionLevel);
 
 	// pi's default coding tools, working in the session's directory.
@@ -70,12 +64,8 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 		},
 	});
 
-	// AGENTS.md files, skills and SYSTEM.md, read once per session.
-	const resourceLoader = new DefaultResourceLoader({
-		cwd,
-		agentDir: getAgentDir(),
-		projectTrusted: options.projectTrusted ?? false,
-	});
+	// AGENTS.md files and skills, read once per session.
+	const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
 	resourceLoader.reload();
 
 	const agent = new Agent({
@@ -88,9 +78,7 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 	});
 
 	// Record the settings, so a reopened session restores them.
-	if (hasExistingSession) {
-		if (!hasThinkingEntry) sessionManager.appendThinkingLevelChange(thinkingLevel);
-	} else {
+	if (!hasExistingSession) {
 		sessionManager.appendModelChange(model.provider, model.id);
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}

@@ -136,8 +136,8 @@ let pendingMessages = (await config.getSteeringMessages?.()) || [];           //
 while (true) {
   let hasMoreToolCalls = true;
   while (hasMoreToolCalls || pendingMessages.length > 0) {
-    if (lastCompletedTurn) {
-      await config.prepareNextTurn?.(lastCompletedTurn);   // may compact (chapter 07); new context, model, level
+    if (!firstTurn) {
+      await config.prepareNextTurn?.({ context: currentContext }); // may compact (chapter 07); new context, model, level
       if (pendingMessages.length === 0) pendingMessages = (await config.getSteeringMessages?.()) || []; // B
       await emit({ type: "turn_start" });
     }
@@ -157,7 +157,7 @@ await emit({ type: "agent_end", messages: newMessages });
 
 The Agent owns the queues; the loop only calls `getSteeringMessages()` and `getFollowUpMessages()`. The session keeps the texts next to them, for `queue_update`. After the loop, the session goes on (`agent.continue()`) while messages are still queued, for example one sent while the last `agent_end` listeners ran. It does not go on after an abort.
 
-**In the viewer.** Backends with the `queues` capability keep the message box open while a turn runs. **steer** (Enter) sends `steer`, **follow-up** (Alt+Enter, as in pi's TUI) sends `follow_up`, **abort** sends `abort`. The queued messages show above the box, from `queue_update`. The effort select sends `set_thinking_level`. Thinking blocks show as reasoning in the chat. On connect the pi adapter also sends `get_messages`, so a session started with `--continue` or `--session` shows its conversation so far.
+**In the viewer.** Backends with the `queues` capability keep the message box open while a turn runs. **steer** (Enter) sends `steer`, **follow-up** (Alt+Enter, as in pi's TUI) sends `follow_up`, **abort** sends `abort`. The queued messages show above the box, from `queue_update`. The effort select sends `set_thinking_level`. Thinking blocks show as reasoning in the chat. On connect the pi adapter also sends `get_messages`, so a session started with `--session` shows its conversation so far.
 
 The tests in [`test/rpc-queues.test.ts`](../../../backends/edupi/test/rpc-queues.test.ts) check the event order of real pi's queue transcript, a follow-up sent during a stream, abort during a stream and during a tool, `new_session` and `compact` during a run, the `reasoning` field for each thinking level, and the thinking replay. [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-provider.test.ts) checks the request after an abort in the middle of a streamed tool call, and the synthetic results. The visualiser's Seam C test replays a transcript of the real pi with steering, a follow-up and thinking (`visualiser/test/fixtures/pi/queues.out.jsonl`). Playwright steers, follows up and aborts edupi from the viewer (`visualiser/e2e/edupi.spec.ts`).
 
@@ -199,6 +199,7 @@ The Codex side: the [loop](https://github.com/openai/codex/blob/1c7c43cd856a1ef4
 - **No `reasoning_details`.** OpenRouter can also stream structured, sometimes encrypted, reasoning details; pi keeps and replays them. edupi keeps the reasoning text only.
 - **No `prepareRequest` / `finishTurn` hooks** and no explicit continuation. pi's session uses them for its per-request projection, virtual models and extension `turn_end` handlers.
 - **No extension hooks in the loop.** No `transformContext`, `beforeToolCall` / `afterToolCall` (pi's extension `tool_call` / `tool_result` events and image resizing), no `terminate` on tool results (a batch where every result says `terminate` ends the run).
+- **A smaller `Agent`.** Its state is only the model, thinking level, tools and messages (no `isStreaming`, `streamingMessage`, `pendingToolCalls`, `errorMessage`); the session tracks the run itself. `prompt` takes ready messages (no text or images), there is no `waitForIdle` or `clearAllQueues` on the Agent, listeners get no abort signal, and `prepareNextTurn` gets only the context (it cannot add messages).
 - **No model runtime.** The stream function calls the provider directly. pi's goes through `ModelRuntime.streamSimple`, which resolves auth first; so after an abort during a tool, pi's next reply is an `error` and edupi's an `aborted`.
 - **A shorter `transformMessages`.** edupi's copy has pi's two passes (thinking from another model, then dropped replies and synthetic tool results), but no image downgrade and no tool call id normalization: OpenRouter's ids and edupi's text-only models need neither.
 
@@ -216,7 +217,7 @@ Offline, over stdio, with the faux script that runs a slow command:
 
 ```bash
 EDUPI=$PWD; mkdir -p /tmp/edupi-queues && cd /tmp/edupi-queues
-node $EDUPI/bin/edupi.mjs --mode rpc --no-session \
+node $EDUPI/bin/edupi.mjs --mode rpc \
   --faux $EDUPI/examples/faux/queues.json --faux-log /tmp/edupi-queues.requests.jsonl
 {"id":"1","type":"prompt","message":"Run a slow command."}
 {"id":"2","type":"steer","message":"Use src/ instead."}

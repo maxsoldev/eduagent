@@ -2,11 +2,9 @@
 // returns a text file's lines, cut to 2000 lines or 50KB, and tells the model how to read on
 // ("Use offset=N to continue."). pi's skills rely on it: the model reads a SKILL.md with read.
 // edupi leaves out images (pi sends them as attachments) and pluggable file operations.
-import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { type Static, Type } from "typebox";
 import type { AgentTool } from "../../../agent/types.ts";
-import type { TextContent } from "../../../ai/types.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 
@@ -16,15 +14,15 @@ const readSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
 
-/** The tool's line in the system prompt's tool list, and its rules (#14 builds the prompt from them). */
+/** The tool's line in the system prompt's tool list, and its rules. */
 export const readToolSystemPromptContribution = {
 	snippet: "Read file contents",
 	guidelines: ["Use read to examine files instead of cat or sed."],
 } as const;
 
-export type ReadToolInput = Static<typeof readSchema>;
+type ReadToolInput = Static<typeof readSchema>;
 
-export interface ReadToolDetails {
+interface ReadToolDetails {
 	truncation?: TruncationResult;
 }
 
@@ -32,13 +30,13 @@ export function createReadTool(cwd: string): AgentTool<ReadToolInput, ReadToolDe
 	return {
 		name: "read",
 		label: "read",
+		// pi's text, so the tool spec equals pi's (edupi reads every file as text).
 		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 		parameters: readSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		async execute(_toolCallId, { path, offset, limit }, signal) {
-			if (signal?.aborted) throw new Error("Operation aborted");
 			const absolutePath = resolveToCwd(path, cwd);
-			await access(absolutePath, constants.R_OK); // a missing file fails with the system's message (ENOENT ...)
+			// A missing file fails with the system's message (ENOENT ...).
 			const allLines = (await readFile(absolutePath, "utf-8")).split("\n");
 			if (signal?.aborted) throw new Error("Operation aborted");
 
@@ -49,15 +47,8 @@ export function createReadTool(cwd: string): AgentTool<ReadToolInput, ReadToolDe
 				throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
 			}
 			// A limit from the model comes first; then truncateHead applies the line and byte limits.
-			let selectedContent: string;
-			let userLimitedLines: number | undefined;
-			if (limit !== undefined) {
-				const endLine = Math.min(startLine + limit, allLines.length);
-				selectedContent = allLines.slice(startLine, endLine).join("\n");
-				userLimitedLines = endLine - startLine;
-			} else {
-				selectedContent = allLines.slice(startLine).join("\n");
-			}
+			const endLine = limit !== undefined ? Math.min(startLine + limit, allLines.length) : allLines.length;
+			const selectedContent = allLines.slice(startLine, endLine).join("\n");
 
 			const truncation = truncateHead(selectedContent);
 			let outputText: string;
@@ -76,14 +67,13 @@ export function createReadTool(cwd: string): AgentTool<ReadToolInput, ReadToolDe
 						? `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${allLines.length}. Use offset=${nextOffset} to continue.]`
 						: `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${allLines.length} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
 				details = { truncation };
-			} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
-				const remaining = allLines.length - (startLine + userLimitedLines);
-				outputText = `${truncation.content}\n\n[${remaining} more lines in file. Use offset=${startLine + userLimitedLines + 1} to continue.]`;
+			} else if (endLine < allLines.length) {
+				const remaining = allLines.length - endLine;
+				outputText = `${truncation.content}\n\n[${remaining} more lines in file. Use offset=${endLine + 1} to continue.]`;
 			} else {
 				outputText = truncation.content;
 			}
-			const content: TextContent[] = [{ type: "text", text: outputText }];
-			return { content, details, structuredContent: outputText };
+			return { content: [{ type: "text", text: outputText }], details, structuredContent: outputText };
 		},
 	};
 }

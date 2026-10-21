@@ -8,11 +8,9 @@ import { fauxProvider, loadFauxScript } from "../ai/providers/faux.ts";
 import { OPENROUTER_API_KEY_ENV } from "../ai/providers/openrouter.ts";
 import { debugCommands } from "../observe/debug.ts";
 import { Tracer } from "../observe/tracer.ts";
-import { type Args, parseArgs } from "./cli/args.ts";
-import { getAgentDir } from "./config.ts";
+import { parseArgs } from "./cli/args.ts";
 import { AgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import { ModelRegistry } from "./core/model-registry.ts";
-import { resolveProjectTrusted } from "./core/project-trust.ts";
 import { createAgentSession } from "./core/sdk.ts";
 import { SessionManager } from "./core/session-manager.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
@@ -49,16 +47,10 @@ export async function main(argv: string[]): Promise<void> {
 	const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
 	const settingsManager = SettingsManager.create();
-	const sessionManager = createSessionManager(parsed, process.cwd());
+	const sessionManager = parsed.session ? SessionManager.open(parsed.session) : SessionManager.create(process.cwd());
 	// As pi: the runtime works in the session's cwd (an opened file's header). pi exits if that folder
 	// is gone; edupi then stays in the current folder, so session files from other machines open.
 	const cwd = existsSync(sessionManager.getCwd()) ? sessionManager.getCwd() : process.cwd();
-	// RPC mode cannot ask, so <cwd>/.pi is trusted only with --approve or a saved decision.
-	const projectTrusted = resolveProjectTrusted({
-		cwd,
-		agentDir: getAgentDir(),
-		trustOverride: parsed.projectTrustOverride,
-	});
 	const createRuntime = (sessionManager: SessionManager) =>
 		createAgentSession({
 			sessionManager,
@@ -69,7 +61,6 @@ export async function main(argv: string[]): Promise<void> {
 			settingsManager,
 			cwd,
 			probe: tracer,
-			projectTrusted,
 		});
 	const session = createRuntime(sessionManager);
 	// Every session from createRuntime gets the same tracer (in streamFn and the Agent), so it survives new_session.
@@ -77,23 +68,4 @@ export async function main(argv: string[]): Promise<void> {
 		connect: (output) => tracer.connect(output),
 		debug: debugCommands(tracer),
 	});
-}
-
-/** Which session to start with: pi's --no-session, --session, --continue, else a new one. */
-function createSessionManager(parsed: Args, cwd: string): SessionManager {
-	if (parsed.noSession) return SessionManager.inMemory(cwd);
-	if (parsed.session) return openSessionOrExit(parsed.session);
-	if (parsed.continue) return SessionManager.continueRecent(cwd);
-	return SessionManager.create(cwd);
-}
-
-/** pi's openSessionOrExit: a file that cannot be opened is a one-line error and exit code 1. */
-function openSessionOrExit(path: string): SessionManager {
-	try {
-		return SessionManager.open(path);
-	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		console.error(`Error: ${message}`);
-		process.exit(1);
-	}
 }

@@ -120,3 +120,25 @@ export function startEdupi(script: unknown, args: string[] = [], options: StartO
 	);
 	return new RpcClient(proc, dir);
 }
+
+/**
+ * A model with a tiny context window, as OpenRouter's GET /models would list it: `contextLength`
+ * tokens after pi's system prompt, which starts every request. The prompt is measured in a fresh
+ * test dir (all test dirs have the same path length, so the same prompt size).
+ */
+export async function tinyModel(contextLength: number): Promise<Message[]> {
+	const edupi = startEdupi({ responses: ["ok"] });
+	edupi.sendLine(JSON.stringify({ type: "prompt", message: "ok" }));
+	await edupi.until("agent_settled");
+	await edupi.close();
+	const window = contextLength + Math.ceil(JSON.stringify([edupi.requests()[0].body.messages[0]]).length / 4);
+	return [
+		{
+			id: "openai/gpt-6-luna",
+			name: "Tiny Luna",
+			context_length: window,
+			top_provider: { context_length: window, max_completion_tokens: 50 },
+			supported_parameters: ["tools"],
+		},
+	];
+}

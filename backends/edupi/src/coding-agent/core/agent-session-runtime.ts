@@ -22,21 +22,16 @@ export class AgentSessionRuntime {
 		return this._session;
 	}
 
-	/** A fresh session in the same session dir (in memory if the old one was not saved). */
-	async newSession(options?: { parentSession?: string }): Promise<{ cancelled: boolean }> {
-		const old = this._session.sessionManager;
-		const sessionManager = old.isPersisted()
-			? SessionManager.create(this.cwd, old.getSessionDir())
-			: SessionManager.inMemory(this.cwd);
-		if (options?.parentSession) sessionManager.newSession({ parentSession: options.parentSession });
+	/** A fresh session in the same session dir. */
+	async newSession(): Promise<{ cancelled: boolean }> {
+		const sessionManager = SessionManager.create(this.cwd, this._session.sessionManager.getSessionDir());
 		await this.teardownCurrent();
 		this._session = this.createRuntime(sessionManager);
 		return { cancelled: false };
 	}
 
-	/** Aborts the active run first, so it ends (and is saved) in the old file. */
+	/** Aborts the active run first, so it ends (and is saved) in the old file. pi also disposes the old session. */
 	private async teardownCurrent(): Promise<void> {
 		await this._session.abort();
-		this._session.dispose();
 	}
 }

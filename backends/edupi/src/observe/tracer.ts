@@ -10,17 +10,15 @@ import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-age
 import { addTotals, type CostTotal, costBreakdown, pricingJson } from "./pricing.ts";
 import { Stepper } from "./stepper.ts";
 
-/** Where each prompt section comes from (pi's file, or the files the user wrote). */
+/** Where each prompt section comes from (pi's file, or the AGENTS.md files). */
 function sectionSource(name: string, info: PromptAssembledInfo): string {
 	switch (name) {
 		case "preamble":
-			return info.customPromptFiles.systemPrompt ?? "system-prompt.ts";
+			return "system-prompt.ts";
 		case "tools":
 			return "system-prompt.ts + tool snippets";
 		case "rules":
 			return "system-prompt.ts + tool guidelines";
-		case "addendum":
-			return info.customPromptFiles.appendSystemPrompt ?? "APPEND_SYSTEM.md";
 		case "project_context":
 			return info.contextFiles.join(", ");
 		case "skills":
@@ -180,7 +178,6 @@ export class Tracer implements Probe {
 				disableModelInvocation: s.disableModelInvocation,
 			})),
 			errors: info.diagnostics.map((d) => ({ path: d.path, message: d.message })),
-			projectTrusted: info.projectTrusted,
 		});
 	}
 

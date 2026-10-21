@@ -13,7 +13,7 @@ export type RpcCommand =
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
-	| { id?: string; type: "new_session"; parentSession?: string }
+	| { id?: string; type: "new_session" }
 	| { id?: string; type: "get_state" }
 	| { id?: string; type: "get_messages" }
 	| { id?: string; type: "compact"; customInstructions?: string }

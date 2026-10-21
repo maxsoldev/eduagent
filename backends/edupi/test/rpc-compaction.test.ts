@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi, tinyModel } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -248,42 +248,25 @@ test("compact on a session with nothing to summarise ends with pi's error", asyn
 	});
 });
 
-/**
- * A model with a small context window, as OpenRouter's GET /models would list it. With pi's
- * reserve (16,384) it compacts above 8,616 tokens: well above pi's full system prompt, and
- * below one 10,000-token message.
- */
-const SMALL_WINDOW = 25000;
-const THRESHOLD = SMALL_WINDOW - 16384;
-const tinyModel = (contextLength: number) => [
-	{
-		id: "openai/gpt-6-luna",
-		name: "Tiny Luna",
-		context_length: contextLength,
-		top_provider: { context_length: contextLength, max_completion_tokens: 50 },
-		supported_parameters: ["tools"],
-	},
-];
-
 test("threshold: after a run whose context passed contextWindow - reserveTokens, edupi compacts before agent_settled", async () => {
-	const long = "x".repeat(40000); // 10,000 estimated tokens
-	// keepRecentTokens 10,001 keeps q2 (1) and its answer (10,000).
+	const long = "x".repeat(400); // 100 estimated tokens
+	// Window 200 after the system prompt, reserve 100: compact 100 tokens after it. keepRecentTokens 101 keeps q2 (1) and its answer (100).
 	edupi = startEdupi(
 		{
-			models: tinyModel(SMALL_WINDOW),
+			models: await tinyModel(200),
 			responses: ["First answer.", long, "## Goal\nTHRESHOLD SUMMARY", "Third answer."],
 		},
 		[],
-		{ dir: dirWithSettings({ compaction: { keepRecentTokens: 10001 } }) },
+		{ dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 101 } }) },
 	);
 	await edupi.command("get_state");
 	await prompt("q1");
-	expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // the prompt and q1: below the threshold
+	expect(edupi.seen.some((m) => m.type === "compaction_start")).toBe(false); // a few dozen tokens: below the threshold
 
 	const start = edupi.seen.length;
 	await prompt("q2");
 	const reply = edupi.seen.filter((m) => m.type === "message_end").at(-1)!.message;
-	expect(reply.usage.totalTokens).toBeGreaterThan(THRESHOLD);
+	expect(reply.usage.totalTokens).toBeGreaterThan(100);
 	const after = edupi.seen
 		.slice(start)
 		.filter((m) => m.type !== "trace" && m.type !== "message_update")
@@ -492,11 +475,11 @@ test("trace events show the summary request body and the context rebuilt from th
 });
 
 test("threshold inside a run: after tool results fill the context, edupi compacts before the next model call", async () => {
-	// 40,000 characters of output (below bash's 50 KB limit): the tool result alone is estimated at 10,000 tokens.
-	const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "printf '%40000s' | tr ' ' x" } };
+	const bash = { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "printf '%400s' | tr ' ' x" } }; // 400 characters of output
+	// Window 200 after the system prompt, reserve 100: compact 100 tokens after it. The tool result alone is estimated at 100.
 	edupi = startEdupi(
 		{
-			models: tinyModel(SMALL_WINDOW),
+			models: await tinyModel(200),
 			responses: [
 				"First answer.",
 				{ content: [bash], stopReason: "toolUse" },
@@ -508,7 +491,7 @@ test("threshold inside a run: after tool results fill the context, edupi compact
 			],
 		},
 		[],
-		{ dir: dirWithSettings({ compaction: { keepRecentTokens: 50 } }) },
+		{ dir: dirWithSettings({ compaction: { reserveTokens: 100, keepRecentTokens: 50 } }) },
 	);
 	await edupi.command("get_state");
 	await prompt("q1");
@@ -534,5 +517,5 @@ test("threshold inside a run: after tool results fill the context, edupi compact
 	expect(afterCompaction[0]).toEqual(edupi.requests()[0].body.messages[0]);
 	expect(afterCompaction[1].content[0].text).toMatch(/^The conversation history before this point was compacted/);
 	expect(afterCompaction.map((m: Message) => m.role)).toEqual(["system", "user", "assistant", "tool"]);
-	expect(afterCompaction[3].content).toBe("x".repeat(40000));
+	expect(afterCompaction[3].content).toBe("x".repeat(400));
 });

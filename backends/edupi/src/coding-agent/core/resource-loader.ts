@@ -1,31 +1,16 @@
 // Mirrors pi packages/coding-agent/src/core/resource-loader.ts (pinned 16f5f0af4), the parts for the
-// system prompt: AGENTS.md files, skills, SYSTEM.md and APPEND_SYSTEM.md, loaded once per session.
-// Skill folders, in priority order (pi package-manager.ts addAutoDiscoveredResources):
-// <cwd>/.pi/skills (only in a trusted project), then <agentDir>/skills. edupi leaves out extensions,
-// prompt templates, themes, packages, the .agents/skills folders and nested git worktrees.
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+// system prompt: AGENTS.md files and skills, loaded once per session. Skill folders, in priority
+// order (pi package-manager.ts addAutoDiscoveredResources): <cwd>/.pi/skills, then <agentDir>/skills.
+// edupi leaves out project trust (pi reads <cwd>/.pi only in a trusted project), SYSTEM.md and
+// APPEND_SYSTEM.md, extensions, prompt templates, themes, packages and the .agents/skills folders.
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { PROJECT_CONFIG_DIR_NAME } from "../config.ts";
-import { stripBom } from "../utils/frontmatter.ts";
-import { type LoadSkillsResult, loadSkills } from "./skills.ts";
+import { type LoadSkillsResult, loadSkills, type SkillRoot } from "./skills.ts";
 
 export interface ContextFile {
 	path: string;
 	content: string;
-}
-
-/** pi: the file's text; if it exists but cannot be read, a warning, and the input itself is the text. */
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
-	if (!input) return undefined;
-	if (existsSync(input)) {
-		try {
-			return stripBom(readFileSync(input, "utf-8"));
-		} catch (error) {
-			console.error(`Warning: Could not read ${description} file ${input}: ${error}`);
-			return input;
-		}
-	}
-	return input;
 }
 
 /** The first existing file of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD in dir. */
@@ -33,14 +18,7 @@ function loadContextFileFromDir(dir: string): ContextFile | null {
 	const candidates = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
-		if (existsSync(filePath)) {
-			try {
-				if (!statSync(filePath).isFile()) continue;
-				return { path: filePath, content: stripBom(readFileSync(filePath, "utf-8")) };
-			} catch (error) {
-				console.error(`Warning: Could not read ${filePath}: ${error}`);
-			}
-		}
+		if (existsSync(filePath)) return { path: filePath, content: readFileSync(filePath, "utf-8") };
 	}
 	return null;
 }
@@ -76,49 +54,26 @@ export function loadProjectContextFiles(options: { cwd: string; agentDir: string
 	return contextFiles;
 }
 
-export interface DefaultResourceLoaderOptions {
-	cwd: string;
-	agentDir: string;
-	/** Whether files from <cwd>/.pi may be loaded (see project-trust.ts). */
-	projectTrusted: boolean;
-}
-
 export class DefaultResourceLoader {
+	private skills: LoadSkillsResult = { skills: [], diagnostics: [] };
+	private skillRoots: SkillRoot[] = [];
+	private agentsFiles: ContextFile[] = [];
 	readonly cwd: string;
 	readonly agentDir: string;
-	readonly projectTrusted: boolean;
-	private skills: LoadSkillsResult = { skills: [], diagnostics: [] };
-	private skillRoots: { path: string; scope: "user" | "project" }[] = [];
-	private agentsFiles: ContextFile[] = [];
-	private systemPrompt: string | undefined;
-	private appendSystemPrompt: string[] = [];
-	private promptFiles: { systemPrompt?: string; appendSystemPrompt?: string } = {};
 
-	constructor(options: DefaultResourceLoaderOptions) {
+	constructor(options: { cwd: string; agentDir: string }) {
 		this.cwd = options.cwd;
 		this.agentDir = options.agentDir;
-		this.projectTrusted = options.projectTrusted;
 	}
 
 	/** Reads every resource from disk. */
 	reload(): void {
-		const projectSkillsDir = join(this.cwd, PROJECT_CONFIG_DIR_NAME, "skills");
 		this.skillRoots = [
-			...(this.projectTrusted ? [{ path: projectSkillsDir, scope: "project" as const }] : []),
-			{ path: join(this.agentDir, "skills"), scope: "user" as const },
+			{ path: join(this.cwd, PROJECT_CONFIG_DIR_NAME, "skills"), scope: "project" },
+			{ path: join(this.agentDir, "skills"), scope: "user" },
 		];
-		this.updateSkillsFromPaths(this.skillRoots.map((root) => root.path));
-
+		this.skills = loadSkills(this.skillRoots);
 		this.agentsFiles = loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir });
-
-		const systemPromptFile = this.discoverSystemPromptFile();
-		this.systemPrompt = resolvePromptInput(systemPromptFile, "system prompt");
-
-		const appendFile = this.discoverAppendSystemPromptFile();
-		const appendSystemPrompt = resolvePromptInput(appendFile, "append system prompt");
-		this.appendSystemPrompt = appendSystemPrompt !== undefined ? [appendSystemPrompt] : [];
-
-		this.promptFiles = { systemPrompt: systemPromptFile, appendSystemPrompt: appendFile };
 	}
 
 	getSkills(): LoadSkillsResult {
@@ -126,57 +81,11 @@ export class DefaultResourceLoader {
 	}
 
 	/** edupi: the skill folders that were scanned, in priority order. */
-	getSkillRoots(): { path: string; scope: "user" | "project" }[] {
+	getSkillRoots(): SkillRoot[] {
 		return this.skillRoots;
-	}
-
-	/** edupi: the SYSTEM.md and APPEND_SYSTEM.md files in use, if any. */
-	getPromptFiles(): { systemPrompt?: string; appendSystemPrompt?: string } {
-		return this.promptFiles;
 	}
 
 	getAgentsFiles(): { agentsFiles: ContextFile[] } {
 		return { agentsFiles: this.agentsFiles };
-	}
-
-	getSystemPrompt(): string | undefined {
-		return this.systemPrompt;
-	}
-
-	getAppendSystemPrompt(): string[] {
-		return this.appendSystemPrompt;
-	}
-
-	/**
-	 * Each skill gets its folder's source info (pi package-manager.ts addAutoDiscoveredResources):
-	 * source "auto", the folder's scope, baseDir = the agent dir or <cwd>/.pi.
-	 */
-	private updateSkillsFromPaths(skillPaths: string[]): void {
-		const skillsResult = loadSkills({ cwd: this.cwd, agentDir: this.agentDir, skillPaths });
-		this.skills = {
-			...skillsResult,
-			skills: skillsResult.skills.map((skill) => {
-				const root = this.skillRoots.find((r) => skill.filePath.startsWith(`${r.path}${sep}`));
-				if (!root) return skill;
-				const sourceInfo = { ...skill.sourceInfo, source: "auto", scope: root.scope, baseDir: dirname(root.path) };
-				return { ...skill, sourceInfo };
-			}),
-		};
-	}
-
-	/** <cwd>/.pi/SYSTEM.md if the project is trusted, else <agentDir>/SYSTEM.md. */
-	private discoverSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, PROJECT_CONFIG_DIR_NAME, "SYSTEM.md");
-		if (this.projectTrusted && existsSync(projectPath)) return projectPath;
-		const globalPath = join(this.agentDir, "SYSTEM.md");
-		return existsSync(globalPath) ? globalPath : undefined;
-	}
-
-	/** <cwd>/.pi/APPEND_SYSTEM.md if the project is trusted, else <agentDir>/APPEND_SYSTEM.md. */
-	private discoverAppendSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, PROJECT_CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-		if (this.projectTrusted && existsSync(projectPath)) return projectPath;
-		const globalPath = join(this.agentDir, "APPEND_SYSTEM.md");
-		return existsSync(globalPath) ? globalPath : undefined;
 	}
 }

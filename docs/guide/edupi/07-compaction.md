@@ -204,7 +204,9 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 - **Simpler overflow bookkeeping.** pi checks that the failed reply is still part of the context and has more cases for omissions of omissions. edupi omits the failed reply and its tool results. When the cut moves past an omitted reply, pi also checks that no `context_edit` after the cut replaces another entry; edupi never writes replacement edits, so it leaves this check out.
 - **One summary call helper.** pi passes model, key, headers, env, signal, thinking level, retry policy and session id to each summary function as separate arguments, and keeps `generateSummary` and the unused `_reserveTokens` for old callers. edupi bundles the call's inputs in one object, and `completeSummarization` also does pi's failure checks.
 - **No projection guards in `_checkCompaction`.** pi first checks that the reply is still in the projected context (`assistantIsProjected`, `assistantRetainedForExplicitRecovery`). edupi checks the reply as it is.
-- **Entry order, not timestamps.** A reply is "from before the latest compaction" (its usage is stale) if its entry comes before the compaction entry in the session file. pi compares millisecond timestamps; with the fast faux provider both can fall in the same millisecond. A message with no entry yet falls back to pi's timestamp rule.
+- **Entry order, not timestamps.** A reply is "from before the latest compaction" (its usage is stale) if its entry comes before the compaction entry in the session file. pi compares millisecond timestamps; with the fast faux provider both can fall in the same millisecond.
+- **No truncated-reply recovery.** pi also compacts and retries when a reply stops at `length` below the model's output limit (`isRecoverableLength`): maybe context pressure. edupi treats it as a normal reply.
+- **One estimate for the threshold.** After a failed reply or one without usage, edupi estimates the projected context. pi estimates the Agent's messages and first checks that their last usage is not from before the compaction.
 
 ## Try it
 

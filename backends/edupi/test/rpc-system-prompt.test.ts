@@ -115,7 +115,7 @@ const skillXml = (name: string, description: string, location: string) =>
 const skillsSection = (...skills: string[]) =>
 	`<skills>\n${SKILLS_HEAD}\n\n<available_skills>\n${skills.join("\n")}\n</available_skills>\n</skills>`;
 
-test("in an untrusted project only the home's skills are listed, by name, description and file; opted-out skills are left out", async () => {
+test("skills from the project's .pi/skills and the home are listed by name, description and file; the project's win a name collision; opted-out skills are left out", async () => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
 	writeSkills(dir);
 	edupi = startEdupi({ responses: ["Hi."] }, [], { dir });
@@ -124,38 +124,10 @@ test("in an untrusted project only the home's skills are listed, by name, descri
 	const home = join(dir, "home", "agent", "skills");
 	expect(firstRequest()[0].content).toBe(
 		`${BASE}\n\n${skillsSection(
-			skillXml(
-				"deploy",
-				"The home&apos;s deploy skill (loses to the project&apos;s).",
-				join(home, "deploy", "SKILL.md"),
-			),
+			skillXml("deploy", "Deploys this project.", join(dir, ".pi", "skills", "deploy", "SKILL.md")),
 			skillXml("greet", "Greets the user &amp; says &lt;hi&gt;.", join(home, "greet", "SKILL.md")),
 		)}\n\n<cwd>\n${dir}\n</cwd>`,
 	);
-});
-
-test("with --approve the project's .pi/skills are loaded too, and win a name collision", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
-	writeSkills(dir);
-	edupi = startEdupi({ responses: ["Hi."] }, ["--approve"], { dir });
-	await prompt("Hello?");
-
-	const home = join(dir, "home", "agent", "skills");
-	expect(firstRequest()[0].content).toContain(
-		skillsSection(
-			skillXml("deploy", "Deploys this project.", join(dir, ".pi", "skills", "deploy", "SKILL.md")),
-			skillXml("greet", "Greets the user &amp; says &lt;hi&gt;.", join(home, "greet", "SKILL.md")),
-		),
-	);
-});
-
-test("a trust decision saved in the home's trust.json also trusts the project", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
-	writeSkills(dir);
-	put(join(dir, "home", "agent", "trust.json"), JSON.stringify({ [dir]: true }));
-	edupi = startEdupi({ responses: ["Hi."] }, [], { dir });
-	await prompt("Hello?");
-	expect(firstRequest()[0].content).toContain("<description>Deploys this project.</description>");
 });
 
 test("the prompt is a system message of the transcript: sent once, then replayed at the head of every request", async () => {
@@ -191,10 +163,12 @@ test("trace: skillsLoaded lists the scanned folders and skills; promptAssembled 
 	const home = join(dir, "home", "agent");
 	expect(traces("skillsLoaded")).toHaveLength(1); // pi loads skills once per session, not per prompt
 	const loaded = traces("skillsLoaded")[0];
-	expect(loaded.projectTrusted).toBe(false); // the project has .pi/skills but no --approve
-	expect(loaded.roots).toEqual([{ path: join(home, "skills"), scope: "user" }]);
+	expect(loaded.roots).toEqual([
+		{ path: join(dir, ".pi", "skills"), scope: "project" },
+		{ path: join(home, "skills"), scope: "user" },
+	]);
 	expect(loaded.skills.map((s: Message) => [s.name, s.scope, s.disableModelInvocation])).toEqual([
-		["deploy", "user", false],
+		["deploy", "project", false],
 		["greet", "user", false],
 		["release", "user", true],
 	]);
@@ -207,6 +181,7 @@ test("trace: skillsLoaded lists the scanned folders and skills; promptAssembled 
 	});
 	expect(loaded.errors).toEqual([
 		{ path: join(home, "skills", "notes", "SKILL.md"), message: "description is required" },
+		{ path: join(home, "skills", "deploy", "SKILL.md"), message: 'name "deploy" collision' },
 	]);
 
 	const [first, second] = traces("promptAssembled");
@@ -272,11 +247,7 @@ test("get_commands lists the skills as /skill:name, and /skill:name sends the sk
 			baseDir: join(dir, "home", "agent"),
 		},
 	});
-	await edupi.close();
-
-	edupi = startEdupi({ responses: ["Released."] }, ["--approve"], { dir });
-	const trusted = (await edupi.command("get_commands")).data.commands;
-	expect(trusted.find((c: Message) => c.name === "skill:deploy").sourceInfo).toEqual({
+	expect(commands[0].sourceInfo).toEqual({
 		path: join(dir, ".pi", "skills", "deploy", "SKILL.md"),
 		source: "auto",
 		scope: "project",
@@ -289,54 +260,4 @@ test("get_commands lists the skills as /skill:name, and /skill:name sends the sk
 	expect(user.content[0].text).toBe(
 		`<skill name="release" location="${join(home, "release", "SKILL.md")}">\nReferences are relative to ${join(home, "release")}.\n\nDo the steps.\n</skill>\n\nv1.2`,
 	);
-});
-
-test("SYSTEM.md replaces the preamble, tools and rules; APPEND_SYSTEM.md adds an addendum; the project's copies need trust", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
-	put(join(dir, "home", "agent", "SYSTEM.md"), "You are the home's assistant.");
-	put(join(dir, "home", "agent", "APPEND_SYSTEM.md"), "Answer in French.");
-	put(join(dir, ".pi", "SYSTEM.md"), "You are the project's assistant.");
-	put(join(dir, "AGENTS.md"), "Project rule.");
-	edupi = startEdupi({ responses: ["Bonjour."] }, [], { dir });
-	await prompt("Hello?");
-	const project = `<project_context>\nProject-specific instructions and guidelines:\n\n<project_instructions path="${join(dir, "AGENTS.md")}">\nProject rule.\n</project_instructions>\n</project_context>`;
-	expect(firstRequest()[0].content).toBe(
-		`You are the home's assistant.\n\n<addendum>\nAnswer in French.\n</addendum>\n\n${project}\n\n<cwd>\n${dir}\n</cwd>`,
-	);
-	await edupi.close();
-
-	edupi = startEdupi({ responses: ["Bonjour."] }, ["--approve"], { dir });
-	await prompt("Hello?");
-	expect(edupi.requests().at(-1)!.body.messages[0].content).toMatch(
-		/^You are the project's assistant\.\n\n<addendum>/,
-	);
-});
-
-test("a broken trust.json stops edupi at startup with pi's message", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
-	writeSkills(dir); // .pi/skills needs a trust decision, so trust.json is read
-	const trustPath = join(dir, "home", "agent", "trust.json");
-	put(trustPath, "{bad");
-	edupi = startEdupi({ responses: [] }, [], { dir });
-	expect(await edupi.close()).toBe(1);
-	expect(edupi.stderrText).toContain(
-		`Failed to read trust store ${trustPath}: Expected property name or '}' in JSON at position 1`,
-	);
-
-	put(trustPath, JSON.stringify({ [dir]: "yes" }));
-	edupi = startEdupi({ responses: [] }, [], { dir });
-	expect(await edupi.close()).toBe(1);
-	expect(edupi.stderrText).toContain(
-		`Invalid trust store ${trustPath}: value for ${JSON.stringify(dir)} must be true, false, or null`,
-	);
-});
-
-test("an unreadable SYSTEM.md warns, and pi's resolvePromptInput then uses the path itself as the prompt", async () => {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "edupi-test-")));
-	const systemPath = join(dir, "home", "agent", "SYSTEM.md");
-	mkdirSync(systemPath, { recursive: true }); // a folder: it exists, but reading it fails
-	edupi = startEdupi({ responses: ["Hi."] }, [], { dir });
-	await prompt("Hello?");
-	expect(firstRequest()[0].content).toBe(`${systemPath}\n\n<cwd>\n${dir}\n</cwd>`);
-	expect(edupi.stderrText).toContain(`Warning: Could not read system prompt file ${systemPath}: Error: EISDIR`);
 });

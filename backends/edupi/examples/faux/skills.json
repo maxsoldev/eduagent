@@ -1,5 +1,5 @@
 {
-  "description": "The model loads a project skill lazily: it reads .pi/skills/greet/SKILL.md with the read tool, then answers. Run with --approve, so edupi trusts the project's .pi folder.",
+  "description": "The model loads a project skill lazily: it reads .pi/skills/greet/SKILL.md with the read tool, then answers.",
   "responses": [
     {
       "content": [{ "type": "toolCall", "id": "call_skill", "name": "read", "arguments": { "path": ".pi/skills/greet/SKILL.md" } }],

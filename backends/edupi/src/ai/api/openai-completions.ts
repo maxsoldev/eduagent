@@ -14,7 +14,6 @@ import type {
 import { clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
-	Message,
 	Model,
 	SimpleStreamOptions,
 	StopReason,
@@ -27,37 +26,17 @@ import type {
 	TranscriptContext,
 	Usage,
 } from "../types.ts";
-import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
-import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { collapseSystemMessages, getCurrentTools, getSystemMessageText } from "../utils/transcript.ts";
 import { transformMessages } from "./transform-messages.ts";
 
-/** pi's resolved OpenRouter compat values (detectCompat); edupi has no other provider. */
-interface Compat {
-	supportsDeveloperRole: boolean;
-	supportsStore: boolean;
-	supportsUsageInStreaming: boolean;
-}
-
-function getCompat(model: Model): Compat {
-	// OpenRouter passes the developer role only to OpenAI and Anthropic models.
-	const supportsDeveloperRole = model.id.startsWith("openai/") || model.id.startsWith("anthropic/");
-	return { supportsDeveloperRole, supportsStore: true, supportsUsageInStreaming: true };
-}
-
-function getClientApiKey(provider: string, apiKey: string | undefined): string {
-	if (apiKey) return apiKey;
-	throw new Error(`No API key for provider: ${provider}`);
-}
-
-/** If the history has tool calls but no tools are offered now, pi still sends `tools: []`. */
-function hasToolHistory(messages: Message[]): boolean {
-	return messages.some(
-		(msg) =>
-			msg.role === "toolResult" || (msg.role === "assistant" && msg.content.some((b) => b.type === "toolCall")),
-	);
+/**
+ * pi's resolved OpenRouter compat (detectCompat): `store`, usage in the stream, and the developer
+ * role, which OpenRouter passes only to OpenAI and Anthropic models. edupi has no other provider.
+ */
+function supportsDeveloperRole(model: Model): boolean {
+	return model.id.startsWith("openai/") || model.id.startsWith("anthropic/");
 }
 
 /** stream()'s own options: streamSimple turns the thinking level into a reasoning effort. */
@@ -68,8 +47,8 @@ export interface OpenAICompletionsOptions extends SimpleStreamOptions {
 /** The Chat Completions delta fields that can carry reasoning text; the first non-empty one wins. */
 const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"] as const;
 
-/** A tool call block while it streams: the raw arguments text and the stream index ride along until the end. */
-type StreamingToolCall = ToolCall & { partialArgs?: string; streamIndex?: number };
+/** A tool call block while it streams: the raw arguments text rides along until the end. */
+type StreamingToolCall = ToolCall & { partialArgs?: string };
 
 function emptyUsage(): Usage {
 	return {
@@ -104,27 +83,22 @@ export function stream(
 
 		let requested = false; // edupi: a model response is traced only after a traced request
 		try {
-			const apiKey = getClientApiKey(model.provider, options?.apiKey);
-			const compat = getCompat(model);
-			const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
-			const client = createClient(model, apiKey, options?.headers, options?.fetch, cacheSessionId);
-			let params = buildParams(model, context, options, compat);
-			const nextParams = await options?.onPayload?.(params, model);
+			if (!options?.apiKey) throw new Error(`No API key for provider: ${model.provider}`);
+			const cacheSessionId = options.cacheRetention === "none" ? undefined : options.sessionId;
+			const client = createClient(model, options.apiKey, options.fetch, cacheSessionId);
+			let params = buildParams(model, context, options);
+			const nextParams = await options.onPayload?.(params, model);
 			if (nextParams !== undefined) params = nextParams as ChatCompletionCreateParamsStreaming;
 			requested = true;
-			await options?.probe?.modelRequest?.(
+			await options.probe?.modelRequest?.(
 				{ api: model.api, url: `${model.baseUrl}/chat/completions`, body: params },
-				options?.sessionId,
+				options.sessionId,
 			);
-			const openaiStream = await client.chat.completions.create(params, {
-				...(options?.signal ? { signal: options.signal } : {}),
-				maxRetries: 0,
-			});
+			const openaiStream = await client.chat.completions.create(params, { signal: options.signal, maxRetries: 0 });
 			stream.push({ type: "start", partial: output });
 
 			let textBlock: TextContent | null = null;
 			let thinkingBlock: ThinkingContent | null = null;
-			let hasFinishReason = false;
 			const blocks = output.content;
 			const toolCallBlocksByIndex = new Map<number, StreamingToolCall>();
 			const getContentIndex = (block: (typeof blocks)[number]) => blocks.indexOf(block);
@@ -146,18 +120,17 @@ export function stream(
 				return thinkingBlock;
 			};
 			// Tool calls are keyed by the stream's index: the first delta has the id and the name, later ones only argument text.
-			const ensureToolCallBlock = (delta: { index?: number; id?: string; function?: { name?: string } }) => {
-				let block = delta.index !== undefined ? toolCallBlocksByIndex.get(delta.index) : undefined;
+			const ensureToolCallBlock = (delta: { index: number; id?: string; function?: { name?: string } }) => {
+				let block = toolCallBlocksByIndex.get(delta.index);
 				if (!block) {
 					block = {
 						type: "toolCall",
-						id: delta.id || "",
+						id: delta.id ?? "",
 						name: delta.function?.name ?? "",
 						arguments: {},
 						partialArgs: "",
-						streamIndex: delta.index,
 					};
-					if (delta.index !== undefined) toolCallBlocksByIndex.set(delta.index, block);
+					toolCallBlocksByIndex.set(delta.index, block);
 					blocks.push(block);
 					stream.push({ type: "toolcall_start", contentIndex: getContentIndex(block), partial: output });
 				}
@@ -182,29 +155,23 @@ export function stream(
 					const toolCall = block as StreamingToolCall;
 					Object.assign(toolCall, parseToolCallArguments(toolCall.partialArgs));
 					delete toolCall.partialArgs; // only the parsed arguments are kept
-					delete toolCall.streamIndex;
 					stream.push({ type: "toolcall_end", contentIndex: getContentIndex(block), toolCall, partial: output });
 				}
 			};
 
 			for await (const chunk of openaiStream) {
-				await options?.probe?.streamEvent?.(chunk);
+				await options.probe?.streamEvent?.(chunk);
 				// Every chunk of one completion carries the same id.
 				output.responseId ||= chunk.id;
-				if (typeof chunk.model === "string" && chunk.model.length > 0 && chunk.model !== model.id) {
-					output.responseModel ||= chunk.model;
-				}
 				if (chunk.usage) output.usage = parseChunkUsage(chunk.usage, model);
 
-				const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
+				const choice = chunk.choices[0];
 				if (!choice) continue;
 
 				if (choice.finish_reason) {
-					output.rawStopReason = choice.finish_reason;
 					const result = mapStopReason(choice.finish_reason);
 					output.stopReason = result.stopReason;
 					if (result.errorMessage) output.errorMessage = result.errorMessage;
-					hasFinishReason = true;
 				}
 
 				// Reasoning before content: the thinking block must come before the text block.
@@ -232,8 +199,6 @@ export function stream(
 
 				for (const toolCall of choice.delta?.tool_calls ?? []) {
 					const block = ensureToolCallBlock(toolCall);
-					if (!block.id && toolCall.id) block.id = toolCall.id;
-					if (!block.name && toolCall.function?.name) block.name = toolCall.function.name;
 					const delta = toolCall.function?.arguments ?? "";
 					if (delta) {
 						block.partialArgs = (block.partialArgs ?? "") + delta;
@@ -244,22 +209,19 @@ export function stream(
 			}
 
 			for (const block of blocks) finishBlock(block);
-			if (options?.signal?.aborted) throw new Error("Request was aborted");
-			if (output.stopReason === "error")
-				throw new Error(output.errorMessage || "Provider returned an error stop reason");
-			if (!hasFinishReason || output.stopReason === "pending") throw new Error("Stream ended without finish_reason");
+			if (options.signal?.aborted) throw new Error("Request was aborted");
+			if (output.stopReason === "error") throw new Error(output.errorMessage);
+			if (output.stopReason === "pending") throw new Error("Stream ended without finish_reason");
 
-			await options?.probe?.modelResponse?.(output);
+			await options.probe?.modelResponse?.(output);
 			stream.push({ type: "done", reason: output.stopReason as "stop" | "length" | "toolUse", message: output });
 			stream.end();
 		} catch (error) {
 			// A stream that broke mid-way has unfinished blocks: drop their scratch buffers, never persist them.
-			for (const block of output.content) {
-				delete (block as StreamingToolCall).partialArgs;
-				delete (block as StreamingToolCall).streamIndex;
-			}
+			for (const block of output.content) delete (block as StreamingToolCall).partialArgs;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = formatProviderError(normalizeProviderError(error));
+			// The OpenAI SDK's message: "<status> <error.message>" for an HTTP error.
+			output.errorMessage = error instanceof Error ? error.message : String(error);
 			// OpenRouter puts the upstream provider's error text here.
 			const rawMetadata = (error as { error?: { metadata?: { raw?: unknown } } })?.error?.metadata?.raw;
 			if (rawMetadata && !output.errorMessage.includes(String(rawMetadata)))
@@ -292,16 +254,9 @@ export function toCompletionsOptions(model: Model, options?: SimpleStreamOptions
 	return { ...options, maxTokens: options?.maxTokens ?? model.maxTokens, reasoningEffort };
 }
 
-function createClient(
-	model: Model,
-	apiKey: string,
-	optionsHeaders?: Record<string, string>,
-	fetch?: typeof globalThis.fetch,
-	sessionId?: string,
-) {
-	const headers: Record<string, string> = { ...model.headers };
+function createClient(model: Model, apiKey: string, fetch?: typeof globalThis.fetch, sessionId?: string) {
+	const headers: Record<string, string> = {};
 	if (sessionId) headers["x-session-id"] = sessionId; // OpenRouter session affinity: same upstream, warm cache
-	Object.assign(headers, optionsHeaders);
 	return new OpenAI({ apiKey, baseURL: model.baseUrl, dangerouslyAllowBrowser: true, fetch, defaultHeaders: headers });
 }
 
@@ -310,21 +265,18 @@ export function buildParams(
 	model: Model,
 	context: TranscriptContext,
 	options: OpenAICompletionsOptions | undefined,
-	compat: Compat = getCompat(model),
 ): ChatCompletionCreateParamsStreaming {
 	const params: ChatCompletionCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(model, context, compat),
+		messages: convertMessages(model, context),
 		stream: true,
+		stream_options: { include_usage: true },
+		store: false,
 	};
-	if (compat.supportsUsageInStreaming) params.stream_options = { include_usage: true };
-	if (compat.supportsStore) params.store = false;
 	if (options?.maxTokens) params.max_completion_tokens = options.maxTokens;
-	if (options?.temperature !== undefined) params.temperature = options.temperature;
 	// The tools come from the transcript: the system messages declare them.
 	const tools = getCurrentTools(context.messages);
 	if (tools.length > 0) params.tools = convertTools(tools);
-	else if (hasToolHistory(context.messages)) params.tools = [];
 	// OpenRouter's reasoning object works for every provider behind it (pi's thinkingFormat
 	// "openrouter"). No level means reasoning off: the map's "off" effort, else "none". A model
 	// that cannot turn reasoning off (map.off null) and non-reasoning models get no field.
@@ -342,25 +294,21 @@ export function buildParams(
 }
 
 /** Transcript messages to Chat Completions messages. */
-export function convertMessages(
-	model: Model,
-	transcript: TranscriptContext,
-	compat: Compat,
-): ChatCompletionMessageParam[] {
+function convertMessages(model: Model, transcript: TranscriptContext): ChatCompletionMessageParam[] {
 	// pi's OpenRouter compat has no mid-conversation system messages: the prompt is replayed into one leading message.
 	const context = collapseSystemMessages(transcript);
 	const params: ChatCompletionMessageParam[] = [];
 	// Reasoning models take the harness's instructions as "developer", as in the Responses API.
-	const instructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";
+	const instructionRole = model.reasoning && supportsDeveloperRole(model) ? "developer" : "system";
 
 	// pi's transformMessages: no errored or aborted replies, and every tool call gets a result.
 	for (const msg of transformMessages(context.messages, model)) {
 		if (msg.role === "system") {
 			const text = getSystemMessageText(msg);
-			if (text.length > 0) params.push({ role: instructionRole, content: sanitizeSurrogates(text) });
+			if (text.length > 0) params.push({ role: instructionRole, content: text });
 		} else if (msg.role === "user") {
 			if (typeof msg.content === "string") {
-				params.push({ role: "user", content: sanitizeSurrogates(msg.content) });
+				params.push({ role: "user", content: msg.content });
 				continue;
 			}
 			const content = msg.content
@@ -368,7 +316,7 @@ export function convertMessages(
 				.map(
 					(item): ChatCompletionContentPart =>
 						item.type === "text"
-							? { type: "text", text: sanitizeSurrogates(item.text) }
+							? { type: "text", text: item.text }
 							: { type: "image_url", image_url: { url: `data:${item.mimeType};base64,${item.data}` } },
 				);
 			if (content.length > 0) params.push({ role: "user", content });
@@ -388,7 +336,7 @@ function convertAssistantMessage(msg: AssistantMessage): ChatCompletionAssistant
 	// Assistant text goes back as one plain string, the Chat Completions standard.
 	const text = msg.content
 		.filter((b): b is TextContent => b.type === "text" && b.text.trim().length > 0)
-		.map((b) => sanitizeSurrogates(b.text))
+		.map((b) => b.text)
 		.join("");
 	if (text.length > 0) assistantMsg.content = text;
 	// Reasoning goes back in the field it came in (the block's signature), so the model sees its thinking.
@@ -420,9 +368,7 @@ function convertToolResult(msg: ToolResultMessage): ChatCompletionMessageParam {
 		.filter((c): c is TextContent => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
-	const hasImages = msg.content.some((c) => c.type === "image");
-	const content = text.trim().length > 0 ? text : hasImages ? "(see attached image)" : "(no tool output)";
-	return { role: "tool", content: sanitizeSurrogates(content), tool_call_id: msg.toolCallId };
+	return { role: "tool", content: text.trim().length > 0 ? text : "(no tool output)", tool_call_id: msg.toolCallId };
 }
 
 /** Tools as Chat Completions function specs. OpenRouter gets no `strict` field (pi's compat: supportsStrictMode false). */

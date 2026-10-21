@@ -13,10 +13,8 @@ export class ModelRegistry {
 		const models = new Map<string, Model>();
 		if (!options.offline) {
 			try {
-				for (const entry of await fetchOpenRouterModels(options.fetch)) {
-					if (!entry.supported_parameters?.includes("tools")) continue; // pi lists only models with tools
+				for (const entry of await fetchOpenRouterModels(options.fetch))
 					models.set(entry.id, modelFromOpenRouter(entry));
-				}
 			} catch (error) {
 				console.error(
 					`edupi: could not read OpenRouter's model list (${error instanceof Error ? error.message : error}); using default model limits`,
