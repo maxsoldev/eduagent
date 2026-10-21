@@ -1,0 +1,6 @@
+{"id":"1","type":"get_state"}
+{"id":"2","type":"prompt","message":"What is in this project?"}
+{"id":"3","type":"prompt","message":"What does a.txt hold?"}
+{"id":"4","type":"prompt","message":"Anything else?"}
+{"id":"5","type":"compact","customInstructions":"Keep the file names."}
+{"id":"6","type":"prompt","message":"Go on."}

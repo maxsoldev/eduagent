@@ -49,50 +49,44 @@ Real models are slow, cost money, and give different answers each time. For test
 
 ## In educodex
 
-### Web UI ([`web/src/`](../../../visualiser/src/))
+### Web UI ([`visualiser/src/`](../../../visualiser/src/))
+
+The web UI is the **visualiser**. It is shared by all backends, so it does not draw Codex messages directly. It has one **adapter** per native protocol, and each adapter maps that protocol into one neutral **view model** ([ADR 0001](../../adr/0001-native-protocols-and-adapters.md)). The chat, the Inspector and the context bar read only the view model. The contract is in [`protocol/README.md`](../../../protocol/README.md).
 
 | File | Job |
 |---|---|
 | [`launcher.ts`](../../../visualiser/src/launcher.ts), [`components/BackendPicker.tsx`](../../../visualiser/src/components/BackendPicker.tsx) | The first screen: pick a backend and a working directory. Opening one goes to `?backend=educodex&cwd=...` |
-| [`rpc.ts`](../../../visualiser/src/rpc.ts) | JSON-RPC lite over WebSocket. Sorts incoming messages into notification, server request or response. When the socket closes, it passes on the launcher's reason (for example `educodex exited with code 1`) |
-| [`store.ts`](../../../visualiser/src/store.ts) | A React reducer. All UI state comes from notifications |
-| [`App.tsx`](../../../visualiser/src/App.tsx) | Handshake, controls (model, approval, sandbox, step mode, **compact**, new thread), and what each slash command does |
-| [`components/Composer.tsx`](../../../visualiser/src/components/Composer.tsx), [`commands.ts`](../../../visualiser/src/commands.ts) | The message box with the `/` command list and the `$` skill list. It stays disabled until `thread/start` has returned a thread |
-| [`components/Chat.tsx`](../../../visualiser/src/components/Chat.tsx) | Items as a chat, plus approval cards. The buttons come from the request's `availableDecisions`, so `acceptWithExecpolicyAmendment` appears only when the server offers it (it answers with the proposed rule). A `serverRequest/resolved` notification removes the card |
+| [`main.tsx`](../../../visualiser/src/main.tsx), [`adapters/index.ts`](../../../visualiser/src/adapters/index.ts) | Picks the adapter from the backend entry's `protocol` (`codex-app-server` or `pi-rpc`) |
+| [`view/model.ts`](../../../visualiser/src/view/model.ts) | The view model (`View`, `Turn`, `Entry`) and `reduceView`, which folds **view actions** into it. It knows no native protocol |
+| [`adapters/codex/`](../../../visualiser/src/adapters/codex/) | The Codex adapter: JSON-RPC lite transport (`rpc.ts`), the mapping from notifications to view actions (`mapping.ts`), the commands it sends (`client.ts`), and Codex-only parts such as approval cards, plans and file-change diffs (`components.tsx`) |
+| [`adapters/pi/`](../../../visualiser/src/adapters/pi/) | The pi adapter, for pi's RPC protocol (`pi --mode rpc`): `type`-tagged commands and events, replies matched by `id` |
+| [`App.tsx`](../../../visualiser/src/App.tsx) | Generic: controls (model, effort, step mode, **compact**, new thread) and slash commands. The backend entry's **capabilities** decide which controls and tabs show |
+| [`components/Composer.tsx`](../../../visualiser/src/components/Composer.tsx), [`commands.ts`](../../../visualiser/src/commands.ts) | The message box with the `/` command list and the `$` skill list. It stays disabled until the backend has a session |
+| [`components/Chat.tsx`](../../../visualiser/src/components/Chat.tsx) | Draws the entries. An entry with a backend-only `part` (a Codex plan, a file change) goes to that adapter's own component |
 | [`components/Inspector.tsx`](../../../visualiser/src/components/Inspector.tsx) | The inspector tabs |
-| [`explain.ts`](../../../visualiser/src/explain.ts) | One explanation per event, with a guide chapter and a Codex link |
+| [`adapters/codex/explain.ts`](../../../visualiser/src/adapters/codex/explain.ts), [`adapters/pi/explain.ts`](../../../visualiser/src/adapters/pi/explain.ts) | One explanation per event, with a guide chapter and a link to the harness source |
 
-`rpc.ts` tells the three kinds of incoming message apart by their fields:
-
-```ts
-if (message.method && message.id !== undefined) {
-  this.h.onServerRequest(message.id, message.method, message.params);   // approval
-} else if (message.method) {
-  this.h.onNotification(message.method, message.params);
-} else if (typeof message.id === "number") {
-  // response to one of our requests: resolve or reject the pending promise
-}
-```
-
-`store.ts` is the "state from events" idea in about 100 lines. Streaming items live in `live` until they complete:
+An adapter has two halves. The **mapping** is a pure function from one incoming native message to view actions. For Codex, an `item/started` becomes an `entry` action and a delta becomes an `append` action:
 
 ```ts
-case "item/started":
-  return { ...s, live: { ...s.live, [rest.item.id]: { ...rest.item } } };
-case "item/agentMessage/delta":
-case "item/commandExecution/outputDelta": {
-  const cur = s.live[rest.itemId];
-  ...
-  return { ...s, live: { ...s.live, [rest.itemId]: { ...cur, [field]: (cur[field] ?? "") + rest.delta } } };
-}
-case "item/completed": {
-  const live = { ...s.live };
-  delete live[rest.item.id];
-  return { ...s, live, chat: [...s.chat, { kind: "item", item: rest.item }] };
-}
+case "item/started": return [{ type: "entry", entry: toEntry(p.item, true) }];
+case "item/agentMessage/delta": return [{ type: "append", id: p.itemId, field: "text", delta: p.delta }];
 ```
 
-Every notification is also appended to `events`, which the inspector reads. Every message in either direction is appended to `wire`.
+The **client** sends commands in the native form. To start a turn, the Codex adapter sends `turn/start`, and the pi adapter sends `{"type": "prompt", "message": ...}`. The two protocols differ a lot, and the view model hides that:
+
+| | Codex app-server (educodex) | pi RPC (real pi, later edupi) |
+|---|---|---|
+| Handshake | `initialize`, `initialized`, `thread/start` | none; the process already holds a session, `get_state` names it |
+| Turn | `turn/started` ... `turn/completed` with an id | `agent_start` ... `agent_settled`, no id (the adapter counts turns) |
+| Streamed text | `item/agentMessage/delta` with an `itemId` | `message_update` with `text_delta` and a `contentIndex` |
+| Tool call | `item/started` / `item/completed` of a `commandExecution` | `tool_execution_start` / `_update` / `_end`, by `toolCallId` |
+| Interrupt | `turn/interrupt`; the turn ends `interrupted` | `abort`; tools end with an error, then `agent_settled {aborted: true}` |
+| Compaction | a `contextCompaction` item | `compaction_start` / `compaction_end` with a `reason` |
+
+Because pi events have no ids, the pi mapping keeps a little state: the session id from the last `get_state` reply, the open turn, and the message being streamed. Every native message is also a timeline event (`events`), and every message in either direction goes to `wire`, which the **Protocol** tab shows unchanged.
+
+The adapters are tested on recorded transcripts (`visualiser/test/`, vitest): real stdout of educodex and of the pinned pi go through the mapping, and the test checks the resulting view. The pi transcripts come from [`record-pi.mjs`](../../../visualiser/test/record-pi.mjs), which runs the real pi against a fake Chat Completions server, so it needs no API key.
 
 **Inspector tabs:**
 
@@ -103,12 +97,12 @@ Every notification is also appended to `events`, which the inspector reads. Ever
 | Requests | `trace/modelRequest` | Each request body. It checks that earlier items are "unchanged ✓ (prompt cache can hit)" |
 | Tools | `trace/toolsRegistered`, `trace/mcpToolsListed` / `trace/mcpToolExposed` | Tool specs as sent; for MCP, raw vs exposed side by side |
 | Guardrails | `trace/policyDecision`, `trace/sandboxCommand`, approvals | Why each command was allowed, sandboxed or asked about |
-| Protocol | `wire` | Every JSON-RPC message, filterable |
+| Protocol | `wire` | Every native message (JSON-RPC lite for Codex, pi RPC for pi), filterable |
 
-**`explain.ts`** turns the UI into a teaching tool. Each event name maps to a title, a category colour, a short text, the guide chapter and a Codex path:
+**`explain.ts`** turns the UI into a teaching tool. Each event name maps to a title, a category colour, a short text, the guide chapter and a path in the harness source:
 
 ```ts
-"trace/compacted": { title: "History compacted", category: "memory", chapter: "15", codex: "core/src/compact.rs",
+"trace/compacted": { title: "History compacted", category: "memory", chapter: "15", source: "core/src/compact.rs",
   text: "History was replaced by recent user messages + fresh context + the summary." },
 ```
 
@@ -238,6 +232,7 @@ It is used in three places:
 - **Untyped clients.** The web UI uses `any` for payloads. Codex clients use generated types.
 - **Simple reconnects.** `thread/read` with `includeTrace` returns the whole event log. Codex has thread resume, history paging and lossless event queues.
 - **One fake-model script per thread.** Each `thread/start` creates a fresh `FakeModel`, so "new thread" restarts the script. A manual compaction also uses up one scripted response.
+- **One UI for several harnesses.** Codex's clients speak only the app-server protocol. The visualiser maps each harness's protocol into one view model, so a backend-only feature (approvals, plans) needs its own component in that adapter.
 - **The launcher is not part of Codex.** Codex's clients start `codex app-server` themselves (stdio), or connect to its WebSocket or Unix socket listener (chapter 18). educodex needs the launcher only because a browser cannot start a process.
 - **The TUI is minimal:** no diff view, no history browsing, five slash commands (Codex has about 60), and a hint line instead of a selectable list.
 
@@ -265,8 +260,9 @@ It is used in three places:
    uv run --group dev pytest tests/test_app_server.py tests/test_tui.py   # the protocol over stdio, with the fake model
    cd ../.. && pnpm --filter @eduagent/visualiser exec playwright install chromium && pnpm build && pnpm test:e2e
    ```
-   Playwright starts the launcher with [`launcher/backends.test.json`](../../../launcher/backends.test.json): educodex with the fake model and a temporary home, plus two small test backends (`echo` and `crash`).
-6. **Write your own client.** In ~30 lines of Python, start `educodex app-server --listen stdio://`, opt out of every `trace/*` method, and print only `item/completed` items. That is a complete (if plain) agent UI.
+   Playwright starts the launcher with [`launcher/backends.test.json`](../../../launcher/backends.test.json): educodex with the fake model and a temporary home, plus small test backends (`echo`, `crash`, and `pi-replay`, which replays a transcript recorded from the real pi).
+6. **The real pi in a viewer.** Add the `pi` entry from [`launcher/backends.local.example.json`](../../../launcher/backends.local.example.json) (see the [README](../../../README.md#the-real-pi)), open educodex in one tab and pi in another, and send the same prompt. Compare the two **Protocol** tabs: JSON-RPC lite with a handshake and item ids, against pi's `type`-tagged events with no handshake. pi lists no trace capabilities, so its viewer shows only Timeline and Protocol.
+7. **Write your own client.** In ~30 lines of Python, start `educodex app-server --listen stdio://`, opt out of every `trace/*` method, and print only `item/completed` items. That is a complete (if plain) agent UI.
 
 ## Further reading
 - [Unlocking the Codex harness: how we built the App Server](https://openai.com/index/unlocking-the-codex-harness/): how local apps, Codex Web and the TUI integrate.

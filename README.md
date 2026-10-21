@@ -16,6 +16,22 @@ Pick a backend and a working directory (prefilled with the directory where you r
 
 The backends are listed in [`launcher/backends.json`](launcher/backends.json). Each entry has a `name`, the `harness` it re-implements, the `protocol` it speaks, the `command` to run (an argv list, no shell, `${REPO}` and `${ENV_VAR}` are replaced), an optional `env`, and `capabilities`. For machine-specific entries, create `launcher/backends.local.json` in the same format. It is git-ignored, and an entry there replaces the shared entry with the same name. For the visualiser's hot reload, run `pnpm --filter @eduagent/visualiser dev` next to the launcher; Vite forwards `/backends` and `/guide` to it.
 
+## The real pi
+
+The real [pi](https://github.com/earendil-works/pi) harness can run in a viewer too, to compare it with the backends. It is chat only: no trace events, no step mode, no context inspector. Its entry is machine-specific, so it goes in the git-ignored `launcher/backends.local.json`:
+
+1. Check out pi at the pinned commit `16f5f0af4`, and install its dependencies as the commit locks them (Node 22.19 or newer):
+   ```bash
+   git clone https://github.com/earendil-works/pi ../pi && cd ../pi && git checkout 16f5f0af4
+   npm ci && npm run hydrate:model-data   # hydrate fetches public model catalogs (no API key)
+   ```
+2. Copy [`launcher/backends.local.example.json`](launcher/backends.local.example.json) to `launcher/backends.local.json`, and set `PI_DIR` to the pi checkout (in `.env`, for example `PI_DIR=/path/to/pi`, or replace `${PI_DIR}` in the file).
+3. Start `pnpm eduagent` and pick **pi**.
+
+The entry runs pi from source in RPC mode (`node --import <pi>/packages/coding-agent/src/experimental/source-resolver.ts <pi>/packages/coding-agent/src/cli.ts --mode rpc`), not a globally installed `pi`, which can drift from the pin. It uses OpenRouter with `openai/gpt-6-luna` and your `OPENROUTER_API_KEY`. Its home is `~/.eduagent/.pi/agent` (`PI_CODING_AGENT_DIR`), so it does not touch `~/.pi`. To run it with no API key, start the fake model server (`node visualiser/test/fake-chat-completions.mjs 18787 script.json`) and point pi at it with a `models.json` in its agent folder: `{"providers": {"openrouter": {"baseUrl": "http://127.0.0.1:18787/v1", "apiKey": "fake"}}}`.
+
+The pi adapter is tested on transcripts recorded from this checkout (`visualiser/test/fixtures/pi/`). To record them again, run `node visualiser/test/record-pi.mjs` (set `PI_DIR` if pi is not at `../pi`), then update the ids and times that `visualiser/test/pi-adapter.test.ts` pins.
+
 ## educodex
 
 **An educational Python re-implementation of the [OpenAI Codex](https://github.com/openai/codex) harness, in which every hidden step is visible.**
@@ -86,6 +102,7 @@ Turn on **step mode** to pause before every model request and tool call.
 
 ```bash
 cd backends/educodex && uv run --group dev pytest   # core, policy, sandbox, MCP, app server, TUI
+pnpm test                                           # at the repo root. vitest: adapters on recorded transcripts (educodex, real pi)
 pnpm test:e2e                                       # at the repo root. Playwright: the launcher with launcher/backends.test.json (fake model)
 ```
 

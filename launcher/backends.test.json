@@ -21,6 +21,14 @@
       "capabilities": []
     },
     {
+      "name": "pi-replay",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: replays a transcript recorded from the real pi (visualiser/test/fixtures/pi/chat.out.jsonl)",
+      "command": ["node", "${REPO}/launcher/test/pi-replay-backend.mjs", "${REPO}/visualiser/test/fixtures/pi/chat.out.jsonl"],
+      "capabilities": ["compaction"]
+    },
+    {
       "name": "echo",
       "harness": "none",
       "protocol": "echo",

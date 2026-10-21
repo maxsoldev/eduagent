@@ -1,0 +1,62 @@
+// The pi adapter's timeline texts: one short explanation per pi event and the pi source file
+// that emits it (paths at the pinned commit, see view/harness.ts). The edupi guide has no
+// chapters yet, so no chapter links.
+import type { Explainer, Info } from "../../view/explain";
+import type { Json, TimelineEvent } from "../../view/model";
+
+const LOOP = "packages/agent/src/agent-loop.ts";
+const SESSION = "packages/coding-agent/src/core/agent-session.ts";
+
+const EXPLAIN: Record<string, Info> = {
+  agent_start: { title: "agent_start", category: "loop", source: LOOP,
+    text: "The agent loop starts for your prompt. One prompt is one run; steering and follow-up messages stay inside it." },
+  agent_end: { title: "agent_end", category: "loop", source: LOOP, text: "The agent loop stopped: the model answered without tool calls and no message was queued." },
+  agent_settled: { title: "agent_settled", category: "loop", source: SESSION,
+    text: "The session is idle again, after retries, compaction and queued work. aborted=true if you stopped the run." },
+  turn_start: { title: "turn_start", category: "loop", source: LOOP, text: "One turn: queued messages, one model call, then the tools it asked for." },
+  turn_end: { title: "turn_end", category: "loop", source: LOOP,
+    text: "The turn ended. If the model asked for tools, pi calls the model again with their results." },
+  message_start: { title: "message_start", category: "model", source: LOOP,
+    text: "A message enters the context: the system prompt (first prompt only), your message, the model's reply or a tool result." },
+  message_update: { title: "message_update", category: "model", source: LOOP, text: "One streamed piece of the model's reply (text, thinking or tool-call arguments)." },
+  message_end: { title: "message_end", category: "model", source: LOOP, text: "The message is complete. This is its final form, as pi stores it in the session file." },
+  tool_execution_start: { title: "Tool call", category: "tools", source: LOOP,
+    text: "pi runs the tool. By default all tool calls of one reply run in parallel." },
+  tool_execution_update: { title: "Tool output so far", category: "tools", source: LOOP, text: "Partial output of a running tool." },
+  tool_execution_end: { title: "Tool result", category: "tools", source: LOOP,
+    text: "The tool finished. Ends come in completion order; the tool-result messages then follow in call order." },
+  queue_update: { title: "Queue update", category: "loop", source: SESSION,
+    text: "The steering and follow-up queues changed. Steering is delivered after the current tools; follow-ups when the agent would stop." },
+  compaction_start: { title: "Compaction starts", category: "memory", source: "packages/coding-agent/src/core/compaction/compaction.ts",
+    text: "pi asks the model to summarise the older messages. reason: manual (/compact), threshold (context nearly full) or overflow (the provider refused)." },
+  compaction_end: { title: "Compaction ends", category: "memory", source: "packages/coding-agent/src/core/compaction/compaction.ts",
+    text: "The summary is stored as a compaction entry. The next request starts with it, then the kept recent messages." },
+  thinking_level_changed: { title: "Thinking level", category: "model", source: SESSION, text: "The thinking level changed (clamped to what the model supports)." },
+  auto_retry_start: { title: "Retry", category: "model", source: SESSION, text: "The provider failed with a retryable error; pi waits and tries again." },
+  auto_retry_end: { title: "Retry ended", category: "model", source: SESSION, text: "The retry succeeded or pi gave up." },
+};
+
+function info(e: Pick<TimelineEvent, "name" | "trace">): Info {
+  return (!e.trace && EXPLAIN[e.name]) || { title: e.name, category: e.trace ? "debug" : "protocol", text: "" };
+}
+
+const NOISY = new Set(["message_update", "tool_execution_update"]);
+
+function summary(e: TimelineEvent): string {
+  const p: Json = e.data;
+  switch (e.name) {
+    case "message_start": case "message_end":
+      return [p.message.role, p.message.stopReason !== "pending" && p.message.stopReason].filter(Boolean).join(" · ");
+    case "message_update": return p.assistantMessageEvent.type;
+    case "tool_execution_start": return `${p.toolName} ${JSON.stringify(p.args).slice(0, 80)}`;
+    case "tool_execution_end": return `${p.toolName}${p.isError ? " · error" : ""}${p.durationMs !== undefined ? ` · ${p.durationMs} ms` : ""}`;
+    case "agent_settled": return p.aborted ? "aborted" : "";
+    case "queue_update": return `steering ${p.steering.length} · follow-up ${p.followUp.length}`;
+    case "compaction_start": return p.reason;
+    case "compaction_end": return `${p.reason}${p.result ? ` · ${p.result.tokensBefore} tokens before` : ""}${p.errorMessage ? ` · ${p.errorMessage}` : ""}`;
+    case "thinking_level_changed": return p.level;
+    default: return "";
+  }
+}
+
+export const piExplainer: Explainer = { info, summary, noisy: (e) => !e.trace && NOISY.has(e.name) };

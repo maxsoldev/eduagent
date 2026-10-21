@@ -36,17 +36,17 @@ A `Turn` is `{id: string | null, status: "running" | "completed" | "interrupted"
 
 Every entry has a unique `id`. An adapter sends the same id again to update the entry (for example when a streamed item completes).
 
-| `kind` | Fields | Codex source | pi source (planned, #9) |
+| `kind` | Fields | Codex source | pi source |
 |---|---|---|---|
-| `user` | `text`, `skills: {name, path}[]` | `userMessage` item | user `message_start`/`message_end` |
-| `assistant` | `text`, `streaming`, `part?` | `agentMessage` item, `item/agentMessage/delta` | assistant message, `message_update` text deltas |
-| `reasoning` | `summary: string[]`, `streaming` | `reasoning` item, `item/reasoning/summaryTextDelta` | thinking content, `message_update` thinking deltas |
+| `user` | `text`, `skills: {name, path}[]` | `userMessage` item | user `message_start`/`message_end` (`skills` stays empty: pi expands `/skill:name` into the text) |
+| `assistant` | `text`, `streaming`, `part?` | `agentMessage` item, `item/agentMessage/delta` | one entry per text block of an assistant message: `text_start`, `text_delta`, then `message_end` |
+| `reasoning` | `summary: string[]`, `streaming` | `reasoning` item, `item/reasoning/summaryTextDelta` | thinking content (not mapped yet: no recorded transcript has it) |
 | `tool` | `name`, `toolKind: "shell" \| "mcp" \| "other"`, `title`, `arguments`, `output`, `status`, `exitCode?`, `error?`, `streaming`, `part?` | `commandExecution`, `fileChange`, `mcpToolCall` items | `tool_execution_start` / `_update` / `_end` |
-| `compaction` | `streaming`, `reason?` | `contextCompaction` item | `compaction_start` / `compaction_end` (`reason`: manual, threshold, overflow) |
-| `notice` | `level: "info" \| "error"`, `source: "client" \| "backend"`, `text` | `error` notification; client notes | error responses, `stopReason: "error"` |
+| `compaction` | `streaming`, `reason?` | `contextCompaction` item | `compaction_start` / `compaction_end` (`reason`: manual, threshold, overflow). A `compaction_end` without `result` (failed or cancelled) turns the entry into a `notice` with pi's `errorMessage` |
+| `notice` | `level: "info" \| "error"`, `source: "client" \| "backend"`, `text` | `error` notification; client notes | assistant `message_end` with `stopReason: "error"` (`errorMessage`), failed compaction. Error replies reject the command; the viewer shows them as client notes |
 | `native` | `part`, `streaming` | `turn/plan/updated`, `memoryUpdate` item | (none yet) |
 
-- `tool.status` is one of `running`, `completed`, `failed`, `declined`, `aborted`. Codex `inProgress` maps to `running`. pi: `isError` maps to `failed`, an aborted run to `aborted`.
+- `tool.status` is one of `running`, `completed`, `failed`, `declined`, `aborted`. Codex `inProgress` maps to `running`. pi: `isError` maps to `failed`. pi ends the tools it aborts with an error result, so when a run settles with `aborted: true`, the failed tools of the last assistant message become `aborted`.
 - `tool.title` is the one-line summary in the card header: the command line for a shell tool, `server.tool` for MCP, the file list for a patch.
 - `tool.toolKind` picks the generic card: `shell` (testid `command`, shows output and exit code), `mcp` (testid `mcp-call`), `other` (testid `tool-call`, shows arguments and output). pi's `bash` is `shell`; `read`, `edit`, `write` are `other`.
 - `tool.output` is the text the user sees. Adapters join text content parts.
@@ -103,6 +103,18 @@ An adapter module (`AdapterModule` in `visualiser/src/adapters/types.ts`) has:
 The client (`Adapter`) has: `connect()` (handshake, model list), `startSession(settings)`, `send(settings, text, skills)`, `interrupt()`, `compact()`, `listSkills(cwd)`, `runCommand(name)` for adapter-only slash commands, `setStepMode(enabled)`, `continueStep()`, `context()`, `respond(approval, result)`, `wireLabel(message)`, and the fields `explain` (timeline texts), `commands`, `efforts`, `protocolNote` and `contextTriggers`.
 
 `context()` returns the next model request as a `ContextSnapshot`: `{items: ContextItem[], tools: {names, tokens}, contextWindow, autoCompactLimit}`. Each `ContextItem` is `{label, cat, tokens, preview, summary, parts, raw}`; `cat` is one of the context bar categories (`base`, `injected`, `user`, `assistant`, `reasoning`, `call`, `output`, `summary`, `other`). The Context tab asks again after each trace event named in `contextTriggers` (Codex: `historyChanged`).
+
+### The pi adapter (`pi-rpc`)
+
+pi's RPC protocol (`pi --mode rpc`, `packages/coding-agent/src/modes/rpc/` at the pinned commit) has no handshake and no ids on events, so `createPiMapping()` (`visualiser/src/adapters/pi/mapping.ts`) keeps a little state:
+
+- **Session:** a `get_state` reply with a new `sessionId` gives a `session` action. The client sends `get_state` on connect, and `new_session` then `get_state` for "new thread". Every timeline event gets the current session id.
+- **Turn:** the first `agent_start` opens a turn (`<session>-t<n>`); `agent_settled` ends it, `interrupted` if `aborted`, else `completed`. A retry inside one run (a second `agent_start` before `agent_settled`) stays in the same turn. `durationMs` runs from the first message's `timestamp` to the end of the last reply (`timestamp + durationMs`).
+- **Entry ids:** messages are counted (`<session>-m<n>`); a text block is `<message>-c<contentIndex>`; a tool is its `toolCallId`; a compaction `<session>-k<n>`.
+- **Replies** (`type: "response"`) are not timeline events; the client matches them by `id`.
+- **Commands sent:** `get_state`, `new_session`, `prompt`, `abort`, `compact`, `set_thinking_level`, `get_commands` (skills: `source: "skill"`, name `skill:<name>`). A prompt with a `$skill` becomes `/skill:<name> <text>`, which pi expands. Steering and follow-up (`steer`, `follow_up`) are not sent yet.
+
+Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`; `meta.json` has the pi commit), recorded by `visualiser/test/record-pi.mjs`.
 
 ## 4. Capabilities
 
