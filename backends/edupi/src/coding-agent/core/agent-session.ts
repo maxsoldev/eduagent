@@ -7,6 +7,7 @@
 import type { Agent } from "../../agent/agent.ts";
 import type { AgentEvent, AgentMessage, QueueMode } from "../../agent/types.ts";
 import type { ImageContent, Model, TextContent, ThinkingLevel } from "../../ai/types.ts";
+import { clampThinkingLevel, getSupportedThinkingLevels } from "../../ai/models.ts";
 import type { SessionManager } from "./session-manager.ts";
 
 /** The Agent's events, with willRetry on agent_end, plus the session's own events. */
@@ -14,7 +15,8 @@ export type AgentSessionEvent =
   | Exclude<AgentEvent, { type: "agent_end" }>
   | { type: "agent_end"; messages: AgentMessage[]; willRetry: boolean }
   | { type: "agent_settled"; aborted: boolean }
-  | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] };
+  | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
+  | { type: "thinking_level_changed"; level: ThinkingLevel };
 
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
@@ -113,6 +115,25 @@ export class AgentSession {
 
   get thinkingLevel(): ThinkingLevel {
     return this.agent.state.thinkingLevel;
+  }
+
+  /** The levels the current model supports (only "off" without reasoning). */
+  getAvailableThinkingLevels(): ThinkingLevel[] {
+    return getSupportedThinkingLevels(this.model);
+  }
+
+  /**
+   * Sets the thinking level, clamped to what the model supports. Only a real change is saved as
+   * a thinking_level_change entry and announced with thinking_level_changed. The next model call uses it.
+   */
+  setThinkingLevel(level: ThinkingLevel): void {
+    const effectiveLevel = this.getAvailableThinkingLevels().includes(level) ? level : clampThinkingLevel(this.model, level);
+    const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
+    this.agent.state.thinkingLevel = effectiveLevel;
+    if (isChanging) {
+      this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+      this._emit({ type: "thinking_level_changed", level: effectiveLevel });
+    }
   }
 
   get isStreaming(): boolean {

@@ -2,6 +2,7 @@
 // The faux provider scripts the replies; a slow bash call or a slow stream gives the test time
 // to send commands while the run is active. Expected shapes come from real pi transcripts
 // (eduagent-spec4-notes/samples/pi-rpc-queues-abort.out.jsonl).
+import { readFileSync } from "node:fs";
 import { afterEach, expect, test } from "vitest";
 import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
 
@@ -151,4 +152,80 @@ test("new_session during a run aborts the run first, as pi does", async () => {
   expect(edupi.seen[settled]).toEqual({ type: "agent_settled", aborted: true });
   expect(settled).toBeLessThan(edupi.seen.indexOf(reply));
   expect(edupi.requests()).toHaveLength(1);
+});
+
+// One reasoning model as OpenRouter's GET /models lists it ("reasoning" in supported_parameters).
+const LUNA = { id: "openai/gpt-6-luna", name: "OpenAI: GPT-6 Luna", context_length: 400000,
+  top_provider: { context_length: 272000, max_completion_tokens: 128000 },
+  pricing: { prompt: "0.00000125", completion: "0.00001" }, supported_parameters: ["tools", "reasoning"] };
+
+async function prompt(message: string) {
+  const settled = settledCount();
+  edupi.sendLine(JSON.stringify({ type: "prompt", message }));
+  await untilSettled(settled + 1);
+}
+
+test("each thinking level becomes OpenRouter's reasoning effort in the request, clamped to what the model supports", async () => {
+  const levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  edupi = startEdupi({ models: [LUNA], responses: ["Default.", ...levels] });
+  expect((await edupi.command("get_state")).data.thinkingLevel).toBe("medium"); // pi's DEFAULT_THINKING_LEVEL
+  await prompt("default level");
+
+  const changes: string[] = [];
+  for (const level of levels) {
+    const from = edupi.seen.length;
+    const reply = await edupi.command("set_thinking_level", { level });
+    expect(reply).toEqual({ id: expect.any(String), type: "response", command: "set_thinking_level", success: true });
+    // thinking_level_changed only when the effective level changes; it comes before the response.
+    changes.push(...edupi.seen.slice(from, edupi.seen.indexOf(reply)).filter((m) => m.type === "thinking_level_changed").map((m) => m.level));
+    await prompt(`at ${level}`);
+  }
+  // Without a per-model level map, xhigh and max are not supported: pi clamps them to high.
+  expect(changes).toEqual(["off", "minimal", "low", "medium", "high"]);
+
+  const efforts = edupi.requests().map((r) => r.body.reasoning);
+  expect(efforts).toEqual([
+    { effort: "medium" },
+    { effort: "none" }, // off: OpenRouter's "none" turns reasoning off
+    { effort: "minimal" }, { effort: "low" }, { effort: "medium" }, { effort: "high" }, { effort: "high" }, { effort: "high" },
+  ]);
+  // The assistant message records the level it was asked with.
+  const replies = edupi.seen.filter((m) => m.type === "message_end" && m.message.role === "assistant").map((m) => m.message.thinkingLevel);
+  expect(replies).toEqual(["medium", "off", "minimal", "low", "medium", "high", "high", "high"]);
+  const state = (await edupi.command("get_state")).data;
+  expect(state.thinkingLevel).toBe("high");
+  // The start level and each change are thinking_level_change entries in the session file.
+  const entries = readFileSync(state.sessionFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  expect(entries.filter((e) => e.type === "thinking_level_change").map((e) => e.thinkingLevel)).toEqual(["medium", ...changes]);
+});
+
+test("a model without reasoning stays at off and gets no reasoning field", async () => {
+  edupi = startEdupi({ models: [LUNA], responses: ["Plain."] }, ["--model", "someone/plain-model"]);
+  expect((await edupi.command("get_state")).data.thinkingLevel).toBe("off");
+  const from = edupi.seen.length;
+  await edupi.command("set_thinking_level", { level: "high" });
+  expect(edupi.seen.slice(from).some((m) => m.type === "thinking_level_changed")).toBe(false);
+  await prompt("hi");
+  expect(edupi.requests()[0].body).not.toHaveProperty("reasoning");
+});
+
+test("reasoning streams as thinking events and goes back to the model in the reasoning field", async () => {
+  edupi = startEdupi({ models: [LUNA], responses: [
+    { content: [{ type: "thinking", thinking: "The user greets me. I greet back." }, { type: "text", text: "Hello!" }] },
+    "Again.",
+  ] });
+  await prompt("hi");
+  await prompt("again");
+
+  const updates = edupi.seen.filter((m) => m.type === "message_update").map((m) => m.assistantMessageEvent);
+  const thinking = updates.filter((e) => e.type.startsWith("thinking_"));
+  expect(thinking[0]).toEqual({ type: "thinking_start", contentIndex: 0 });
+  expect(thinking.filter((e) => e.type === "thinking_delta").map((e) => e.delta).join("")).toBe("The user greets me. I greet back.");
+  expect(thinking.at(-1)).toEqual({ type: "thinking_end", contentIndex: 0, content: "The user greets me. I greet back." });
+  const reply = edupi.seen.find((m) => m.type === "message_end" && m.message.role === "assistant")!.message;
+  expect(reply.content).toEqual([
+    { type: "thinking", thinking: "The user greets me. I greet back.", thinkingSignature: "reasoning" },
+    { type: "text", text: "Hello!" },
+  ]);
+  expect(edupi.requests()[1].body.messages.at(-2)).toEqual({ role: "assistant", content: "Hello!", reasoning: "The user greets me. I greet back." });
 });

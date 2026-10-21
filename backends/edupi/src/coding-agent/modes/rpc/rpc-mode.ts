@@ -90,6 +90,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
         return success(id, "abort");
       }
 
+      // thinking_level_changed (if the clamped level changed) comes before the response.
+      case "set_thinking_level": {
+        session.setThinkingLevel(command.level);
+        return success(id, "set_thinking_level");
+      }
+
       case "get_state": {
         const state: RpcSessionState = {
           model: session.model,

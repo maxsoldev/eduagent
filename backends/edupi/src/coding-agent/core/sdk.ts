@@ -4,9 +4,11 @@
 // level. A new session first records its model and thinking level as entries.
 import { Agent } from "../../agent/agent.ts";
 import type { StreamFn, ThinkingLevel } from "../../agent/types.ts";
+import { clampThinkingLevel } from "../../ai/models.ts";
 import { DEFAULT_MODEL_ID } from "../../ai/providers/openrouter.ts";
 import type { Model } from "../../ai/types.ts";
 import { AgentSession } from "./agent-session.ts";
+import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { convertToLlm } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import type { Probe } from "./probe.ts";
@@ -40,8 +42,9 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
   }
   model ??= options.modelRegistry.find("openrouter", DEFAULT_MODEL_ID)!;
 
-  let thinkingLevel: ThinkingLevel = hasExistingSession && hasThinkingEntry ? (existingSession.thinkingLevel as ThinkingLevel) : "off";
-  if (!model.reasoning) thinkingLevel = "off"; // pi clamps the level to what the model supports
+  // The session's level, else pi's default; then clamped to what the model supports.
+  let thinkingLevel: ThinkingLevel = hasExistingSession && hasThinkingEntry ? (existingSession.thinkingLevel as ThinkingLevel) : DEFAULT_THINKING_LEVEL;
+  thinkingLevel = clampThinkingLevel(model, thinkingLevel);
 
   // pi's default coding tools, working in the session's directory.
   const tools = createCodingTools(options.cwd ?? sessionManager.getCwd());
