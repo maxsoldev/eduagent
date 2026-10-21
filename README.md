@@ -34,7 +34,7 @@ The real [pi](https://github.com/earendil-works/pi) harness can run in a viewer 
 
 The entry runs pi from source in RPC mode (`node --import <pi>/packages/coding-agent/src/experimental/source-resolver.ts <pi>/packages/coding-agent/src/cli.ts --mode rpc`), not a globally installed `pi`, which can drift from the pin. It uses OpenRouter with `openai/gpt-6-luna` and your `OPENROUTER_API_KEY`. Its home is `~/.eduagent/.pi/agent` (`PI_CODING_AGENT_DIR`), so it does not touch `~/.pi`. To run it with no API key, start the fake model server (`node visualiser/test/fake-chat-completions.mjs 18787 script.json`) and point pi at it with a `models.json` in its agent folder: `{"providers": {"openrouter": {"baseUrl": "http://127.0.0.1:18787/v1", "apiKey": "fake"}}}`.
 
-The pi adapter is tested on transcripts recorded from this checkout (`visualiser/test/fixtures/pi/`). To record them again, run `node visualiser/test/record-pi.mjs` (set `PI_DIR` if pi is not at `../pi`), then update the ids and times that `visualiser/test/pi-adapter.test.ts` pins.
+The pi adapter is tested on transcripts recorded from this checkout (`visualiser/test/fixtures/pi/`), and edupi's tests on pi's session files and request bodies (`backends/edupi/test/fixtures/pi/`, scenarios `session-prompt-and-tools` and `session-compact`). To record them again, run `node visualiser/test/record-pi.mjs [scenario...]` (set `PI_DIR` if pi is not at `../pi`), then update the ids and times that `visualiser/test/pi-adapter.test.ts` pins. edupi's tests read ids, times and the cwd from the fixtures, so they need no update.
 
 ## educodex
 

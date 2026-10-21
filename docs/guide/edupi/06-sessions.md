@@ -9,12 +9,12 @@ Read [educodex chapter 16, Session logs](../educodex/16-session-logs.md) first. 
 pi also writes each session as JSONL, one JSON object per line, appended as things happen. But the lines are not a log of events. Line 1 is a **header**. Every other line is an **entry** with an `id` and a `parentId`:
 
 ```
-{"type":"session","version":3,"id":"01a15ebd-64e8-72cc-9962-5c808d7e4339","timestamp":"2026-10-21T13:53:52.873Z","cwd":"/private/tmp/pi-try/cwd"}
-{"type":"model_change","id":"3fc030c8","parentId":null,"timestamp":"…","provider":"fake","modelId":"openai/gpt-6-luna"}
-{"type":"thinking_level_change","id":"9b6cf29b","parentId":"3fc030c8","timestamp":"…","thinkingLevel":"medium"}
-{"type":"message","id":"8ed7f57a","parentId":"9b6cf29b","timestamp":"…","message":{"role":"system","content":"","sections":{"preamble":"You are an expert coding assistant operating inside pi, …","tools":"<tools>…</tools>",…},"toolsAdded":[…]}}
-{"type":"message","id":"9f0bc083","parentId":"8ed7f57a","timestamp":"…","message":{"role":"user","content":[{"type":"text","text":"say hi"}],"timestamp":1792590832915}}
-{"type":"message","id":"8d8aa502","parentId":"9f0bc083","timestamp":"…","message":{"role":"assistant","content":[{"type":"text","text":"Hello from fake."}],"provider":"fake","model":"openai/gpt-6-luna","usage":{…},"stopReason":"stop",…}}
+{"type":"session","version":3,"id":"01a15f55-8f1e-77f7-8f72-49d187f11704","timestamp":"2026-10-21T16:40:05.151Z","cwd":"/private/tmp/eduagent-pi-record/session-prompt-and-tools/cwd"}
+{"type":"model_change","id":"d7552282","parentId":null,"timestamp":"…","provider":"fake","modelId":"openai/gpt-6-luna"}
+{"type":"thinking_level_change","id":"d9eebecc","parentId":"d7552282","timestamp":"…","thinkingLevel":"medium"}
+{"type":"message","id":"1f667c8e","parentId":"d9eebecc","timestamp":"…","message":{"role":"system","content":"","sections":{"preamble":"You are an expert coding assistant operating inside pi, …","tools":"<tools>…</tools>",…},"toolsAdded":[…]}}
+{"type":"message","id":"bb044752","parentId":"1f667c8e","timestamp":"…","message":{"role":"user","content":[{"type":"text","text":"say hi"}],"timestamp":1792600805183}}
+{"type":"message","id":"fd2d1e33","parentId":"bb044752","timestamp":"…","message":{"role":"assistant","content":[{"type":"text","text":"Hello from fake."}],"provider":"fake","model":"openai/gpt-6-luna","usage":{…},"stopReason":"stop",…}}
 ```
 
 (A real file written by pi at the pinned commit, shortened. It is `test/fixtures/pi/session-prompt-and-tools.jsonl`.)
@@ -57,7 +57,7 @@ The system prompt is in the file too, as a `system` message. pi keeps it inside 
 ### Where the files go
 
 ```
-~/.pi/agent/sessions/--Users-max-proj--/2026-10-21T13-53-52-873Z_01a15ebd-64e8-72cc-9962-5c808d7e4339.jsonl
+~/.pi/agent/sessions/--Users-max-proj--/2026-10-21T16-40-05-151Z_01a15f55-8f1e-77f7-8f72-49d187f11704.jsonl
          └ agent dir┘ └─ one folder per cwd ┘└──── start time, UTC ───┘ └──────── session id ────────────────┘
 ```
 
@@ -128,7 +128,7 @@ export function buildContextEntries(entries: SessionEntry[], leafId?: string | n
 }
 ```
 
-The tests in [`test/rpc-session.test.ts`](../../../backends/edupi/test/rpc-session.test.ts) check the written file against pi's format, `new_session`, `get_messages`, `--continue` and `--no-session`. Two tests open files written by the real pi ([`test/fixtures/pi/`](../../../backends/edupi/test/fixtures/pi/)). One has two compactions; its test checks that edupi's next request is the request the real pi sent, plus the new turn.
+The tests in [`test/rpc-session.test.ts`](../../../backends/edupi/test/rpc-session.test.ts) check the written file against pi's format, `new_session`, `get_messages`, `--continue` and `--no-session`. Two tests open files written by the real pi ([`test/fixtures/pi/`](../../../backends/edupi/test/fixtures/pi/), recorded by `visualiser/test/record-pi.mjs`). One has two compactions; its test checks that edupi's next request is the request the real pi sent, plus the new turn.
 
 ## In pi
 

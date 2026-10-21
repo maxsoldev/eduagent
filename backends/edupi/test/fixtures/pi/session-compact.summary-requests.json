@@ -1,5 +1,5 @@
 {
- "note": "Request body messages real pi (pinned 16f5f0af4) sent for its compaction summaries in session-compact.jsonl (settings compaction.keepRecentTokens 10). From samples/pi-rpc-compact.requests.jsonl, lines 3, 5 and 6: the first compaction's split-turn prefix, then the second compaction's history update and its prefix.",
+ "note": "Recorded from real pi at 16f5f0af4 by visualiser/test/record-pi.mjs: the request messages of its compaction summaries in session-compact.jsonl (settings compaction.keepRecentTokens 10): the first compaction's split-turn prefix, then the second compaction's history update and its prefix.",
  "requests": [
   [
    {

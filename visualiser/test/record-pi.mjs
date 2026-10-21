@@ -1,15 +1,16 @@
-// Records the real pi fixtures for the pi adapter tests (seam C). For each scenario it starts the
-// fake Chat Completions server, runs the pinned pi checkout in RPC mode from source, sends the
-// scenario's commands and saves what pi wrote to stdout. No network model call, no API key.
+// Records the real pi fixtures for the pi adapter tests (seam C) and for edupi's tests. For each
+// scenario it starts the fake Chat Completions server, runs the pinned pi checkout in RPC mode from
+// source, sends the scenario's commands and saves what pi wrote. No network model call, no API key.
 //
 //   node visualiser/test/record-pi.mjs              (from the repo root; pi at <repo>/../pi)
 //   PI_DIR=/path/to/pi node visualiser/test/record-pi.mjs
 //
 // Output in test/fixtures/pi/: <scenario>.in.jsonl (commands), <scenario>.out.jsonl (stdout),
 // <scenario>.requests.jsonl (model request bodies) and meta.json (pi commit, date, Node version).
-// Ids, timestamps and durations change on each run; update what the tests pin after re-recording.
+// Scenarios with an `edupi` step write pi's session file and request bodies to
+// backends/edupi/test/fixtures/pi/ instead. Ids, timestamps and durations change on each run.
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { startFakeChatCompletions } from "./fake-chat-completions.mjs";
@@ -19,6 +20,7 @@ const MODEL = "openai/gpt-6-luna";
 const repo = new URL("../..", import.meta.url).pathname;
 const PI = resolve(process.env.PI_DIR ?? join(repo, "..", "pi"));
 const OUT = new URL("fixtures/pi/", import.meta.url).pathname;
+const EDUPI_OUT = join(repo, "backends/edupi/test/fixtures/pi");
 const WORK = "/tmp/eduagent-pi-record"; // a fixed path, so the cwd in the transcripts stays the same
 
 const commit = execFileSync("git", ["-C", PI, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -102,7 +104,66 @@ const SCENARIOS = [
       await pi.send({ type: "get_messages" });
     },
   },
+  // edupi's fixtures (backends/edupi/test/fixtures/pi/): pi's session files and request bodies.
+  {
+    name: "session-prompt-and-tools",
+    files: { "a.txt": "file a\n" },
+    script: [
+      { text: ["Hello", " from fake."] },
+      { toolCalls: [{ id: "call_1", name: "bash", arguments: { command: "echo hi" } }, { id: "call_2", name: "read", arguments: { path: "a.txt" } }] },
+      { text: ["Done."] },
+    ],
+    async run(pi) {
+      await pi.prompt("say hi");
+      await pi.prompt("run tools");
+    },
+    edupi({ session, requests }) {
+      writeFile("session-prompt-and-tools.jsonl", session);
+      const body = requests[2].body; // the request after the two tool calls
+      writeJson("tools-request.json", { note: `${NOTE}: the tools field and the last messages of the request after two tool calls.`,
+        tools: body.tools, messages: body.messages.slice(-4) });
+    },
+  },
+  {
+    name: "session-compact",
+    settings: { compaction: { keepRecentTokens: 10, reserveTokens: 50 } },
+    script: [
+      { text: ["First answer with some words."] },
+      { text: ["Second answer with some words."] },
+      { text: ["## Goal\nFIRST SUMMARY"] },
+      { text: ["Third answer."] },
+      { text: ["## Goal\nSECOND SUMMARY"] },
+      { text: ["Fourth."] },
+    ],
+    async run(pi) {
+      await pi.prompt("q1");
+      await pi.prompt("q2");
+      await pi.send({ type: "compact", customInstructions: "Keep the file names." });
+      await pi.prompt("q3");
+      await pi.send({ type: "compact" });
+      await pi.prompt("q4");
+    },
+    edupi({ session, requests }) {
+      writeFile("session-compact.jsonl", session);
+      // Requests 3, 5 and 6: the first compaction's split-turn prefix, then the second compaction's history update and its prefix.
+      writeJson("session-compact.summary-requests.json", { note: `${NOTE}: the request messages of its compaction summaries in session-compact.jsonl (settings compaction.keepRecentTokens 10): the first compaction's split-turn prefix, then the second compaction's history update and its prefix.`,
+        requests: [2, 4, 5].map((i) => requests[i].body.messages) });
+      writeJson("session-compact.q4-request.json", { note: `${NOTE}: the request messages for prompt q4, after the second compaction in session-compact.jsonl.`,
+        messages: requests[6].body.messages });
+    },
+  },
 ];
+
+const NOTE = `Recorded from real pi at ${PINNED.slice(0, 9)} by visualiser/test/record-pi.mjs`;
+const writeFile = (name, text) => writeFileSync(join(EDUPI_OUT, name), text);
+const writeJson = (name, value) => writeFile(name, JSON.stringify(value, null, 1) + "\n");
+
+/** The one session file pi wrote under its agent dir (sessions/<cwd>/<id>.jsonl). */
+function sessionFile(dir) {
+  const files = readdirSync(dir, { recursive: true }).filter((f) => f.endsWith(".jsonl"));
+  if (files.length !== 1) throw new Error(`expected one session file in ${dir}, found ${files.length}`);
+  return readFileSync(join(dir, files[0]), "utf8");
+}
 
 const RESOLVER = pathToFileURL(join(PI, "packages/coding-agent/src/experimental/source-resolver.ts")).href;
 const CLI = join(PI, "packages/coding-agent/src/cli.ts");
@@ -166,6 +227,11 @@ async function record(scenario) {
   await server.close();
 
   const jsonl = (items) => items.map((x) => JSON.stringify(x)).join("\n") + "\n";
+  if (scenario.edupi) {
+    scenario.edupi({ session: sessionFile(join(dir, "agent", "sessions")), requests });
+    console.log(`${scenario.name}: ${requests.length} model requests, for edupi's fixtures`);
+    return;
+  }
   writeFileSync(join(OUT, `${scenario.name}.in.jsonl`), jsonl(sent));
   writeFileSync(join(OUT, `${scenario.name}.out.jsonl`), jsonl(lines));
   writeFileSync(join(OUT, `${scenario.name}.requests.jsonl`), jsonl(requests));
@@ -174,8 +240,10 @@ async function record(scenario) {
 
 mkdirSync(OUT, { recursive: true });
 const only = process.argv.slice(2);
-for (const s of SCENARIOS) if (!only.length || only.includes(s.name)) await record(s);
-writeFileSync(join(OUT, "meta.json"), JSON.stringify({
+const chosen = SCENARIOS.filter((s) => !only.length || only.includes(s.name));
+for (const s of chosen) await record(s);
+// meta.json describes the visualiser's fixtures; edupi's name the commit in their notes.
+if (chosen.some((s) => !s.edupi)) writeFileSync(join(OUT, "meta.json"), JSON.stringify({
   pi: { repo: "https://github.com/earendil-works/pi", commit }, recordedAt: new Date().toISOString().slice(0, 10),
   node: process.version, recorder: "visualiser/test/record-pi.mjs", provider: "custom provider \"fake\" (api openai-completions) on the fake Chat Completions server",
 }, null, 2) + "\n");

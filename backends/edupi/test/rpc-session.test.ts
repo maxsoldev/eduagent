@@ -117,7 +117,7 @@ test("--session opens a session file written by real pi and rebuilds its message
   edupi = startEdupi({ responses: ["Hello again."] }, ["--session", file], { dir });
 
   const state = (await edupi.command("get_state")).data;
-  expect(state).toMatchObject({ sessionId: "01a15ebd-64e8-72cc-9962-5c808d7e4339", sessionFile: file, messageCount: 8 });
+  expect(state).toMatchObject({ sessionId: recorded[0].id, sessionFile: file, messageCount: 8 });
   // pi recorded thinking level "medium"; edupi's default model has no reasoning, so pi's clamp makes it "off".
   expect(state.thinkingLevel).toBe("off");
 
@@ -143,16 +143,18 @@ test("--session opens a session file written by real pi and rebuilds its message
   expect(after.slice(0, recorded.length)).toEqual(recorded);
   const added = after.slice(recorded.length);
   // pi's file already has a thinking level entry. edupi's prompt differs from the one in the file
-  // (no <docs>, no skills, another cwd), so a system message patches those sections first, as pi does.
+  // (no <docs>, another cwd), so a system message patches those sections first, as pi does.
   expect(added.map((e) => e.message.role)).toEqual(["system", "user", "assistant"]);
-  expect(added[0].message.sections).toEqual({ docs: null, skills: null, cwd: `<cwd>\n${dir}\n</cwd>` });
-  expect(added[0].parentId).toBe("3a72a5e4");
+  expect(added[0].message.sections).toEqual({ docs: null, cwd: `<cwd>\n${dir}\n</cwd>` });
+  expect(added[0].parentId).toBe(recorded.at(-1)!.id);
   expect(added[1].parentId).toBe(added[0].id);
   expect(added[2].parentId).toBe(added[1].id);
 });
 
 test("a pi session with compactions is rebuilt from the latest compaction and the kept messages", async () => {
   const { dir, file } = copyFixture("session-compact.jsonl");
+  const recorded = readEntries(file);
+  const latest = recorded.filter((e) => e.type === "compaction").at(-1)!;
   edupi = startEdupi({ responses: ["Fifth."] }, ["--session", file], { dir });
 
   // The file has two compactions. Only the second counts: its system message and summary, the
@@ -162,8 +164,8 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
   expect(messages[1]).toEqual({
     role: "compactionSummary",
     summary: "## Goal\nSECOND SUMMARY\n\n---\n\n**Turn Context (split turn):**\n\nFourth.",
-    tokensBefore: 120,
-    timestamp: Date.parse("2026-10-21T13:55:18.561Z"),
+    tokensBefore: latest.tokensBefore,
+    timestamp: Date.parse(latest.timestamp),
   });
   expect(messages.slice(2).map((m: Message) => m.content[0].text)).toEqual(["Second answer with some words.", "q3", "Third answer.", "q4", "Fourth."]);
 
@@ -175,7 +177,7 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
   const pi = JSON.parse(readFileSync(join(FIXTURES, "session-compact.q4-request.json"), "utf8")).messages;
   expect(pi[1].content[0].text).toMatch(/^The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSECOND SUMMARY/);
   expect(edupi.requests()[0].body.messages).toEqual([
-    { role: "system", content: pi[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace("/private/tmp/pi-try/cwd", dir) },
+    { role: "system", content: pi[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace(recorded[0].cwd, dir) },
     ...pi.slice(1),
     { role: "assistant", content: "Fourth." },
     { role: "user", content: [{ type: "text", text: "q5" }] },
