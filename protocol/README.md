@@ -167,11 +167,14 @@ Events that mean the same thing have the same name and the same **shared fields*
 | `modelRequest` | just before the HTTP request to the model | `api` (string: `openai-responses` or `openai-completions`), `url` (string), `body` (object: the exact request body) | `inputTokensEstimate` | |
 | `streamEvent` | for each streamed chunk, raw | `event` (object: one Responses SSE event, or one `chat.completion.chunk`) | (only with `thread/start` `traceSse: true`) | |
 | `modelResponse` | when the stream ended | `usage` (object: the harness's usage record), `seconds` (number) | `eventCounts`, `outputItems`, `cost` (the Codex usage is the Responses `usage`) | `stopReason`, `errorMessage` (on errors), `responseId`, `content` (the assistant content blocks); `usage` is pi's `Usage` |
+| `compactionRequest` | just before the compaction's summary request | `reason` (string), `tokensBefore` (number: the context size that triggered it), `body` (object: the exact summary request body) | `reason`: `manual`, `pre-turn` or `auto` | `reason`: `manual`, `threshold` or `overflow`; one event per summary request (a split turn has two) |
+| `compacted` | the shorter context replaced the old one | `reason` (string), `summary` (string), `tokensBefore` (number), `tokensAfter` (number: the new context's size, estimated) | `itemsBefore`, `itemsAfter`, `newHistory` (the replacement history) | `firstKeptEntryId`, `details` (`readFiles`, `modifiedFiles`), `messages` (the context rebuilt from the compaction entry) |
 
 - `api` picks the request view in the Requests tab: **Chat Completions** messages (`body.messages`: role and content) or **Responses** input items (`body.input`: typed items). A `modelRequest` without `api` is read as `openai-responses`.
 - edupi sends a `modelResponse` for failed requests too (`stopReason: "error"`), but only after a `modelRequest`.
+- edupi's summary request goes through the same provider as every request, so `modelRequest`, `streamEvent` and `modelResponse` follow its `compactionRequest`. educodex sends only `compactionRequest` for it. edupi's compaction events come between pi's own `compaction_start` and `compaction_end` events.
 
-Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `toolDispatch`, `toolOutput`, `loopIteration`, `compactionRequest`, `compacted`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
+Planned shared names (edupi adds them in later tickets; educodex's payloads are in `backends/educodex/src/educodex/observe/tracer.py`): `promptAssembled`, `toolDispatch`, `toolOutput`, `loopIteration`, `skillsLoaded`, and the step-mode events `paused` and `resumed`.
 
 ### Backend-only events
 

@@ -30,12 +30,15 @@ def shape_errors(fixture, actual, path="") -> list[str]:
 
 
 def test_model_trace_events_match_the_protocol_fixtures(app_server):
-    server = app_server([[{"type": "message", "text": "Hello there."}]])
+    # The second response is the summary of a manual compaction, for the compaction events.
+    server = app_server([[{"type": "message", "text": "Hello there."}], [{"type": "message", "text": "## Progress\n- greeted"}]])
     server.request("initialize", {"clientInfo": {"name": "test", "version": "1"}})
     server.send({"method": "initialized"})
     thread = server.request("thread/start", {"traceSse": True})["result"]["thread"]
     server.request("turn/start", {"threadId": thread["id"], "input": [{"type": "text", "text": "Hi?"}]})
     server.until("turn/completed")
+    server.request("thread/compact/start", {"threadId": thread["id"]})
+    server.until("thread/compacted")
 
     shared = json.loads((FIXTURES / "shared.json").read_text())
     for name, fields in shared.items():

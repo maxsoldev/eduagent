@@ -236,3 +236,22 @@ test("overflow: a second overflow after the retry gives up with pi's error", asy
   expect(edupi.seen.filter((m) => m.type === "agent_start")).toHaveLength(3); // q1, q2, the one retry
   expect(edupi.seen.at(-1)).toEqual({ type: "agent_settled", aborted: false });
 });
+
+test("trace events show the summary request body and the context rebuilt from the compaction", async () => {
+  edupi = startEdupi({ responses: ["First answer.", "## Goal\nTRACED SUMMARY"] }, [], { dir: dirWithSettings({ compaction: { keepRecentTokens: 1 } }) });
+  await prompt("q1");
+  await edupi.command("compact");
+  const names = edupi.seen.filter((m) => m.type === "compaction_start" || m.type === "compaction_end" || (m.type === "trace" && m.name !== "streamEvent"))
+    .slice(-6).map((m) => m.name ?? m.type);
+  expect(names).toEqual(["compaction_start", "compactionRequest", "modelRequest", "modelResponse", "compacted", "compaction_end"]);
+
+  const request = edupi.seen.find((m) => m.name === "compactionRequest")!;
+  const end = edupi.seen.find((m) => m.type === "compaction_end")!;
+  expect(request).toEqual({ type: "trace", name: "compactionRequest", reason: "manual", tokensBefore: end.result.tokensBefore,
+    body: edupi.requests()[1].body });
+  const compacted = edupi.seen.find((m) => m.name === "compacted")!;
+  const { messages } = (await edupi.command("get_messages")).data;
+  expect(compacted).toEqual({ type: "trace", name: "compacted", reason: "manual", summary: end.result.summary,
+    firstKeptEntryId: end.result.firstKeptEntryId, tokensBefore: end.result.tokensBefore, tokensAfter: end.result.estimatedTokensAfter,
+    details: { readFiles: [], modifiedFiles: [] }, messages });
+});

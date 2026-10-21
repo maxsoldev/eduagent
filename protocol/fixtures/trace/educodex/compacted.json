@@ -1,0 +1,66 @@
+{
+  "method": "trace/compacted",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "compact-019a0000-0000-7000-8000-000000000003",
+    "iteration": 0,
+    "reason": "manual",
+    "summary": "## Progress\n- greeted",
+    "itemsBefore": 4,
+    "itemsAfter": 4,
+    "tokensBefore": 7450,
+    "tokensAfter": 1922,
+    "newHistory": [
+      {
+        "type": "message",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that …"
+          },
+          {
+            "type": "input_text",
+            "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `workspace-write`: The sandbox permits  …"
+          },
+          {
+            "type": "input_text",
+            "text": "<collaboration_mode># Collaboration Mode: Default\n\nYou are now in Default mode. Any previous instructions for other modes (e.g. Plan mode) are no long …"
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<environment_context>\n  <cwd>/private/var/folders/mt/svvsr9vx4xx650ksp9z1lzvr0000gn/T/pytest-of-max/pytest-523/test_dump0/ws</cwd>\n  <shell>zsh</shell …"
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "hello"
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools th …"
+          }
+        ]
+      }
+    ],
+    "_seq": 23,
+    "_ts": 1792596729.796614
+  }
+}
