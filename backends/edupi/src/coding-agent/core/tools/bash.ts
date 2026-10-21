@@ -4,15 +4,14 @@
 // is saved to a temp file, and the model gets its path. A non-zero exit code is an error result.
 // edupi leaves out pi's spawn hooks, command prefix and Windows shells.
 
-import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { type ChildProcess, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, writeFile } from "node:fs/promises";
-import { constants as osConstants, tmpdir } from "node:os";
-import { join } from "node:path";
+import { access } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
 import { type Static, Type } from "typebox";
 import type { AgentTool, AgentToolUpdateCallback } from "../../../agent/types.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.ts";
+import { OutputAccumulator, type OutputSnapshot } from "./output-accumulator.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
 
 /** pi's throttle for partial output (renderers/bash.ts). */
 const BASH_UPDATE_THROTTLE_MS = 100;
@@ -103,6 +102,18 @@ function killProcessTree(pid: number) {
 }
 
 /**
+ * Resolves with the exit code. "close" waits for the output pipes, but a background process can
+ * keep them open, so after "exit" wait at most 100 ms more (pi waits until the pipes are idle).
+ */
+function waitForChildProcess(child: ChildProcess): Promise<number | null> {
+	return new Promise((resolve, reject) => {
+		child.once("error", reject);
+		child.once("close", (code) => resolve(code));
+		child.once("exit", (code) => setTimeout(() => resolve(code), 100));
+	});
+}
+
+/**
  * Runs the command; onData gets stdout and stderr chunks. Resolves with the exit code. Throws
  * "aborted" or "timeout:<secs>", which execute() turns into pi's messages.
  */
@@ -113,7 +124,7 @@ async function exec(
 	onData: (data: Buffer) => void,
 	signal?: AbortSignal,
 	timeout?: number,
-) {
+): Promise<number> {
 	const timeoutMs = resolveTimeoutMs(timeout);
 	if (signal?.aborted) throw new Error("aborted");
 	try {
@@ -141,13 +152,7 @@ async function exec(
 	child.stdout.on("data", onData);
 	child.stderr.on("data", onData);
 	try {
-		// "close" waits for the output pipes. A background process can keep them open, so after
-		// "exit" wait at most 100 ms more (pi waits until the pipes are idle).
-		const exitCode = await new Promise<number | null>((resolve, reject) => {
-			child.once("error", reject);
-			child.once("close", (code) => resolve(code));
-			child.once("exit", (code) => setTimeout(() => resolve(code), 100));
-		});
+		const exitCode = await waitForChildProcess(child);
 		if (signal?.aborted) throw new Error("aborted");
 		if (timedOut) throw new Error(`timeout:${timeout}`);
 		// A shell killed by a signal has no exit code: report 128 + signal number, as shells do.
@@ -174,114 +179,100 @@ export function createBashTool(
 			signal,
 			onUpdate?: AgentToolUpdateCallback<BashToolDetails | undefined>,
 		) {
-			const decoder = new TextDecoder();
-			let output = "";
-			let fullOutputPath: string | undefined;
-
-			// The tail of the output so far, and a temp file with all of it once it is too long.
-			const snapshot = async () => {
-				const truncation = truncateTail(output);
-				if (truncation.truncated && !fullOutputPath) {
-					fullOutputPath = join(tmpdir(), `pi-bash-${randomBytes(8).toString("hex")}.log`);
-				}
-				if (fullOutputPath) await writeFile(fullOutputPath, output, { mode: 0o600 });
-				return { content: truncation.content, truncation, fullOutputPath };
-			};
+			const output = new OutputAccumulator();
 
 			// Partial results: one at the start, then at most one every 100 ms.
-			let lastUpdateAt = 0;
 			let updateTimer: NodeJS.Timeout | undefined;
-			let dirty = false; // output came since the last update
-			const emitUpdate = async () => {
+			let updateDirty = false; // output came since the last update
+			let lastUpdateAt = 0;
+			const emitOutputUpdate = async () => {
 				updateTimer = undefined;
-				dirty = false;
+				updateDirty = false;
 				lastUpdateAt = Date.now();
-				const s = await snapshot();
+				const snapshot = await output.snapshot();
 				onUpdate?.({
-					content: [{ type: "text", text: s.content }],
+					content: [{ type: "text", text: snapshot.content }],
 					details: {
-						truncation: s.truncation.truncated ? s.truncation : undefined,
-						fullOutputPath: s.fullOutputPath,
+						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
+						fullOutputPath: snapshot.fullOutputPath,
 					},
 				});
 			};
-			const scheduleUpdate = () => {
-				dirty = true;
+			const scheduleOutputUpdate = () => {
+				updateDirty = true;
 				if (!onUpdate || updateTimer) return;
-				updateTimer = setTimeout(emitUpdate, Math.max(0, BASH_UPDATE_THROTTLE_MS - (Date.now() - lastUpdateAt)));
+				const delay = Math.max(0, BASH_UPDATE_THROTTLE_MS - (Date.now() - lastUpdateAt));
+				updateTimer = setTimeout(emitOutputUpdate, delay);
 			};
 			onUpdate?.({ content: [], details: undefined });
 
-			const formatOutput = (s: Awaited<ReturnType<typeof snapshot>>, emptyText = "(no output)") => {
-				const { truncation } = s;
-				let text = s.content || emptyText;
+			const handleData = (data: Buffer) => {
+				output.append(data);
+				scheduleOutputUpdate();
+			};
+
+			const finishOutput = async () => {
+				if (updateTimer) clearTimeout(updateTimer);
+				output.finish();
+				if (onUpdate && updateDirty) await emitOutputUpdate();
+				return output.snapshot();
+			};
+
+			const formatOutput = (snapshot: OutputSnapshot, emptyText = "(no output)") => {
+				const { truncation } = snapshot;
+				let text = snapshot.content || emptyText;
 				let details: BashToolDetails | undefined;
 				if (truncation.truncated) {
-					details = { truncation, fullOutputPath: s.fullOutputPath };
+					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
 					if (truncation.lastLinePartial) {
-						// pi's OutputAccumulator.getLastLineBytes: the bytes after the last newline (0 if the output ends with one).
-						const lastLineSize = formatSize(
-							Buffer.byteLength(output.slice(output.lastIndexOf("\n") + 1), "utf-8"),
-						);
-						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${s.fullOutputPath}]`;
+						const lastLineSize = formatSize(output.getLastLineBytes());
+						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
 					} else if (truncation.truncatedBy === "lines") {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${s.fullOutputPath}]`;
+						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
 					} else {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${s.fullOutputPath}]`;
+						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
 					}
 				}
 				return { text, details };
 			};
-			const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
-			const finish = async () => {
-				if (updateTimer) clearTimeout(updateTimer);
-				output += decoder.decode();
-				if (onUpdate && dirty) await emitUpdate();
-				return snapshot();
-			};
 
+			const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
 			const startedAt = performance.now();
+
 			let exitCode: number;
 			try {
-				exitCode = await exec(
-					command,
-					cwd,
-					getCommandEnv(options.getSessionEnvironment?.()),
-					(data) => {
-						output += decoder.decode(data, { stream: true });
-						scheduleUpdate();
-					},
-					signal,
-					timeout,
-				);
+				const env = getCommandEnv(options.getSessionEnvironment?.());
+				exitCode = await exec(command, cwd, env, handleData, signal, timeout);
 			} catch (err) {
-				const { text } = formatOutput(await finish(), "");
-				if (err instanceof Error && err.message === "aborted")
+				const { text } = formatOutput(await finishOutput(), "");
+				if (err instanceof Error && err.message === "aborted") {
 					throw new Error(appendStatus(text, "Command aborted"));
+				}
 				if (err instanceof Error && err.message.startsWith("timeout:")) {
-					throw new Error(appendStatus(text, `Command timed out after ${err.message.split(":")[1]} seconds`));
+					const timeoutSecs = err.message.split(":")[1];
+					throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
 				}
 				throw err;
 			}
 
-			const { text, details } = formatOutput(await finish());
+			const { text: outputText, details } = formatOutput(await finishOutput());
 			const structuredContent = {
-				output,
+				output: output.readFullOutput(),
 				truncated: false,
 				exit_code: exitCode,
 				wall_time_seconds: Math.round((performance.now() - startedAt) / 100) / 10,
 			};
 			if (exitCode !== 0) {
 				return {
-					content: [{ type: "text", text: appendStatus(text, `Command exited with code ${exitCode}`) }],
+					content: [{ type: "text", text: appendStatus(outputText, `Command exited with code ${exitCode}`) }],
 					details,
 					structuredContent,
 					isError: true,
 				};
 			}
-			return { content: [{ type: "text", text }], details, structuredContent };
+			return { content: [{ type: "text", text: outputText }], details, structuredContent };
 		},
 	};
 }

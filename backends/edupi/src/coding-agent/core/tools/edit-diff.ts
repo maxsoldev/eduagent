@@ -24,6 +24,27 @@ export interface Edit {
 	newText: string;
 }
 
+interface MatchedEdit {
+	editIndex: number;
+	matchIndex: number;
+	matchLength: number;
+	newText: string;
+}
+
+function countOccurrences(content: string, oldText: string): number {
+	return content.split(oldText).length - 1;
+}
+
+/** Replaces from the end, so the offsets of the earlier matches stay valid. */
+function applyReplacements(content: string, replacements: MatchedEdit[]): string {
+	let result = content;
+	for (let i = replacements.length - 1; i >= 0; i--) {
+		const { matchIndex, matchLength, newText } = replacements[i];
+		result = result.substring(0, matchIndex) + newText + result.substring(matchIndex + matchLength);
+	}
+	return result;
+}
+
 function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
 	if (totalEdits === 1) {
 		return new Error(
@@ -63,7 +84,7 @@ function getNoChangeError(path: string, totalEdits: number): Error {
 	return new Error(`No changes made to ${path}. The replacements produced identical content.`);
 }
 
-/** Finds every oldText in the LF-normalized content, then replaces from the end so the offsets stay valid. */
+/** Finds every oldText in the LF-normalized content, checks the rules, then applies all replacements. */
 export function applyEditsToNormalizedContent(
 	normalizedContent: string,
 	edits: Edit[],
@@ -77,18 +98,18 @@ export function applyEditsToNormalizedContent(
 		if (edit.oldText.length === 0) throw getEmptyOldTextError(path, i, normalizedEdits.length);
 	});
 
-	const matched = normalizedEdits.map((edit, i) => {
+	const matchedEdits: MatchedEdit[] = normalizedEdits.map((edit, i) => {
 		const matchIndex = normalizedContent.indexOf(edit.oldText);
 		if (matchIndex === -1) throw getNotFoundError(path, i, normalizedEdits.length);
-		const occurrences = normalizedContent.split(edit.oldText).length - 1;
+		const occurrences = countOccurrences(normalizedContent, edit.oldText);
 		if (occurrences > 1) throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
 		return { editIndex: i, matchIndex, matchLength: edit.oldText.length, newText: edit.newText };
 	});
 
-	matched.sort((a, b) => a.matchIndex - b.matchIndex);
-	for (let i = 1; i < matched.length; i++) {
-		const previous = matched[i - 1];
-		const current = matched[i];
+	matchedEdits.sort((a, b) => a.matchIndex - b.matchIndex);
+	for (let i = 1; i < matchedEdits.length; i++) {
+		const previous = matchedEdits[i - 1];
+		const current = matchedEdits[i];
 		if (previous.matchIndex + previous.matchLength > current.matchIndex) {
 			throw new Error(
 				`edits[${previous.editIndex}] and edits[${current.editIndex}] overlap in ${path}. Merge them into one edit or target disjoint regions.`,
@@ -96,12 +117,7 @@ export function applyEditsToNormalizedContent(
 		}
 	}
 
-	let newContent = normalizedContent;
-	for (let i = matched.length - 1; i >= 0; i--) {
-		const m = matched[i];
-		newContent =
-			newContent.substring(0, m.matchIndex) + m.newText + newContent.substring(m.matchIndex + m.matchLength);
-	}
+	const newContent = applyReplacements(normalizedContent, matchedEdits);
 	if (newContent === normalizedContent) throw getNoChangeError(path, normalizedEdits.length);
 	return { baseContent: normalizedContent, newContent };
 }

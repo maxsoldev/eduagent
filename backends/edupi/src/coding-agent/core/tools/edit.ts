@@ -55,7 +55,7 @@ export interface EditToolDetails {
 	firstChangedLine?: number;
 }
 
-const isSingleEdit = (value: unknown): value is Edit =>
+const isSingleEditInput = (value: unknown): value is Edit =>
 	!!value &&
 	typeof value === "object" &&
 	!Array.isArray(value) &&
@@ -73,9 +73,9 @@ function prepareEditArguments(input: unknown): unknown {
 		try {
 			const parsed = JSON.parse(args.edits);
 			if (Array.isArray(parsed)) args.edits = parsed;
-			else if (isSingleEdit(parsed)) args.edits = [parsed];
+			else if (isSingleEditInput(parsed)) args.edits = [parsed];
 		} catch {}
-	} else if (isSingleEdit(args.edits)) {
+	} else if (isSingleEditInput(args.edits)) {
 		args.edits = [args.edits];
 	}
 	if (typeof args.oldText !== "string" || typeof args.newText !== "string") return args;
@@ -83,6 +83,18 @@ function prepareEditArguments(input: unknown): unknown {
 	edits.push({ oldText: args.oldText, newText: args.newText });
 	const { oldText: _oldText, newText: _newText, ...rest } = args;
 	return { ...rest, edits };
+}
+
+function validateEditInput(input: EditToolInput): { path: string; edits: Edit[] } {
+	if (!Array.isArray(input.edits) || input.edits.length === 0) {
+		throw new Error("Edit tool input is invalid. edits must contain at least one replacement.");
+	}
+	return { path: input.path, edits: input.edits };
+}
+
+/** The model never sends the invisible BOM, so it is stripped before matching and put back after (pi utils/text.ts). */
+function splitBom(text: string): { bom: string; text: string } {
+	return text.startsWith("\uFEFF") ? { bom: "\uFEFF", text: text.slice(1) } : { bom: "", text };
 }
 
 export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDetails | undefined> {
@@ -95,10 +107,7 @@ export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDe
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		prepareArguments: prepareEditArguments,
 		async execute(_toolCallId, input, signal) {
-			if (!Array.isArray(input.edits) || input.edits.length === 0) {
-				throw new Error("Edit tool input is invalid. edits must contain at least one replacement.");
-			}
-			const { path, edits } = input;
+			const { path, edits } = validateEditInput(input);
 			const absolutePath = resolveToCwd(path, cwd);
 			return withFileMutationQueue(absolutePath, async () => {
 				// Check the signal after each await, not in an abort listener: a listener would release the
@@ -119,9 +128,7 @@ export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDe
 				const rawContent = await readFile(absolutePath, "utf-8");
 				throwIfAborted();
 
-				// The model never sends the invisible BOM, so strip it before matching and put it back after.
-				const bom = rawContent.startsWith("\uFEFF") ? "\uFEFF" : "";
-				const content = rawContent.slice(bom.length);
+				const { bom, text: content } = splitBom(rawContent);
 				const originalEnding = detectLineEnding(content);
 				const { baseContent, newContent } = applyEditsToNormalizedContent(normalizeToLF(content), edits, path);
 				throwIfAborted();
