@@ -142,6 +142,18 @@ export interface SimpleStreamOptions {
   temperature?: number;
   sessionId?: string;
   reasoning?: Exclude<ThinkingLevel, "off">;
+  probe?: ProviderProbe; // edupi: teaching hooks (pi's nearest are onPayload and onResponse)
+}
+
+/**
+ * edupi's hook points in a provider: the request body as sent, each raw streamed chunk, and the
+ * final response. pi has no such hooks. edupi's observe layer turns them into trace events;
+ * the provider works the same without them.
+ */
+export interface ProviderProbe {
+  modelRequest?(request: { api: Api; url: string; body: unknown }): void | Promise<void>;
+  streamEvent?(event: unknown): void | Promise<void>;
+  modelResponse?(message: AssistantMessage): void | Promise<void>;
 }
 
 /**

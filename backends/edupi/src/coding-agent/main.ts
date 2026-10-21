@@ -8,6 +8,7 @@ import type { StreamFn } from "../agent/types.ts";
 import { streamSimple } from "../ai/api/openai-completions.ts";
 import { fauxProvider, loadFauxScript } from "../ai/providers/faux.ts";
 import { OPENROUTER_API_KEY_ENV, openRouterModel } from "../ai/providers/openrouter.ts";
+import { Tracer } from "../observe/tracer.ts";
 import { parseArgs } from "./cli/args.ts";
 import { AgentSession } from "./core/agent-session.ts";
 import { runRpcMode } from "./modes/rpc/rpc-mode.ts";
@@ -29,11 +30,13 @@ export async function main(argv: string[]): Promise<void> {
     fetch = faux.fetch;
   }
   const getApiKey = (provider: string) => (parsed.faux ? "faux" : provider === "openrouter" ? process.env[OPENROUTER_API_KEY_ENV] || undefined : undefined);
-  const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch });
+  // The teaching extras watch the core through its probe hooks; the core does not know them.
+  const tracer = new Tracer();
+  const streamFn: StreamFn = (m, context, options) => streamSimple(m, context, { ...options, fetch, probe: tracer });
 
   // pi's session ids are UUIDv7 (time-ordered); any unique id works here.
   const sessionId = randomUUID();
   const agent = new Agent({ initialState: { model }, streamFn, getApiKey, sessionId });
   const session = new AgentSession({ agent, sessionId, getApiKey });
-  await runRpcMode(session);
+  await runRpcMode(session, { connect: (output) => tracer.connect(output) });
 }

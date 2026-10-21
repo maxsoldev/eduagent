@@ -59,11 +59,14 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       timestamp: Date.now(),
     };
 
+    let requested = false; // edupi: a model response is traced only after a traced request
     try {
       const apiKey = getClientApiKey(model.provider, options?.apiKey);
       const compat = getCompat(model);
       const client = createClient(model, apiKey, options?.headers, options?.fetch, options?.sessionId);
       const params = buildParams(model, context, options, compat);
+      requested = true;
+      await options?.probe?.modelRequest?.({ api: model.api, url: `${model.baseUrl}/chat/completions`, body: params });
       const openaiStream = await client.chat.completions.create(params, {
         ...(options?.signal ? { signal: options.signal } : {}),
         maxRetries: 0,
@@ -89,6 +92,7 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       };
 
       for await (const chunk of openaiStream) {
+        await options?.probe?.streamEvent?.(chunk);
         // Every chunk of one completion carries the same id.
         output.responseId ||= chunk.id;
         if (typeof chunk.model === "string" && chunk.model.length > 0 && chunk.model !== model.id) {
@@ -119,6 +123,7 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       if (output.stopReason === "error") throw new Error(output.errorMessage || "Provider returned an error stop reason");
       if (!hasFinishReason || output.stopReason === "pending") throw new Error("Stream ended without finish_reason");
 
+      await options?.probe?.modelResponse?.(output);
       stream.push({ type: "done", reason: output.stopReason as "stop" | "length" | "toolUse", message: output });
       stream.end();
     } catch (error) {
@@ -127,6 +132,7 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       // OpenRouter puts the upstream provider's error text here.
       const rawMetadata = (error as { error?: { metadata?: { raw?: unknown } } })?.error?.metadata?.raw;
       if (rawMetadata && !output.errorMessage.includes(String(rawMetadata))) output.errorMessage += `\n${rawMetadata}`;
+      if (requested) await options?.probe?.modelResponse?.(output);
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }

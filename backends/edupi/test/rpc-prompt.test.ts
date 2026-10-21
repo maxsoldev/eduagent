@@ -7,9 +7,9 @@ afterEach(async () => {
   await edupi?.close();
 });
 
-/** Message types from the prompt's response to agent_settled, with the event subtype for message_update. */
+/** pi's message types (trace messages are edupi's extras, left out), with the subtype for message_update. */
 function eventTypes(seen: Message[]): string[] {
-  return seen.map((m) =>
+  return seen.filter((m) => m.type !== "trace").map((m) =>
     m.type === "response" ? `response ${m.command}`
       : m.type === "message_update" ? `message_update ${m.assistantMessageEvent.type}`
         : m.type === "message_start" || m.type === "message_end" ? `${m.type} ${m.message.role}`
