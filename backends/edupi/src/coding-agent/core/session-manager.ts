@@ -134,13 +134,24 @@ export function parseSessionEntries(content: string): FileEntry[] {
 	return entries;
 }
 
+/**
+ * Reads a session file. A file whose first entry is not a header gives no entries. A last line
+ * without its newline gets one, so the next append starts a new line.
+ */
 export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	if (!existsSync(filePath)) return [];
-	return parseSessionEntries(readFileSync(filePath, "utf8"));
+	const content = readFileSync(filePath, "utf8");
+	const entries = parseSessionEntries(content);
+	if (entries.length === 0) return entries;
+	const header = entries[0];
+	if (header.type !== "session" || typeof (header as { id?: unknown }).id !== "string") return [];
+	if (content && !content.endsWith("\n")) appendFileSync(filePath, "\n");
+	return entries;
 }
 
 /** The path from the root to the leaf: walk parentId up from the leaf, then reverse. */
 function buildSessionPath(entries: SessionEntry[], leafId?: string | null): SessionEntry[] {
+	if (leafId === null) return []; // a leaf of null means "before the first entry"
 	const byId = new Map(entries.map((e) => [e.id, e]));
 	const leaf = (leafId ? byId.get(leafId) : undefined) ?? entries[entries.length - 1];
 	const path: SessionEntry[] = [];
@@ -170,7 +181,18 @@ function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "
 
 /** The messages one entry adds to the context. Setting entries add none. */
 export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage[] {
-	if (entry.type === "message") return [entry.message];
+	if (entry.type === "message") {
+		const message = entry.message;
+		// Files are read without validation; a hand-edited one can have messages with null content.
+		if (message.role === "system" && message.content == null) return [{ ...message, content: "" }];
+		if (
+			(message.role === "user" || message.role === "assistant" || message.role === "toolResult") &&
+			message.content == null
+		) {
+			return [{ ...message, content: [] }];
+		}
+		return [message];
+	}
 	if (entry.type === "compaction") {
 		const summary = createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
 		return entry.systemMessage ? [entry.systemMessage, summary] : [summary];
@@ -288,19 +310,27 @@ export class SessionManager {
 
 	private _setSessionFile(sessionFile: string): void {
 		this.sessionFile = resolve(sessionFile);
-		const entries = loadEntriesFromFile(this.sessionFile);
-		if (entries.length === 0) {
-			// A missing file starts a new session at that path; a file that is not a session is an error.
-			if (existsSync(this.sessionFile) && statSync(this.sessionFile).size > 0) {
-				throw new Error(`Session file is not a valid edupi session: ${this.sessionFile}`);
-			}
+		if (!existsSync(this.sessionFile)) {
+			// A missing file starts a new session at that path (pi's --session <new file>).
 			const explicitPath = this.sessionFile;
 			this.newSession();
 			this.sessionFile = explicitPath;
 			return;
 		}
-		const header = entries.find((e): e is SessionHeader => e.type === "session");
-		if (!header) throw new Error(`Session file has no header: ${this.sessionFile}`);
+		const entries = loadEntriesFromFile(this.sessionFile);
+		if (entries.length === 0) {
+			// An empty file gets a header at once; a file that is not a session is an error.
+			const explicitPath = this.sessionFile;
+			if (statSync(explicitPath).size > 0) {
+				throw new Error(`Session file is not a valid edupi session: ${explicitPath}`);
+			}
+			this.newSession();
+			this.sessionFile = explicitPath;
+			this._rewriteFile();
+			this.flushed = true;
+			return;
+		}
+		const header = entries[0] as SessionHeader;
 		if ((header.version ?? 1) < CURRENT_SESSION_VERSION) {
 			throw new Error(
 				`Session file version ${header.version ?? 1} is not supported (edupi reads version ${CURRENT_SESSION_VERSION})`,
@@ -343,6 +373,17 @@ export class SessionManager {
 			if (entry.type === "session") continue;
 			this.byId.set(entry.id, entry);
 			this.leafId = entry.id;
+		}
+	}
+
+	/** Writes every entry so far, replacing the file. */
+	private _rewriteFile(): void {
+		if (!this.persist || !this.sessionFile) return;
+		const fd = openSync(this.sessionFile, "w");
+		try {
+			for (const entry of this.fileEntries) writeFileSync(fd, `${JSON.stringify(entry)}\n`);
+		} finally {
+			closeSync(fd);
 		}
 	}
 
@@ -452,12 +493,36 @@ export class SessionManager {
 
 	/** Appends an edit of an earlier message entry's context; null leaves it out of the context. */
 	appendContextEdit(targetId: string, replacement: ContextEditEntry["replacement"]): string {
+		if (
+			replacement !== null &&
+			(typeof replacement !== "object" ||
+				!("content" in replacement) ||
+				(typeof replacement.content !== "string" && !Array.isArray(replacement.content)))
+		) {
+			throw new Error("Context edit replacement must be null or contain string/array content");
+		}
 		const target = this.byId.get(targetId);
 		if (!target) throw new Error(`Entry ${targetId} not found`);
-		if (target.type !== "message" || target.message.role === "system") {
-			throw new Error(`Entry ${targetId} does not contribute editable model content`);
+		if (!this.getBranch().some((entry) => entry.id === targetId)) {
+			throw new Error(`Entry ${targetId} is not on the active branch`);
 		}
-		const entry: ContextEditEntry = { type: "context_edit", ...this._entryBase(), targetId, replacement };
+		const editable =
+			target.type === "message" &&
+			(target.message.role === "user" ||
+				target.message.role === "assistant" ||
+				target.message.role === "toolResult");
+		if (!editable) throw new Error(`Entry ${targetId} does not contribute editable model content`);
+		// Assistant and tool result content is always blocks, so a string is stored as one text block.
+		const normalizedReplacement =
+			replacement !== null && target.message.role !== "user" && typeof replacement.content === "string"
+				? { content: [{ type: "text" as const, text: replacement.content }] }
+				: replacement;
+		const entry: ContextEditEntry = {
+			type: "context_edit",
+			...this._entryBase(),
+			targetId,
+			replacement: normalizedReplacement,
+		};
 		this._appendEntry(entry);
 		return entry.id;
 	}
@@ -512,13 +577,26 @@ export class SessionManager {
 	}
 }
 
-/** The .jsonl file in the dir that was changed last. */
+/** The header, if the file's first entry is one. Unreadable files count as no session. */
+function readSessionHeader(filePath: string): SessionHeader | null {
+	try {
+		const first = parseSessionEntries(readFileSync(filePath, "utf8"))[0];
+		return first?.type === "session" && typeof first.id === "string" ? first : null;
+	} catch {
+		return null;
+	}
+}
+
+/** The session file in the dir that was changed last. Files that are not sessions are skipped. */
 export function findMostRecentSession(sessionDir: string): string | null {
-	if (!existsSync(sessionDir)) return null;
-	const files = readdirSync(sessionDir)
-		.filter((f) => f.endsWith(".jsonl"))
-		.map((f) => join(sessionDir, f))
-		.map((path) => ({ path, mtime: statSync(path).mtimeMs }))
-		.sort((a, b) => b.mtime - a.mtime);
-	return files[0]?.path ?? null;
+	try {
+		const files = readdirSync(sessionDir)
+			.filter((f) => f.endsWith(".jsonl"))
+			.map((f) => join(sessionDir, f))
+			.map((path) => ({ path, mtime: statSync(path).mtimeMs }))
+			.sort((a, b) => b.mtime - a.mtime);
+		return files.find(({ path }) => readSessionHeader(path))?.path ?? null;
+	} catch {
+		return null; // no dir, or a file went away while we looked
+	}
 }
