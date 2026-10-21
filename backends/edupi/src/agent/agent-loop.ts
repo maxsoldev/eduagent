@@ -13,6 +13,7 @@ import type {
 	AgentTool,
 	AgentToolCall,
 	AgentToolResult,
+	PrepareNextTurnContext,
 	StreamFn,
 } from "./types.ts";
 
@@ -75,14 +76,16 @@ export async function runAgentLoopContinue(
  * Outer loop: when the agent would stop, queued follow-up messages start another inner loop.
  */
 async function runLoop(
-	currentContext: AgentContext,
+	initialContext: AgentContext,
 	newMessages: AgentMessage[],
-	config: AgentLoopConfig,
+	initialConfig: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 	streamFunction: StreamFn,
 ): Promise<void> {
-	let firstTurn = true;
+	let currentContext = initialContext;
+	let config = initialConfig;
+	let lastCompletedTurn: PrepareNextTurnContext | undefined;
 	let iteration = 0; // edupi: model calls in this run, for the loopIteration trace
 	// Drain point A: the user may have steered while the run was starting.
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
@@ -93,19 +96,32 @@ async function runLoop(
 
 		// Inner loop: tool calls and steering messages.
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
-			if (!firstTurn) {
-				// The session may compact here, before the next model call (pi's prepareNextTurn).
-				const nextTurn = await config.prepareNextTurn?.({ context: currentContext });
-				currentContext = nextTurn?.context ?? currentContext;
+			let preparedMessages: AgentMessage[] = [];
+			if (lastCompletedTurn) {
+				// The session may compact here, and picks up a model or thinking level set during the run.
+				const nextTurn = await config.prepareNextTurn?.(lastCompletedTurn);
+				if (nextTurn) {
+					currentContext = nextTurn.context ?? currentContext;
+					preparedMessages = nextTurn.messages ?? [];
+					config = {
+						...config,
+						model: nextTurn.model ?? config.model,
+						reasoning:
+							nextTurn.thinkingLevel === undefined
+								? config.reasoning
+								: nextTurn.thinkingLevel === "off"
+									? undefined
+									: nextTurn.thinkingLevel,
+					};
+				}
 				// Drain point B: preparation can take long (compaction), so pick up steering sent meanwhile.
 				// Poll only if the last poll gave nothing, else one-at-a-time mode would put two messages in this turn.
 				if (pendingMessages.length === 0) pendingMessages = (await config.getSteeringMessages?.()) || [];
 				await emit({ type: "turn_start" });
 			}
-			firstTurn = false;
 
-			// Queued messages go in before the next assistant response.
-			for (const message of declareToolChanges(currentContext, pendingMessages)) {
+			// Prepared and queued messages go in before the next assistant response.
+			for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
 				await emit({ type: "message_start", message });
 				await emit({ type: "message_end", message });
 				currentContext.messages.push(message);
@@ -119,6 +135,7 @@ async function runLoop(
 
 			// An error or an abort ends the run at once. Queued messages stay queued.
 			if (message.stopReason === "error" || message.stopReason === "aborted") {
+				lastCompletedTurn = { message, toolResults: [], context: currentContext, newMessages };
 				await emit({ type: "turn_end", message, toolResults: [] });
 				await config.probe?.loopIteration?.({ iteration, needsFollowUp: false, message, decision: "stop" });
 				await emit({ type: "agent_end", messages: newMessages });
@@ -142,6 +159,7 @@ async function runLoop(
 				}
 			}
 
+			lastCompletedTurn = { message, toolResults, context: currentContext, newMessages };
 			await emit({ type: "turn_end", message, toolResults });
 
 			// Drain point C: steering sent while the model streamed or the tools ran.

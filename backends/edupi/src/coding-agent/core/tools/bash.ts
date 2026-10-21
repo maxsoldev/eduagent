@@ -2,7 +2,7 @@
 // runs one command in the working directory with stdout and stderr merged, streams the output so
 // far as partial results, and returns the tail of the output (2000 lines or 50KB). Longer output
 // is saved to a temp file, and the model gets its path. A non-zero exit code is an error result.
-// edupi leaves out pi's PI_* session variables, spawn hooks, command prefix and Windows shells.
+// edupi leaves out pi's spawn hooks, command prefix and Windows shells.
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -16,6 +16,19 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult
 
 /** pi's throttle for partial output (renderers/bash.ts). */
 const BASH_UPDATE_THROTTLE_MS = 100;
+/** Node's timer limit: a longer setTimeout fires at once. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
+
+function resolveTimeoutMs(timeout: number | undefined): number | undefined {
+	if (timeout === undefined) return undefined;
+	if (!Number.isFinite(timeout) || timeout <= 0) {
+		throw new Error("Invalid timeout: must be a finite number of seconds");
+	}
+	const timeoutMs = timeout * 1000;
+	if (timeoutMs > MAX_TIMEOUT_MS) throw new Error(`Invalid timeout: maximum is ${MAX_TIMEOUT_SECONDS} seconds`);
+	return timeoutMs;
+}
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Shell command to execute" }),
@@ -32,6 +45,40 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+}
+
+/** What pi exposes to commands as PI_* variables (pi reads them from the tool call's context). */
+export interface BashSessionEnvironment {
+	sessionId: string;
+	sessionFile?: string;
+	provider?: string;
+	model?: string;
+	thinkingLevel?: string;
+}
+
+export interface BashToolOptions {
+	/** The current session, read at each call. Without it, commands get no PI_* variables. */
+	getSessionEnvironment?: () => BashSessionEnvironment;
+}
+
+/** pi's resolveSpawnContext env: PI_* variables from a parent pi are dropped, then the session's are set. */
+function getCommandEnv(session: BashSessionEnvironment | undefined): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	delete env.PI_SESSION_ID;
+	delete env.PI_SESSION_FILE;
+	delete env.PI_PROVIDER;
+	delete env.PI_MODEL;
+	delete env.PI_REASONING_LEVEL;
+	if (session) {
+		env.PI_SESSION_ID = session.sessionId;
+		if (session.sessionFile) env.PI_SESSION_FILE = session.sessionFile;
+		if (session.provider && session.model) {
+			env.PI_PROVIDER = session.provider;
+			env.PI_MODEL = session.model;
+		}
+		if (session.thinkingLevel) env.PI_REASONING_LEVEL = session.thinkingLevel;
+	}
+	return env;
 }
 
 /** /bin/bash, else sh (pi utils/shell.ts getShellConfig also searches PATH). */
@@ -62,10 +109,12 @@ function killProcessTree(pid: number) {
 async function exec(
 	command: string,
 	cwd: string,
+	env: NodeJS.ProcessEnv,
 	onData: (data: Buffer) => void,
 	signal?: AbortSignal,
 	timeout?: number,
 ) {
+	const timeoutMs = resolveTimeoutMs(timeout);
 	if (signal?.aborted) throw new Error("aborted");
 	try {
 		await access(cwd, constants.F_OK);
@@ -76,16 +125,16 @@ async function exec(
 	const child = spawn(shell, [...args, command], {
 		cwd,
 		detached: true,
-		env: process.env,
+		env,
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	let timedOut = false;
 	const timer =
-		timeout !== undefined
+		timeoutMs !== undefined
 			? setTimeout(() => {
 					timedOut = true;
 					if (child.pid) killProcessTree(child.pid);
-				}, timeout * 1000)
+				}, timeoutMs)
 			: undefined;
 	const onAbort = () => child.pid && killProcessTree(child.pid);
 	signal?.addEventListener("abort", onAbort, { once: true });
@@ -109,7 +158,10 @@ async function exec(
 	}
 }
 
-export function createBashTool(cwd: string): AgentTool<BashToolInput, BashToolDetails | undefined> {
+export function createBashTool(
+	cwd: string,
+	options: BashToolOptions = {},
+): AgentTool<BashToolInput, BashToolDetails | undefined> {
 	return {
 		name: "bash",
 		label: "bash",
@@ -121,9 +173,6 @@ export function createBashTool(cwd: string): AgentTool<BashToolInput, BashToolDe
 			signal,
 			onUpdate?: AgentToolUpdateCallback<BashToolDetails | undefined>,
 		) {
-			if (timeout !== undefined && (!Number.isFinite(timeout) || timeout <= 0)) {
-				throw new Error("Invalid timeout: must be a finite number of seconds");
-			}
 			const decoder = new TextDecoder();
 			let output = "";
 			let fullOutputPath: string | undefined;
@@ -171,8 +220,9 @@ export function createBashTool(cwd: string): AgentTool<BashToolInput, BashToolDe
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
 					if (truncation.lastLinePartial) {
+						// pi's OutputAccumulator.getLastLineBytes: the bytes after the last newline (0 if the output ends with one).
 						const lastLineSize = formatSize(
-							Buffer.byteLength(output.split("\n").filter(Boolean).at(-1) ?? "", "utf-8"),
+							Buffer.byteLength(output.slice(output.lastIndexOf("\n") + 1), "utf-8"),
 						);
 						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${s.fullOutputPath}]`;
 					} else if (truncation.truncatedBy === "lines") {
@@ -197,6 +247,7 @@ export function createBashTool(cwd: string): AgentTool<BashToolInput, BashToolDe
 				exitCode = await exec(
 					command,
 					cwd,
+					getCommandEnv(options.getSessionEnvironment?.()),
 					(data) => {
 						output += decoder.decode(data, { stream: true });
 						scheduleUpdate();

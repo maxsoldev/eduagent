@@ -15,6 +15,7 @@ import {
 	normalizeToLF,
 	restoreLineEndings,
 } from "./edit-diff.ts";
+import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
 
 const replaceEditSchema = Type.Object({
@@ -98,37 +99,42 @@ export function createEditTool(cwd: string): AgentTool<EditToolInput, EditToolDe
 			}
 			const { path, edits } = input;
 			const absolutePath = resolveToCwd(path, cwd);
-			const throwIfAborted = () => {
-				if (signal?.aborted) throw new Error("Operation aborted");
-			};
-			throwIfAborted();
-			try {
-				await access(absolutePath, constants.R_OK | constants.W_OK);
-			} catch (error) {
+			return withFileMutationQueue(absolutePath, async () => {
+				// Check the signal after each await, not in an abort listener: a listener would release the
+				// queue while a file operation may still finish.
+				const throwIfAborted = () => {
+					if (signal?.aborted) throw new Error("Operation aborted");
+				};
 				throwIfAborted();
-				const errorMessage =
-					error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
-				throw new Error(`Could not edit file: ${path}. ${errorMessage}.`);
-			}
-			const rawContent = await readFile(absolutePath, "utf-8");
-			throwIfAborted();
+				try {
+					await access(absolutePath, constants.R_OK | constants.W_OK);
+				} catch (error) {
+					throwIfAborted();
+					const errorMessage =
+						error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
+					throw new Error(`Could not edit file: ${path}. ${errorMessage}.`);
+				}
+				throwIfAborted();
+				const rawContent = await readFile(absolutePath, "utf-8");
+				throwIfAborted();
 
-			// The model never sends the invisible BOM, so strip it before matching and put it back after.
-			const bom = rawContent.startsWith("\uFEFF") ? "\uFEFF" : "";
-			const content = rawContent.slice(bom.length);
-			const originalEnding = detectLineEnding(content);
-			const { baseContent, newContent } = applyEditsToNormalizedContent(normalizeToLF(content), edits, path);
-			throwIfAborted();
+				// The model never sends the invisible BOM, so strip it before matching and put it back after.
+				const bom = rawContent.startsWith("\uFEFF") ? "\uFEFF" : "";
+				const content = rawContent.slice(bom.length);
+				const originalEnding = detectLineEnding(content);
+				const { baseContent, newContent } = applyEditsToNormalizedContent(normalizeToLF(content), edits, path);
+				throwIfAborted();
 
-			await writeFile(absolutePath, bom + restoreLineEndings(newContent, originalEnding), "utf-8");
-			throwIfAborted();
+				await writeFile(absolutePath, bom + restoreLineEndings(newContent, originalEnding), "utf-8");
+				throwIfAborted();
 
-			const diffResult = generateDiffString(baseContent, newContent);
-			const patch = generateUnifiedPatch(path, baseContent, newContent);
-			return {
-				content: [{ type: "text", text: `Successfully replaced ${edits.length} block(s) in ${path}.` }],
-				details: { diff: diffResult.diff, patch, firstChangedLine: diffResult.firstChangedLine },
-			};
+				const diffResult = generateDiffString(baseContent, newContent);
+				const patch = generateUnifiedPatch(path, baseContent, newContent);
+				return {
+					content: [{ type: "text", text: `Successfully replaced ${edits.length} block(s) in ${path}.` }],
+					details: { diff: diffResult.diff, patch, firstChangedLine: diffResult.firstChangedLine },
+				};
+			});
 		},
 	};
 }
