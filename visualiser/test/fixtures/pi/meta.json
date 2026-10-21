@@ -1,0 +1,10 @@
+{
+  "pi": {
+    "repo": "https://github.com/earendil-works/pi",
+    "commit": "16f5f0af4d85ca583d045ceb5ed6d646fcaf7761"
+  },
+  "recordedAt": "2026-10-21",
+  "node": "v24.14.0",
+  "recorder": "visualiser/test/record-pi.mjs",
+  "provider": "custom provider \"fake\" (api openai-completions) on the fake Chat Completions server"
+}

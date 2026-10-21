@@ -1,0 +1,40 @@
+{
+  "type": "trace",
+  "name": "modelResponse",
+  "stopReason": "stop",
+  "responseId": "chatcmpl-faux",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello there."
+    }
+  ],
+  "usage": {
+    "input": 15,
+    "output": 3,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "reasoning": 0,
+    "totalTokens": 18,
+    "cost": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "total": 0
+    }
+  },
+  "seconds": 0.84,
+  "cost": {
+    "tokens": {
+      "input": 15,
+      "uncached": 15,
+      "cached": 0,
+      "cacheWrite": 0,
+      "output": 3,
+      "reasoning": 0
+    },
+    "cacheHitRate": 0,
+    "billedUsd": null
+  }
+}

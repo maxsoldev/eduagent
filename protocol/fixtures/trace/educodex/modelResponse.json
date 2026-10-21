@@ -1,0 +1,65 @@
+{
+  "method": "trace/modelResponse",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "usage": {
+      "input_tokens": 9266,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 9266
+      },
+      "output_tokens": 43,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 9309,
+      "cost": 0.00117975
+    },
+    "eventCounts": {
+      "response.created": 1,
+      "response.output_item.added": 1,
+      "response.output_text.delta": 1,
+      "response.output_item.done": 1,
+      "response.completed": 1
+    },
+    "outputItems": [
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Hello there."
+          }
+        ],
+        "id": "msg_1"
+      }
+    ],
+    "seconds": 0.84,
+    "cost": {
+      "tokens": {
+        "input": 9266,
+        "uncached": 0,
+        "cached": 0,
+        "cacheWrite": 9266,
+        "output": 43,
+        "reasoning": 0
+      },
+      "cacheHitRate": 0.0,
+      "billedUsd": 0.00117975,
+      "usd": {
+        "uncachedInput": 0.0,
+        "cachedInput": 0.0,
+        "cacheWrite": 0.00115825,
+        "output": 2.15e-05,
+        "total": 0.00117975,
+        "withoutCache": 0.0009481,
+        "savedByCache": -0.00023165
+      }
+    },
+    "_seq": 21,
+    "_ts": 1792595088.6
+  }
+}

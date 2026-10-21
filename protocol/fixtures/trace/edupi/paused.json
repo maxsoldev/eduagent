@@ -1,0 +1,9 @@
+{
+  "type": "trace",
+  "name": "paused",
+  "breakpoint": "beforeModelRequest",
+  "info": {
+    "messages": 2,
+    "tools": 4
+  }
+}

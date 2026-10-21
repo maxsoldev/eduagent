@@ -1,0 +1,20 @@
+{
+  "backends": [
+    {
+      "name": "educodex",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "Python re-implementation of the OpenAI Codex harness",
+      "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://"],
+      "capabilities": ["approvals", "sandbox", "memories", "skills", "compaction", "mcp", "trace", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "TypeScript re-implementation of the pi harness (OpenRouter Chat Completions)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc"],
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    }
+  ]
+}

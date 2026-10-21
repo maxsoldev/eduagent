@@ -1,0 +1,67 @@
+{
+  "modelRequest": {
+    "api": "string",
+    "url": "string",
+    "body": "object"
+  },
+  "streamEvent": {
+    "event": "object"
+  },
+  "modelResponse": {
+    "usage": "object",
+    "seconds": "number"
+  },
+  "loopIteration": {
+    "iteration": "number",
+    "needsFollowUp": "boolean",
+    "tokens": "number",
+    "decision": "string"
+  },
+  "compactionRequest": {
+    "reason": "string",
+    "tokensBefore": "number",
+    "body": "object"
+  },
+  "compacted": {
+    "reason": "string",
+    "summary": "string",
+    "tokensBefore": "number",
+    "tokensAfter": "number"
+  },
+  "toolDispatch": {
+    "tool": "string",
+    "callId": "string",
+    "parallel": "boolean"
+  },
+  "toolOutput": {
+    "tool": "string",
+    "callId": "string",
+    "output": "string",
+    "tokens": "number"
+  },
+  "promptAssembled": {
+    "fragments": "array",
+    "firstTurn": "boolean"
+  },
+  "skillsLoaded": {
+    "roots": "array",
+    "skills": "array",
+    "errors": "array"
+  },
+  "paused": {
+    "breakpoint": "string",
+    "info": "object"
+  },
+  "resumed": {
+    "breakpoint": "string"
+  },
+  "pricing": {
+    "model": "string",
+    "pricing": "object"
+  },
+  "cost": {
+    "last": "object",
+    "total": "object",
+    "inputItems": "number"
+  }
+}

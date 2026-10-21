@@ -1,0 +1,18 @@
+{
+  "method": "trace/toolDispatch",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "tool": "exec_command",
+    "callId": "call_9676d5426b16",
+    "kind": "function_call",
+    "arguments": {
+      "cmd": "echo hi"
+    },
+    "input": null,
+    "parallel": true,
+    "_seq": 20,
+    "_ts": 1792596370.19
+  }
+}

@@ -1,0 +1,5 @@
+{"id":"1","type":"get_state"}
+{"id":"2","type":"compact"}
+{"id":"3","type":"prompt","message":"Run a slow command."}
+{"id":"4","type":"abort"}
+{"id":"5","type":"prompt","message":"Are you still there?"}

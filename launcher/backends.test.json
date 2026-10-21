@@ -1,0 +1,112 @@
+{
+  "backends": [
+    {
+      "name": "educodex",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "educodex with the scripted fake model (examples/fake/demo.json)",
+      "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://",
+                  "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"],
+      "env": { "EDUCODEX_HOME": "${E2E_DIR}/home", "OPENROUTER_API_KEY": "test" },
+      "capabilities": ["approvals", "sandbox", "memories", "skills", "compaction", "mcp", "trace", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "educodex-plain",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "Test backend: educodex with the fake model, listed with no capabilities, so the viewer hides their panels",
+      "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://",
+                  "--approval", "never", "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"],
+      "env": { "EDUCODEX_HOME": "${E2E_DIR}/home-plain", "OPENROUTER_API_KEY": "test" },
+      "capabilities": []
+    },
+    {
+      "name": "edupi",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "edupi with the faux provider (backends/edupi/examples/faux/demo.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi-compact",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi with a faux script for a manual compaction (backends/edupi/examples/faux/compact.json); the test writes its settings.json",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/compact.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi-compact/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi-tools",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi with a faux script that calls pi's tools (backends/edupi/examples/faux/tools.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/tools.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi-skills",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi in a project with a skill; the faux model reads a skill's SKILL.md (backends/edupi/examples/faux/skills.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/skills.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi-skills/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi-queues",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi with a faux script that runs a slow command, so the viewer can steer, follow up and abort (backends/edupi/examples/faux/queues.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/queues.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi-resume",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi opens a session the real pi wrote (a copy of backends/edupi/test/fixtures/pi/session-prompt-and-tools.jsonl)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/demo.json",
+                  "--session", "${E2E_DIR}/resume/session-prompt-and-tools.jsonl"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "edupi-step",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: edupi with a priced model and one bash call, for step mode, the Context tab and the cost panel (backends/edupi/examples/faux/step.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/step.json"],
+      "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi/agent" },
+      "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "pi-replay",
+      "harness": "pi",
+      "protocol": "pi-rpc",
+      "description": "Test backend: replays a transcript recorded from the real pi (visualiser/test/fixtures/pi/chat.out.jsonl)",
+      "command": ["node", "${REPO}/launcher/test/pi-replay-backend.mjs", "${REPO}/visualiser/test/fixtures/pi/chat.out.jsonl"],
+      "capabilities": ["compaction"]
+    },
+    {
+      "name": "echo",
+      "harness": "none",
+      "protocol": "echo",
+      "description": "Test backend: answers each stdin line with its pid, cwd and the line",
+      "command": ["node", "${REPO}/launcher/test/echo-backend.mjs"],
+      "capabilities": []
+    },
+    {
+      "name": "crash",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "Test backend: exits with code 3 after one second",
+      "command": ["node", "-e", "console.error('crash: about to fail'); setTimeout(() => process.exit(3), 1000)"],
+      "capabilities": []
+    }
+  ]
+}

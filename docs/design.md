@@ -4,6 +4,8 @@ An educational Python re-implementation of the [OpenAI Codex](https://github.com
 
 **Reference Codex commit:** `1c7c43cd85` (2026-10-07). Every module names the Codex file it mirrors.
 
+The code lives in `backends/educodex/` of the eduagent repo; paths below are relative to it. The web UI is `visualiser/` at the repo root.
+
 ## Goals and non-goals
 
 **Goals**
@@ -39,10 +41,16 @@ With `openai/gpt-6-luna` on OpenRouter:
 ## Architecture
 
 ```
-┌────────────┐ ┌─────────────┐ ┌─────────┐
-│ React web  │ │ Textual TUI │ │ CLI     │   clients
-└─────┬──────┘ └──────┬──────┘ └─────┬───┘
-      │ WebSocket     │ stdio (JSONL)│ in-process
+┌────────────┐
+│ React web  │
+└─────┬──────┘
+      │ WebSocket
+┌─────┴──────┐
+│ launcher   │                               one process per viewer
+└─────┬──────┘ ┌─────────────┐ ┌─────────┐
+      │        │ Textual TUI │ │ CLI     │   clients
+      │        └──────┬──────┘ └─────┬───┘
+      │ stdio (JSONL) │ stdio (JSONL)│ in-process
 ┌─────┴───────────────┴──────┐       │
 │ app_server                 │       │       JSON-RPC lite; maps core events → notifications
 └─────────────┬──────────────┘       │
@@ -90,7 +98,7 @@ Everything educodex adds for teaching lives in `observe/`. The core calls a `Pro
 | `core/memories/` | Read path, citations, `/memory-update` (phase 1 + phase-2 sub-agent), `/memory-drop` | `memories/`, `ext/memories/`, `state/` (memories tables) |
 | `observe/tracer.py` | `trace/*` events (a `Probe` subclass) | – (educodex only) |
 | `observe/pricing.py`, `observe/stepper.py` | Request costs; step mode | – (educodex only) |
-| `app_server/` | JSON-RPC lite over WebSocket and stdio | `app-server/`, `app-server-protocol/`, `app-server-transport/` |
+| `app_server/` | JSON-RPC lite over stdio | `app-server/`, `app-server-protocol/`, `app-server-transport/` |
 | `testing/fake_model.py` | Scripted Responses SSE for tests and offline demos | – |
 | `cli.py`, `tui.py` | Terminal clients | `cli/`, `tui/` |
 
@@ -146,7 +154,7 @@ Tools that can run in parallel share a read lock; the rest take the write lock, 
 
 ## App-server protocol
 
-JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over stdio or as one message per WebSocket frame. The WebSocket only accepts loopback origins.
+JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over stdio (Codex's default transport). The web UI reaches it through the launcher, which turns each WebSocket frame into one line and accepts only loopback origins.
 
 | Kind | Codex v2 methods (same names) |
 |---|---|
@@ -157,7 +165,7 @@ JSON-RPC lite: JSON-RPC shapes without `"jsonrpc": "2.0"`, sent as JSONL over st
 `turn/start` takes `sandboxPolicy: {"type": "readOnly" | "workspaceWrite" | "dangerFullAccess"}`, as in Codex. `thread/start` takes the kebab-case mode.
 
 **educodex extensions:**
-- `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `sseEvent` (opt-in), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
+- `trace/*` notifications: `promptAssembled`, `toolsRegistered`, `modelRequest`, `modelResponse`, `streamEvent` (opt-in, `traceSse`), `loopIteration`, `toolDispatch`, `toolOutput`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`/`Resolved`, `mcpToolsListed`, `mcpToolExposed`, `historyChanged`, `compactionRequest`, `compacted`, `hook`, `paused`/`resumed`.
 - `trace/pricing` and `trace/cost`: prices from OpenRouter's `/models`, and each request's cost split into uncached input, cache reads, cache writes and output, with the savings from caching (`observe/pricing.py`). Codex reports tokens, not money.
 - `debug/*` requests: `debug/stepMode/set`, `debug/continue`, `debug/context/get`.
 - `memory/update/start`: run the memory write path now (Codex starts it on its own), with a `memoryUpdate` item and `trace/memory*` events. Also `trace/skillsLoaded` and `trace/skillInjected`.
@@ -186,7 +194,7 @@ Clients can opt out of any notification with Codex's `optOutNotificationMethods`
 
 ## Documentation
 
-`docs/guide/` is a step-by-step guide from basics to advanced ([outline](guide/README.md)). Each chapter covers the concept, the educodex code, the Codex code (permalinks at the pinned commit), where educodex is simpler, things to try, and further reading.
+`docs/guide/educodex/` is a step-by-step guide from basics to advanced ([outline](guide/educodex/README.md)). Each chapter covers the concept, the educodex code, the Codex code (permalinks at the pinned commit), where educodex is simpler, things to try, and further reading.
 
 ## Milestones
 

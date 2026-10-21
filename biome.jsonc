@@ -1,0 +1,67 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"style": {
+				"noNonNullAssertion": "off",
+				"useConst": "error",
+				"useNodejsImportProtocol": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "off",
+				"noControlCharactersInRegex": "off",
+				"noEmptyInterface": "off"
+			}
+		}
+	},
+	"overrides": [
+		{
+			// The visualiser is a mouse-first teaching UI. Its chart segments, legend rows and tree rows
+			// are divs and spans with hover and click handlers; making them buttons or lists would change
+			// their layout, focus behaviour and the Playwright selectors. Rows without an id of their own
+			// (diff lines, request #n, context item n) use their position as the React key.
+			"includes": ["visualiser/src/**"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"noNoninteractiveElementInteractions": "off",
+						"noNoninteractiveTabindex": "off",
+						"noStaticElementInteractions": "off",
+						"useAriaPropsSupportedByRole": "off",
+						"useFocusableInteractive": "off",
+						"useKeyWithClickEvents": "off",
+						"useSemanticElements": "off"
+					},
+					"suspicious": { "noArrayIndexKey": "off" }
+				}
+			}
+		}
+	],
+	"formatter": {
+		"enabled": true,
+		"formatWithErrors": false,
+		"indentStyle": "tab",
+		"indentWidth": 3,
+		"lineWidth": 120
+	},
+	"files": {
+		"includes": [
+			"backends/edupi/**/*.ts",
+			"backends/edupi/**/*.mjs",
+			"launcher/**/*.ts",
+			"launcher/**/*.mjs",
+			"visualiser/**/*.ts",
+			"visualiser/**/*.tsx",
+			"visualiser/**/*.mjs",
+			"protocol/*.ts",
+			"!**/fixtures",
+			"!visualiser/dist",
+			"!visualiser/test-results",
+			"!visualiser/playwright-report",
+			"!!**/node_modules"
+		]
+	}
+}

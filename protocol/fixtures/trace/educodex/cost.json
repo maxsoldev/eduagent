@@ -1,0 +1,55 @@
+{
+  "method": "trace/cost",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 1,
+    "last": {
+      "tokens": {
+        "input": 9262,
+        "uncached": 0,
+        "cached": 0,
+        "cacheWrite": 9262,
+        "output": 42,
+        "reasoning": 0
+      },
+      "cacheHitRate": 0.0,
+      "billedUsd": 0.00117875,
+      "usd": {
+        "uncachedInput": 0.0,
+        "cachedInput": 0.0,
+        "cacheWrite": 0.00115775,
+        "output": 2.1e-05,
+        "total": 0.00117875,
+        "withoutCache": 0.0009472,
+        "savedByCache": -0.00023155
+      }
+    },
+    "total": {
+      "tokens": {
+        "input": 9262,
+        "uncached": 0,
+        "cached": 0,
+        "cacheWrite": 9262,
+        "output": 42,
+        "reasoning": 0
+      },
+      "requests": 1,
+      "cacheHitRate": 0.0,
+      "usd": {
+        "uncachedInput": 0.0,
+        "cachedInput": 0.0,
+        "cacheWrite": 0.00115775,
+        "output": 2.1e-05,
+        "total": 0.00117875,
+        "withoutCache": 0.0009472,
+        "savedByCache": -0.00023155
+      },
+      "billedUsd": 0.00117875
+    },
+    "inputItems": 4,
+    "toolsTokens": 1028,
+    "_seq": 16,
+    "_ts": 1792599293.99
+  }
+}

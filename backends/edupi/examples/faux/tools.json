@@ -1,0 +1,19 @@
+{
+  "description": "Faux script with pi's tools: write and bash in parallel, then an edit, then a text reply. One prompt runs all three model calls.",
+  "responses": [
+    {
+      "content": [
+        { "type": "toolCall", "id": "call_write", "name": "write", "arguments": { "path": "edupi_greet.py", "content": "def greet():\n    print('hi')\n\ngreet()\n" } },
+        { "type": "toolCall", "id": "call_bash", "name": "bash", "arguments": { "command": "echo start; sleep 0.3; echo end" } }
+      ],
+      "stopReason": "toolUse"
+    },
+    {
+      "content": [
+        { "type": "toolCall", "id": "call_edit", "name": "edit", "arguments": { "path": "edupi_greet.py", "edits": [{ "oldText": "print('hi')", "newText": "print('hello from edupi')" }] } }
+      ],
+      "stopReason": "toolUse"
+    },
+    "I wrote edupi_greet.py, ran a command and changed the greeting."
+  ]
+}

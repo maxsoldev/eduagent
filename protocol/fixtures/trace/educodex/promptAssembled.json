@@ -1,0 +1,34 @@
+{
+  "method": "trace/promptAssembled",
+  "params": {
+    "threadId": "019a0000-0000-7000-8000-000000000001",
+    "turnId": "019a0000-0000-7000-8000-000000000002",
+    "iteration": 0,
+    "baseInstructions": {
+      "source": "vendor/codex/models.json → gpt-6-luna.model_messages.instructions_template",
+      "chars": 18037,
+      "tokens": 4510
+    },
+    "fragments": [
+      {
+        "kind": "skills",
+        "role": "developer",
+        "source": "/tmp/edx/home/skills",
+        "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow ...",
+        "tokens": 2089,
+        "changed": true
+      },
+      {
+        "kind": "environment_context",
+        "role": "user",
+        "source": "educodex/core/context/environment.py (cwd, $SHELL, date, timezone, sandbox)",
+        "text": "<environment_context>\n  <cwd>/private/tmp/edx/ws</cwd>\n  <shell>zsh</shell>\n ...",
+        "tokens": 187,
+        "changed": true
+      }
+    ],
+    "firstTurn": true,
+    "_seq": 6,
+    "_ts": 1792597665.83
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "type": "trace",
+  "name": "toolDispatch",
+  "tool": "bash",
+  "callId": "call_1",
+  "arguments": {
+    "command": "echo hi"
+  },
+  "parallel": true
+}
