@@ -1,0 +1,30 @@
+{
+  "backends": [
+    {
+      "name": "educodex",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "educodex with the scripted fake model (examples/fake/demo.json)",
+      "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://",
+                  "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"],
+      "env": { "EDUCODEX_HOME": "${E2E_DIR}/home", "OPENROUTER_API_KEY": "test" },
+      "capabilities": ["approvals", "sandbox", "memories", "skills", "compaction", "mcp", "trace", "stepMode", "contextInspector"]
+    },
+    {
+      "name": "echo",
+      "harness": "none",
+      "protocol": "echo",
+      "description": "Test backend: answers each stdin line with its pid, cwd and the line",
+      "command": ["node", "${REPO}/launcher/test/echo-backend.mjs"],
+      "capabilities": []
+    },
+    {
+      "name": "crash",
+      "harness": "Codex",
+      "protocol": "codex-app-server",
+      "description": "Test backend: exits with code 3 after one second",
+      "command": ["node", "-e", "console.error('crash: about to fail'); setTimeout(() => process.exit(3), 1000)"],
+      "capabilities": []
+    }
+  ]
+}

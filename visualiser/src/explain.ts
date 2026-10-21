@@ -85,7 +85,7 @@ export function codexLink(path?: string) {
   return path ? CODEX + path : undefined;
 }
 
-// The app server serves docs/guide/<chapter>-*.md at /guide/<chapter> (proxied by Vite in dev).
+// The launcher serves docs/guide/educodex/<chapter>-*.md at /guide/educodex/<chapter> (proxied by Vite in dev).
 export function guideLink(chapter?: string) {
-  return chapter ? `/guide/${chapter}` : undefined;
+  return chapter ? `/guide/educodex/${chapter}` : undefined;
 }

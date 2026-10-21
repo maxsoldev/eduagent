@@ -53,7 +53,8 @@ Real models are slow, cost money, and give different answers each time. For test
 
 | File | Job |
 |---|---|
-| [`rpc.ts`](../../../visualiser/src/rpc.ts) | JSON-RPC lite over WebSocket. Sorts incoming messages into notification, server request or response |
+| [`launcher.ts`](../../../visualiser/src/launcher.ts), [`components/BackendPicker.tsx`](../../../visualiser/src/components/BackendPicker.tsx) | The first screen: pick a backend and a working directory. Opening one goes to `?backend=educodex&cwd=...` |
+| [`rpc.ts`](../../../visualiser/src/rpc.ts) | JSON-RPC lite over WebSocket. Sorts incoming messages into notification, server request or response. When the socket closes, it passes on the launcher's reason (for example `educodex exited with code 1`) |
 | [`store.ts`](../../../visualiser/src/store.ts) | A React reducer. All UI state comes from notifications |
 | [`App.tsx`](../../../visualiser/src/App.tsx) | Handshake, controls (model, approval, sandbox, step mode, **compact**, new thread), and what each slash command does |
 | [`components/Composer.tsx`](../../../visualiser/src/components/Composer.tsx), [`commands.ts`](../../../visualiser/src/commands.ts) | The message box with the `/` command list and the `$` skill list. It stays disabled until `thread/start` has returned a thread |
@@ -111,7 +112,27 @@ Every notification is also appended to `events`, which the inspector reads. Ever
   text: "History was replaced by recent user messages + fresh context + the summary." },
 ```
 
-The "guide ch.15" link opens `/guide/15`. The app server serves the matching `docs/guide/15-*.md` file ([`app_server/main.py`](../../../backends/educodex/src/educodex/app_server/main.py)).
+The "guide ch.15" link opens `/guide/educodex/15`. The launcher serves the matching `docs/guide/educodex/15-*.md` file.
+
+### The launcher ([`launcher/`](../../../launcher/))
+
+The browser cannot start a process, and educodex speaks stdio, as `codex app-server` does by default. The **launcher** sits between them (see [ADR 0002](../../adr/0002-launcher-with-stdio-backends.md)). `pnpm eduagent` at the repo root starts it on http://127.0.0.1:8765. It does four things:
+
+1. It serves the built visualiser (`visualiser/dist/`) and the guide (`/guide/<backend>/<chapter>`).
+2. `GET /backends` returns the backends from [`launcher/backends.json`](../../../launcher/backends.json), and the default directory (where you ran `pnpm`). Each entry has a name, the harness it re-implements, its protocol, its command and its capabilities. A git-ignored `launcher/backends.local.json` can add entries or replace one with the same name. `${REPO}` and `${ENV_VAR}` in a command or env value are replaced.
+3. A viewer opens a WebSocket at `/backends/<name>?cwd=<dir>`. For each WebSocket, the launcher starts a **new** backend process in that directory, without a shell ([`pipe.ts`](../../../launcher/src/pipe.ts)):
+
+   ```ts
+   createInterface({ input: child.stdout! }).on("line", (line) => ws.send(line));
+   ws.on("message", (data) => child.stdin!.write(`${data}\n`));
+   ```
+
+   One frame is one stdin line and one stdout line is one frame. Nothing is parsed, so the **Protocol** tab shows exactly what educodex wrote. stderr goes to the launcher's console as `[educodex 4242] ...`.
+4. When the viewer closes, the launcher closes the process's stdin (educodex stops at end of input), and kills it if it does not stop. When the process exits first, the launcher closes the WebSocket with code 1011 and a reason such as `educodex exited with code 1`, and the viewer shows it.
+
+The launcher binds to 127.0.0.1 and refuses WebSocket upgrades whose `Origin` is not a loopback address. A page on another site could otherwise start a backend and run commands on your machine. It also refuses HTTP requests whose `Host` is not loopback (DNS rebinding).
+
+Because each viewer has its own process, two browser tabs never share threads. Open educodex in one tab and another backend in a second tab, send the same prompt, and compare.
 
 ### TUI over stdio ([`tui.py`](../../../backends/educodex/src/educodex/tui.py))
 
@@ -217,16 +238,21 @@ It is used in three places:
 - **Untyped clients.** The web UI uses `any` for payloads. Codex clients use generated types.
 - **Simple reconnects.** `thread/read` with `includeTrace` returns the whole event log. Codex has thread resume, history paging and lossless event queues.
 - **One fake-model script per thread.** Each `thread/start` creates a fresh `FakeModel`, so "new thread" restarts the script. A manual compaction also uses up one scripted response.
+- **The launcher is not part of Codex.** Codex's clients start `codex app-server` themselves (stdio), or connect to its WebSocket listener. educodex needs the launcher only because a browser cannot start a process.
 - **The TUI is minimal:** no diff view, no history browsing, five slash commands (Codex has about 60), and a hint line instead of a selectable list.
 
 ## Try it
 
-1. **Web UI, offline:**
-   ```bash
-   (cd ../.. && pnpm install && pnpm build)
-   uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/edx
+1. **Web UI, offline:** add a fake-model entry to `launcher/backends.local.json` (the launcher reads it next to `backends.json`):
+   ```json
+   { "backends": [{ "name": "educodex-demo", "harness": "Codex", "protocol": "codex-app-server",
+     "command": ["uv", "run", "-q", "--project", "${REPO}/backends/educodex", "educodex", "app-server", "--listen", "stdio://",
+                 "--fake-model", "${REPO}/backends/educodex/examples/fake/demo.json"] }] }
    ```
-   (`mkdir -p /tmp/edx` first.) Open http://127.0.0.1:8765 and send any message (the box unlocks once the thread has started). Click rows in the **Timeline** and follow the "guide ch.NN" and "Codex:" links. In **Requests**, confirm that each request only appends items.
+   ```bash
+   cd ../.. && pnpm install && pnpm build && mkdir -p /tmp/edx && pnpm eduagent --cwd /tmp/edx
+   ```
+   Open http://127.0.0.1:8765, pick **educodex-demo**, and send any message (the box unlocks once the thread has started). Click rows in the **Timeline** and follow the "guide ch.NN" and "Codex:" links. In **Requests**, confirm that each request only appends items.
 2. **With a real model**, drop `--fake-model` (needs `OPENROUTER_API_KEY`) and compare the **Protocol** tab with the sequence in chapter 18.
 3. **TUI:**
    ```bash
@@ -236,9 +262,10 @@ It is used in three places:
 4. **CLI printer:** `uv run educodex exec -v "list the files here"` with a real model, or offline: `uv run educodex exec --cwd /tmp/edx --fake-model examples/fake/demo.json "go"`.
 5. **Tests:**
    ```bash
-   uv run --group dev pytest tests/test_app_server.py tests/test_tui.py
-   cd ../../visualiser && pnpm exec playwright install chromium && pnpm build && pnpm test:e2e
+   uv run --group dev pytest tests/test_app_server.py tests/test_tui.py   # the protocol over stdio, with the fake model
+   cd ../.. && pnpm --filter @eduagent/visualiser exec playwright install chromium && pnpm build && pnpm test:e2e
    ```
+   Playwright starts the launcher with [`launcher/backends.test.json`](../../../launcher/backends.test.json): educodex with the fake model and a temporary home, plus two small test backends (`echo` and `crash`).
 6. **Write your own client.** In ~30 lines of Python, start `educodex app-server --listen stdio://`, opt out of every `trace/*` method, and print only `item/completed` items. That is a complete (if plain) agent UI.
 
 ## Further reading

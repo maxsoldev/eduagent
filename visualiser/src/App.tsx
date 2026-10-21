@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { defaultUrl, RpcClient, type Json } from "./rpc";
+import { RpcClient, type Json } from "./rpc";
+import { backendUrl, type BackendInfo } from "./launcher";
 import { initialState, reducer, type Approval } from "./store";
 import { Chat } from "./components/Chat";
 import { Composer } from "./components/Composer";
@@ -11,13 +12,14 @@ const SANDBOX_POLICY_TAGS: Record<string, string> = { "read-only": "readOnly", "
 
 type Settings = { model: string; approvalPolicy: string; sandbox: string; effort: string; cwd: string };
 
-export function App() {
+export function App({ backend, cwd }: { backend: BackendInfo; cwd: string }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const rpcRef = useRef<RpcClient | null>(null);
   const [models, setModels] = useState<Json[]>([]);
   const [settings, setSettings] = useState<Settings>({ model: "", approvalPolicy: "on-request", sandbox: "workspace-write", effort: "", cwd: "" });
   const [stepMode, setStepMode] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [closedReason, setClosedReason] = useState<string | null>(null);
 
   const startThread = useCallback(async (s: Settings) => {
     const rpc = rpcRef.current!;
@@ -31,11 +33,14 @@ export function App() {
   }, [stepMode]);
 
   useEffect(() => {
-    const rpc = new RpcClient(defaultUrl(), {
+    const rpc = new RpcClient(backendUrl(backend.name, cwd), {
       onNotification: (method, params) => dispatch({ type: "notification", method, params }),
       onServerRequest: (id, method, params) => dispatch({ type: "serverRequest", approval: { id, method, params } }),
       onWire: (direction, message) => dispatch({ type: "wire", direction, message }),
-      onStatus: (status) => dispatch({ type: "status", status }),
+      onStatus: (status, reason) => {
+        dispatch({ type: "status", status });
+        if (status === "closed") setClosedReason(reason || `the connection to ${backend.name} closed`);
+      },
     });
     rpcRef.current = rpc;
     (async () => {
@@ -47,7 +52,7 @@ export function App() {
         setModels(list.data);
         await startThread(settings);
       } catch (err) {
-        setConnectError(String(err));
+        setConnectError(String((err as Error).message ?? err));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,7 +109,7 @@ export function App() {
   return (
     <div className="app">
       <header>
-        <div className="brand"><b>educodex</b> <span className="muted">inside a coding agent</span></div>
+        <div className="brand"><a href="/" title="pick another backend"><b data-testid="backend-name">{backend.name}</b></a> <span className="muted">inside {backend.harness}</span></div>
         <div className="controls">
           <select value={settings.model} onChange={set("model")} title="model" data-testid="model">
             {models.map((m) => <option key={m.id} value={m.id}>{m.displayName}</option>)}
@@ -121,7 +126,7 @@ export function App() {
           </select>
           <label className="toggle" title="pause before each model call and tool call"><input type="checkbox" checked={stepMode} onChange={(e) => toggleStep(e.target.checked)} data-testid="step-mode" /> step mode</label>
           <button onClick={() => call("thread/compact/start")} disabled={!state.threadId || state.turnRunning} title="summarise history now">compact</button>
-          <button onClick={() => startThread(settings)} disabled={state.turnRunning} data-testid="new-thread">new thread</button>
+          <button onClick={() => startThread(settings)} disabled={!state.threadId || state.turnRunning} data-testid="new-thread">new thread</button>
           {state.costTotal && (
             <span className="cost-badge" data-testid="cost-badge"
               title={`${state.costTotal.requests} requests · ${state.costTotal.tokens.input.toLocaleString()} input tokens (${state.costTotal.tokens.cached.toLocaleString()} cached) · ${state.costTotal.tokens.output.toLocaleString()} output tokens${state.costTotal.usd ? ` · saved ${usd(state.costTotal.usd.savedByCache)} by caching` : ""}`}>
@@ -131,7 +136,8 @@ export function App() {
           <span className={`conn ${state.status}`} data-testid="conn">{state.status}</span>
         </div>
       </header>
-      {connectError && <div className="banner">Cannot reach the app server ({connectError}). Start it with <code>uv run educodex app-server</code>.</div>}
+      {closedReason ? <div className="banner" data-testid="backend-error">Backend stopped: {closedReason}. Reload the page to start a new {backend.name} process.</div>
+        : connectError && <div className="banner" data-testid="backend-error">Cannot start {backend.name}: {connectError}.</div>}
       <main>
         <section className="left">
           <div className="thread-info muted small">thread {state.threadId?.slice(0, 8) ?? "—"} · cwd <input className="cwd" value={settings.cwd} onChange={set("cwd")} title="working directory (applies to new threads)" /></div>

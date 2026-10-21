@@ -112,3 +112,12 @@ async def test_turn_injects_mentioned_skill(make_session, workspace):
     await session.run("thanks")
     second = fake.requests[1]["input"][len(body) + 1:]
     assert [message_text(i) for i in second if i.get("type") == "message"] == ["thanks"]
+
+
+async def test_failed_system_skills_install_does_not_stop_the_thread(make_session, tmp_path, capsys):
+    # Two backend processes can share one home and install at the same time. Codex logs and goes on.
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "skills").write_text("not a folder")
+    session, _, _ = await make_session([[{"type": "message", "text": "ok"}]])
+    assert (await session.run("hi"))["status"] == "completed"
+    assert "failed to install system skills" in capsys.readouterr().err

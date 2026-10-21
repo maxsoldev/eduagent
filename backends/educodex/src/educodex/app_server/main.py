@@ -91,7 +91,7 @@ def build_app(processor: MessageProcessor):
 
 async def serve_stdio(processor: MessageProcessor) -> None:
     loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader()
+    reader = asyncio.StreamReader(limit=64 * 1024 * 1024)  # one line can hold a long pasted prompt
     await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
 
     async def write_line(text: str) -> None:
