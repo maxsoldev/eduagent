@@ -28,7 +28,7 @@ const client = new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: "ht
 const stream = await client.chat.completions.create({ model: "openai/gpt-6-luna", messages, stream: true });
 ```
 
-Model ids name the provider and the model: `openai/gpt-6-luna`, `anthropic/claude-sonnet-5`. One code path reaches every model family. OpenRouter adds a few fields of its own, for example one `reasoning: {effort}` object for every model family (chapter 02 of this section, when edupi has thinking levels).
+Model ids name the provider and the model: `openai/gpt-6-luna`, `anthropic/claude-sonnet-5`. One code path reaches every model family. OpenRouter adds a few fields of its own, for example one `reasoning: {effort}` object for every model family ([chapter 02](02-loop-and-queues.md#thinking-level)).
 
 ### A request
 
@@ -96,7 +96,7 @@ So the agent loop never sees SSE, chunks or provider fields. This is why pi can 
 
 `streamSimple()` is what the agent calls. It fills request options from the model (`maxTokens`), then calls `stream()`.
 
-**The faux provider.** pi's tests use a faux provider: you queue assistant messages, and each request streams the next one back in random chunks of 3 to 5 "tokens" (4 characters each). edupi keeps that idea, but fakes the HTTP endpoint instead of the whole provider. `fauxProvider().fetch` is passed to the OpenAI SDK, and it answers each request with the Chat Completions SSE chunks for the next scripted message. So in tests the real `openai-completions.ts` code runs, and every request body can be recorded. `--faux script.json` turns it on; `--faux-log file.jsonl` writes one `{url, body}` line per request. A script is `{"responses": ["a text reply", {"content": [...], "stopReason": "stop"}]}`; a content block is `{"type": "text", "text"}` or `{"type": "toolCall", "id", "name", "arguments"}` (streamed as `tool_calls` deltas, with `"stopReason": "toolUse"`).
+**The faux provider.** pi's tests use a faux provider: you queue assistant messages, and each request streams the next one back in random chunks of 3 to 5 "tokens" (4 characters each). edupi keeps that idea, but fakes the HTTP endpoint instead of the whole provider. `fauxProvider().fetch` is passed to the OpenAI SDK, and it answers each request with the Chat Completions SSE chunks for the next scripted message. So in tests the real `openai-completions.ts` code runs, and every request body can be recorded. `--faux script.json` turns it on; `--faux-log file.jsonl` writes one `{url, body}` line per request. A script is `{"responses": ["a text reply", {"content": [...], "stopReason": "stop"}]}`; a content block is `{"type": "text", "text"}`, `{"type": "thinking", "thinking"}` (streamed as `reasoning` deltas) or `{"type": "toolCall", "id", "name", "arguments"}` (streamed as `tool_calls` deltas, with `"stopReason": "toolUse"`). `"tokensPerSecond": n` slows the stream down, so a test can steer or abort while it runs.
 
 The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-provider.test.ts) check the recorded bodies.
 
@@ -119,8 +119,8 @@ The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-prov
 ## Where edupi is simpler
 
 - **One API, one provider.** pi has more than ten provider APIs (Anthropic Messages, Google, Bedrock, Mistral, ...) and a registry that picks one by `model.api`. edupi calls `openai-completions` directly.
-- **Model metadata from OpenRouter at start.** pi ships a catalog generated from OpenRouter's `GET /models` and refreshes it in the background. edupi reads the same list once when it starts ([`model-registry.ts`](../../../backends/edupi/src/coding-agent/core/model-registry.ts), mapped as pi's generator maps it in [`openrouter.ts`](../../../backends/edupi/src/ai/providers/openrouter.ts)): context window, output limit, prices and the `reasoning` flag. A model the list does not have, or a start with `--offline`, gets the defaults of pi's `models.json` (`contextWindow: 128000`, `maxTokens: 16384`, no reasoning). In tests the faux provider answers `GET /models` from the script's `models`. A reasoning model gets the `developer` role, but edupi does not send a `reasoning` field yet.
-- **No reasoning deltas yet.** The chunk loop handles text and tool-call deltas. Reasoning deltas come with thinking levels.
+- **Model metadata from OpenRouter at start.** pi ships a catalog generated from OpenRouter's `GET /models` and refreshes it in the background. edupi reads the same list once when it starts ([`model-registry.ts`](../../../backends/edupi/src/coding-agent/core/model-registry.ts), mapped as pi's generator maps it in [`openrouter.ts`](../../../backends/edupi/src/ai/providers/openrouter.ts)): context window, output limit, prices and the `reasoning` flag. A model the list does not have, or a start with `--offline`, gets the defaults of pi's `models.json` (`contextWindow: 128000`, `maxTokens: 16384`, no reasoning). In tests the faux provider answers `GET /models` from the script's `models`. A reasoning model gets the `developer` role and the `reasoning` field ([chapter 02](02-loop-and-queues.md#thinking-level)).
+- **Reasoning text only.** Reasoning deltas (`reasoning_content`, `reasoning`, `reasoning_text`) become a thinking block and go back in the same field. OpenRouter's structured `reasoning_details` are not kept.
 - **No retries.** pi retries some provider errors (`retryProviderRequest`); edupi calls once.
 - **No `max_completion_tokens` clamp.** pi lowers it so that the prompt plus the answer fit in the context window. edupi sends the model's `maxTokens`.
 - **Fewer compat switches.** pi detects about twenty differences between OpenAI-compatible servers (`detectCompat`). edupi keeps only OpenRouter's values.

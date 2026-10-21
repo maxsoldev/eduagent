@@ -60,6 +60,8 @@ pre.diff .add { color: var(--ok); } pre.diff .del { color: var(--bad); } pre.dif
 .paused { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: 1px solid #fb923c; border-radius: 8px; background: #2a1a0b; gap: 8px; }
 .turn-sep { text-align: center; color: var(--muted); font-size: 12px; border-top: 1px dashed var(--line); padding-top: 4px; }
 .turn-sep.compaction { color: var(--warn); }
+.queue { padding: 6px 14px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+.queue .queued { padding: 2px 0; color: var(--muted); }
 .composer { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); position: relative; }
 .popup { position: absolute; left: 14px; right: 14px; bottom: calc(100% - 4px); max-height: 260px; overflow-y: auto; z-index: 5;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 -6px 20px #0008; }

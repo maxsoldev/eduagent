@@ -32,6 +32,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
     onStatus: (status, reason) => dispatch({ type: "status", status, reason }),
   });
   let state: Json = null; // the last get_state reply
+  let resumed = false; // connect found a session with messages: the first startSession keeps it
 
   async function setLevel(effort: string) {
     if (effort && effort !== state?.thinkingLevel) {
@@ -47,14 +48,18 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
     protocolNote: "pi RPC: one JSON object per line, tagged by \"type\". A command may carry an \"id\"; pi answers it with {type: \"response\", command, id}. Every other message is an event. There is no handshake.",
     contextTriggers: ["modelRequest"],
 
-    // pi has no handshake: the process already holds a session. get_state names it and its model.
+    // pi has no handshake: the process already holds a session. get_state names it and its model;
+    // get_messages shows a session already in progress (edupi or pi started with --continue).
     async connect() {
       await rpc.connect();
       state = await rpc.command("get_state");
+      const { messages } = await rpc.command("get_messages");
+      resumed = messages.some((m: Json) => m.role !== "system");
       return { models: state.model ? [{ value: state.model.id, label: state.model.name ?? state.model.id }] : [] };
     },
     async startSession(s) {
-      if (state?.messageCount || state?.isStreaming) { // "new thread"
+      if (resumed) resumed = false; // keep the session connect showed
+      else if (state?.messageCount || state?.isStreaming) { // "new thread"
         await rpc.command("new_session");
         lastRequest = fragments = null;
       }
@@ -69,7 +74,10 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
       await rpc.command("prompt", { message });
       state = { ...state, messageCount: (state?.messageCount ?? 0) + 1 };
     },
-    async interrupt() { await rpc.command("abort"); },
+    async interrupt() { await rpc.command("abort"); }, // the reply comes once the run has settled
+    // Both reply "queued" at once; queue_update events show the queues, and the message starts later.
+    async steer(text) { await rpc.command("steer", { message: text }); },
+    async followUp(text) { await rpc.command("follow_up", { message: text }); },
     async compact(customInstructions) { await rpc.command("compact", customInstructions ? { customInstructions } : {}); },
     async listSkills(): Promise<SkillInfo[]> {
       const { commands } = await rpc.command("get_commands");

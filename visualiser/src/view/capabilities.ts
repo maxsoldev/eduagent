@@ -5,6 +5,6 @@
 //   memories: /memory-* commands     skills: /skills and the $ popup
 //   compaction: compact button and /compact     stepMode: step mode toggle
 //   trace: Requests and Tools tabs, cost badge     contextInspector: Context tab
-//   mcp: MCP servers in the Tools tab
-export type Capability = "approvals" | "sandbox" | "memories" | "skills" | "compaction" | "mcp" | "trace" | "stepMode" | "contextInspector";
+//   mcp: MCP servers in the Tools tab     queues: steer and follow-up while a turn runs (pi)
+export type Capability = "approvals" | "sandbox" | "memories" | "skills" | "compaction" | "mcp" | "trace" | "stepMode" | "contextInspector" | "queues";
 export type Capabilities = ReadonlySet<string>;

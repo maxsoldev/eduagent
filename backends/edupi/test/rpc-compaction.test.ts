@@ -130,6 +130,8 @@ test("compaction follows real pi: a split turn, then the update prompt with the 
   const pi = JSON.parse(readFileSync(join(FIXTURES, "session-compact.summary-requests.json"), "utf8")).requests;
   const requests = edupi.requests().map((r) => r.body.messages);
   expect([requests[2], requests[4], requests[5]]).toEqual(pi);
+  // Every request, the summary requests too, carries the session's thinking level (pi's default medium), as in pi's.
+  expect(edupi.requests().map((r) => r.body.reasoning)).toEqual(Array(7).fill({ effort: "medium" }));
   expect(pi[1][1].content[0].text).toContain("<previous-summary>\nNo prior history.\n\n---\n\n**Turn Context (split turn):**\n\n## Goal\nFIRST SUMMARY\n</previous-summary>");
   expect(second.data.summary).toBe("## Goal\nSECOND SUMMARY\n\n---\n\n**Turn Context (split turn):**\n\nFourth.");
 

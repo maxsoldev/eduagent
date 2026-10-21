@@ -107,3 +107,43 @@ describe("pi adapter on a manual compaction", () => {
     expect(end?.data.result.summary).toBe("## Goal\nSUMMARY OF THE EARLIER TURNS");
   });
 });
+
+describe("pi adapter on steering and a follow-up sent during a tool call", () => {
+  const view = replay("queues.out.jsonl");
+  const [turn] = view.turns;
+
+  test("queue_update shows both queues; a queued message leaves its queue when it starts", () => {
+    expect(replay("queues.out.jsonl", 19).queue).toEqual({ steering: ["Use src/ instead."], followUp: [] });
+    expect(replay("queues.out.jsonl", 21).queue).toEqual({ steering: ["Use src/ instead."], followUp: ["Then summarise."] });
+    expect(replay("queues.out.jsonl", 29).queue).toEqual({ steering: [], followUp: ["Then summarise."] });
+    expect(view.queue).toEqual({ steering: [], followUp: [] });
+  });
+
+  test("the steered and the follow-up messages stay in the one turn of the run, in the order the model saw them", () => {
+    expect(view.turns.map((t) => t.status)).toEqual(["completed"]);
+    expect(kinds(turn.entries)).toEqual(["user", "tool", "user", "reasoning", "assistant", "user", "assistant"]);
+    expect(turn.entries.filter((e) => e.kind === "user").map((e) => e.kind === "user" && e.text))
+      .toEqual(["Run a slow command.", "Use src/ instead.", "Then summarise."]);
+  });
+
+  test("streamed reasoning becomes a reasoning entry before the reply", () => {
+    expect(turn.entries[3]).toMatchObject({ kind: "reasoning", summary: ["The user steered."], streaming: false });
+    const midThinking = replay("queues.out.jsonl", 34).turns[0].entries.at(-1);
+    expect(midThinking).toMatchObject({ kind: "reasoning", streaming: true });
+  });
+});
+
+describe("pi adapter on get_messages: a session already in progress", () => {
+  // A viewer that connects late: only the get_state and get_messages replies.
+  const view = lines("queues.out.jsonl").filter((m) => m.type === "response" && Number(m.id) >= 6).flatMap(createPiMapping()).reduce(reduceView, initialView);
+
+  test("the messages become the chat, one completed turn per user message", () => {
+    expect(view.sessionId).toBe(lines("queues.out.jsonl")[0].data.sessionId);
+    expect(view.turns.map((t) => t.status)).toEqual(["completed", "completed", "completed"]);
+    expect(view.turns.map((t) => kinds(t.entries))).toEqual([["user", "tool"], ["user", "reasoning", "assistant"], ["user", "assistant"]]);
+    expect(view.turns[0].entries[1]).toMatchObject({ kind: "tool", id: "call_slow", name: "bash", title: "sleep 1; echo done",
+      output: "done\n", status: "completed", streaming: false });
+    expect(view.turns[2].entries[1]).toMatchObject({ kind: "assistant", text: "Ack follow.", streaming: false });
+    expect(view.running).toBe(false);
+  });
+});

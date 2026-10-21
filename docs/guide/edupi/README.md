@@ -53,13 +53,13 @@ The `edupi` entry calls OpenRouter and needs `OPENROUTER_API_KEY` in the repo-ro
   { "name": "edupi-faux", "harness": "pi", "protocol": "pi-rpc",
     "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc",
                 "--faux", "${REPO}/backends/edupi/examples/faux/demo.json"],
-    "capabilities": ["trace", "skills", "compaction", "contextInspector"] }
+    "capabilities": ["trace", "skills", "compaction", "queues", "contextInspector"] }
 ] }
 ```
 
 `examples/faux/tools.json` is a second script: it calls write and bash in parallel, then edit (chapter 04). `examples/faux/skills.json` reads `.pi/skills/greet/SKILL.md` with the read tool (chapter 05); run it with `--approve` in a folder that has that skill. `examples/faux/compact.json` has replies for a manual compaction (chapter 07).
 
-List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `skills` the `$` list in the composer, `compaction` the compact button and `/compact`, `contextInspector` the Context tab.
+List the capabilities edupi has (as in `launcher/backends.json`), or the viewer hides their panels: `trace` shows the Requests and Tools tabs, `skills` the `$` list in the composer, `compaction` the compact button and `/compact`, `queues` the steer, follow-up and abort buttons, `contextInspector` the Context tab.
 
 For another model, add `"--model", "<any OpenRouter model id>"` to `command`.
 
@@ -78,6 +78,7 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json
 | # | Chapter | You will learn | educodex chapter |
 |---|---|---|---|
 | 01 | [The provider API](01-provider-api.md) | Chat Completions vs Responses; OpenRouter as an OpenAI-compatible endpoint; pi's provider layer and its faux provider | [02](../educodex/02-talking-to-a-model.md) |
+| 02 | [The loop and the queues](02-loop-and-queues.md) | pi's inner and outer loops; steering and follow-up queues and their drain points; abort; the thinking level as OpenRouter's reasoning effort; how this differs from Codex's turn loop and `turn/steer` | [04](../educodex/04-agentic-loop.md), [08](../educodex/08-reasoning.md) |
 | 03 | [Prompt assembly](03-prompt-assembly.md) | pi's system prompt as named sections, in pi's order; AGENTS.md from the filesystem root down to cwd; SYSTEM.md; the prompt as a system message in the transcript, replayed into one leading message; how Codex's fragments differ | [05](../educodex/05-assembling-the-prompt.md) |
 | 04 | [Tools](04-tools.md) | pi's read, bash, edit and write; what the model reads vs what the user sees (the edit diff); tool calls run in parallel by default; tools declared in the transcript; how this differs from Codex's tools | [03](../educodex/03-tool-calling.md), [07](../educodex/07-built-in-tools.md) |
 | 05 | [Skills](05-skills.md) | where pi looks for skills; the available-skills list (names, descriptions, files); the model reads `SKILL.md` with `read`; `/skill:name` and skills hidden from the model; project trust in RPC mode | [14](../educodex/14-skills.md) |
@@ -85,4 +86,3 @@ node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json
 | 07 | [Compaction](07-compaction.md) | pi's three triggers (manual, threshold, overflow); the cut point and split turns; the checkpoint and update prompts; the compaction entry and the request rebuilt from it | [15](../educodex/15-compaction.md) |
 | 08 | [The RPC protocol](08-rpc-protocol.md) | `pi --mode rpc`: commands, responses and events as JSON lines; how they differ from Codex's App Server | [18](../educodex/18-app-server.md) |
 
-Planned chapters, written with their features: 02 the loop and the queues.

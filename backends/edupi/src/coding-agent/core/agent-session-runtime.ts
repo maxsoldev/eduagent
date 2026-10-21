@@ -28,9 +28,9 @@ export class AgentSessionRuntime {
     return { cancelled: false };
   }
 
-  /** pi aborts the active run first, so it is saved in the old file. edupi waits for it. */
+  /** Aborts the active run first, so it ends (and is saved) in the old file. */
   private async teardownCurrent(): Promise<void> {
-    await this._session.agent.waitForIdle();
+    await this._session.abort();
     this._session.dispose();
   }
 }

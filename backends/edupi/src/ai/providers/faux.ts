@@ -7,16 +7,20 @@
 // answers OpenRouter's GET /models with the models of the script, so model metadata (context
 // window, prices) comes from the faux provider in tests.
 import { readFileSync } from "node:fs";
-import type { AssistantMessage, JsonObject, StopReason, TextContent, ToolCall } from "../types.ts";
+import type { AssistantMessage, JsonObject, StopReason, TextContent, ThinkingContent, ToolCall } from "../types.ts";
 import type { OpenRouterModel } from "./openrouter.ts";
 
 const DEFAULT_MIN_TOKEN_SIZE = 3;
 const DEFAULT_MAX_TOKEN_SIZE = 5;
 
-export type FauxContentBlock = TextContent | ToolCall;
+export type FauxContentBlock = TextContent | ThinkingContent | ToolCall;
 
 export function fauxText(text: string): TextContent {
   return { type: "text", text };
+}
+
+export function fauxThinking(thinking: string): ThinkingContent {
+  return { type: "thinking", thinking };
 }
 
 export function fauxToolCall(name: string, args: JsonObject, options: { id?: string } = {}): ToolCall {
@@ -112,7 +116,7 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
       choices: usage ? [] : [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}),
     });
     const promptTokens = estimateTokens(JSON.stringify(body.messages));
-    const outputText = message.content.map((block) => block.type === "text" ? block.text : block.type === "toolCall" ? JSON.stringify(block.arguments) : "").join("");
+    const outputText = message.content.map((block) => block.type === "text" ? block.text : block.type === "thinking" ? block.thinking : block.type === "toolCall" ? JSON.stringify(block.arguments) : "").join("");
     const usage = { prompt_tokens: promptTokens, completion_tokens: estimateTokens(outputText), total_tokens: promptTokens + estimateTokens(outputText) };
 
     const encoder = new TextEncoder();
@@ -122,7 +126,14 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
         send(chunk({ role: "assistant", content: "" }));
         let toolIndex = 0;
         for (const block of message.content) {
-          if (block.type === "text") {
+          if (block.type === "thinking") {
+            // Reasoning comes in OpenRouter's `reasoning` delta field, before the answer.
+            for (const piece of splitStringByTokenSize(block.thinking, minTokenSize, maxTokenSize)) {
+              await scheduleChunk(piece, options.tokensPerSecond);
+              if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
+              send(chunk({ reasoning: piece }));
+            }
+          } else if (block.type === "text") {
             for (const piece of splitStringByTokenSize(block.text, minTokenSize, maxTokenSize)) {
               await scheduleChunk(piece, options.tokensPerSecond);
               if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
@@ -164,18 +175,19 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 }
 
 /**
- * Reads a faux script file: `{"models"?: [...], "responses": [...]}`. `models` is the GET /models
- * list (OpenRouter's fields). A response is a string (one text reply), `{"content": string |
- * blocks, "stopReason"?: ...}` (the arguments of fauxAssistantMessage), or `{"error": {"status"?,
- * "message"}}`, an HTTP error (a context overflow, for example).
- * A block is `{"type": "text", "text"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
+ * Reads a faux script file: `{"models"?: [...], "tokensPerSecond"?: n, "responses": [...]}`.
+ * `models` is the GET /models list (OpenRouter's fields); tokensPerSecond slows the stream down.
+ * A response is a string (one text reply), `{"content": string | blocks, "stopReason"?: ...}`
+ * (the arguments of fauxAssistantMessage), or `{"error": {"status"?, "message"}}`, an HTTP error
+ * (a context overflow, for example). A block is `{"type": "text", "text"}`,
+ * `{"type": "thinking", "thinking"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
  */
-export function loadFauxScript(path: string): { models: OpenRouterModel[]; responses: FauxResponse[] } {
+export function loadFauxScript(path: string): { models: OpenRouterModel[]; tokensPerSecond?: number; responses: FauxResponse[] } {
   const script = JSON.parse(readFileSync(path, "utf8"));
   type Step = string | FauxError | { content: string | FauxContentBlock[]; stopReason?: StopReason };
   const responses = script.responses.map((step: Step): FauxResponse =>
     typeof step === "string" ? fauxAssistantMessage(step)
       : "error" in step ? step
       : fauxAssistantMessage(step.content, { stopReason: step.stopReason }));
-  return { models: script.models ?? [], responses };
+  return { models: script.models ?? [], tokensPerSecond: script.tokensPerSecond, responses };
 }

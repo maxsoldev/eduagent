@@ -4,16 +4,18 @@ import type { Command, SkillInfo } from "../adapters/types";
 
 // The message box. Typing "/" lists slash commands; typing "$" lists skills (as Codex's TUI does).
 // A skill picked from the list is sent as a {type: "skill", name, path} input item next to the text.
+// With queues (pi), the box stays open while a turn runs: Enter steers, Alt+Enter queues a follow-up.
 type Popup =
   | { kind: "command"; items: Command[] }
   | { kind: "skill"; items: SkillInfo[]; start: number; end: number };
 
 // commands: only those the backend's capabilities allow. loadSkills: null without the skills capability.
-export function Composer({ disabled, turnRunning, placeholder, commands, loadSkills, onSend, onCommand, onInterrupt }: {
+export function Composer({ disabled, turnRunning, placeholder, commands, loadSkills, onSend, onCommand, onInterrupt, queues }: {
   disabled: boolean; turnRunning: boolean; placeholder: string; commands: Command[];
   loadSkills: (() => Promise<SkillInfo[]>) | null;
   onSend: (text: string, skills: { type: "skill"; name: string; path: string }[]) => void;
   onCommand: (name: string, args?: string) => void; onInterrupt: () => void;
+  queues?: { onSteer: (text: string) => void; onFollowUp: (text: string) => void } | null;
 }) {
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -47,7 +49,13 @@ export function Composer({ disabled, turnRunning, placeholder, commands, loadSki
     requestAnimationFrame(() => box.current?.setSelectionRange(at, at));
   };
   const runCommand = (name: string, args?: string) => { edit("", 0); onCommand(name, args); };
+  const queue = (kind: "steer" | "followUp") => {
+    if (!queues || !text.trim() || disabled) return;
+    (kind === "steer" ? queues.onSteer : queues.onFollowUp)(text);
+    edit("", 0);
+  };
   const send = () => {
+    if (turnRunning && queues) { queue("steer"); return; }
     // "/name" or "/name args": pi's /compact takes custom instructions after the name.
     const command = /^\/(\S+)(?:\s+([\s\S]+))?$/.exec(text.trim());
     if (command && matchCommands(commands, command[1])[0]?.name === command[1]) { runCommand(command[1], command[2]); return; }
@@ -69,6 +77,7 @@ export function Composer({ disabled, turnRunning, placeholder, commands, loadSki
       if (e.key === "Tab" && open.kind === "command") { e.preventDefault(); edit(`/${open.items[selected].name}`, open.items[selected].name.length + 1); return; }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) { e.preventDefault(); accept(selected); return; }
     }
+    if (e.key === "Enter" && e.altKey && turnRunning && queues) { e.preventDefault(); queue("followUp"); return; }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
@@ -91,8 +100,12 @@ export function Composer({ disabled, turnRunning, placeholder, commands, loadSki
       <textarea ref={box} value={text} disabled={disabled} placeholder={placeholder} data-testid="composer"
         onChange={(e) => edit(e.target.value, e.target.selectionStart)}
         onSelect={(e) => setCaret(e.currentTarget.selectionStart)} onKeyDown={onKeyDown} />
+      {turnRunning && queues && <>
+        <button className="primary" onClick={() => queue("steer")} disabled={disabled} title="goes in after the running tools, before the next model call (Enter)" data-testid="steer">steer</button>
+        <button onClick={() => queue("followUp")} disabled={disabled} title="runs when the agent would stop (Alt+Enter)" data-testid="follow-up">follow-up</button>
+      </>}
       {turnRunning
-        ? <button className="danger" onClick={onInterrupt} data-testid="interrupt">interrupt</button>
+        ? <button className="danger" onClick={onInterrupt} data-testid="interrupt">{queues ? "abort" : "interrupt"}</button>
         : <button className="primary" onClick={send} disabled={disabled} data-testid="send">send</button>}
     </div>
   );

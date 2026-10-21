@@ -1,14 +1,17 @@
 // Mirrors pi packages/coding-agent/src/core/agent-session.ts (pinned 16f5f0af4): the coding
 // agent's session around the Agent. Every mode (pi's TUI, print, JSON, RPC) drives an
 // AgentSession. It turns a prompt into a run, forwards the Agent's events with the session's
-// own events added (agent_settled, compaction_start/end), saves each finished message to the
-// session file, compacts the context (by hand, at the threshold, after an overflow), and
-// answers the state questions of get_state. Before each run it builds the system prompt from the
-// resource loader's files and puts the changed sections into the transcript.
+// own events added (agent_settled, queue_update, compaction_start/end), saves each finished
+// message to the session file, compacts the context (by hand, at the threshold, after an
+// overflow), and answers the state questions of get_state. While a run is active, new user text
+// goes into the Agent's steering or follow-up queue; the session keeps the texts for queue_update.
+// Before each run it builds the system prompt from the resource loader's files and puts the
+// changed sections into the transcript.
 import { readFileSync } from "node:fs";
 import type { Agent } from "../../agent/agent.ts";
-import type { AgentContext, AgentEvent, AgentMessage } from "../../agent/types.ts";
-import type { AssistantMessage, ImageContent, Model, SystemMessage, ThinkingLevel, ToolResultMessage } from "../../ai/types.ts";
+import type { AgentContext, AgentEvent, AgentMessage, QueueMode } from "../../agent/types.ts";
+import { clampThinkingLevel, getSupportedThinkingLevels } from "../../ai/models.ts";
+import type { AssistantMessage, ImageContent, Model, SystemMessage, TextContent, ThinkingLevel, ToolResultMessage } from "../../ai/types.ts";
 import { isContextOverflow, isRecoverableLength } from "../../ai/utils/overflow.ts";
 import { getCurrentSystemMessage } from "../../ai/utils/transcript.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
@@ -37,6 +40,9 @@ export type AgentSessionEvent =
   | Exclude<AgentEvent, { type: "agent_end" }>
   | { type: "agent_end"; messages: AgentMessage[]; willRetry: boolean }
   | { type: "agent_settled"; aborted: boolean }
+  | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
+  | { type: "thinking_level_changed"; level: ThinkingLevel }
+
   | { type: "compaction_start"; reason: CompactionReason }
   | { type: "entry_appended"; entry: SessionEntry }
   | {
@@ -86,6 +92,11 @@ export class AgentSession {
   private readonly _probe: Probe | undefined;
   private _eventListeners: AgentSessionEventListener[] = [];
   private _isAgentRunActive = false; // from _startRun until agent_settled
+  private _agentRunAbortRequested = false; // agent_settled reports it as `aborted`
+  private _idleWaiters: (() => void)[] = []; // resolved after agent_settled
+  // The texts of the queued messages, for queue_update. The messages themselves are in the Agent.
+  private _steeringMessages: string[] = [];
+  private _followUpMessages: string[] = [];
   private _unsubscribeAgent: () => void;
   readonly resourceLoader: DefaultResourceLoader;
   private _baseSystemPromptOptions!: BuildSystemPromptOptions;
@@ -153,9 +164,30 @@ export class AgentSession {
     for (const listener of this._eventListeners) listener(event);
   }
 
+  private _emitQueueUpdate(): void {
+    this._emit({ type: "queue_update", steering: [...this._steeringMessages], followUp: [...this._followUpMessages] });
+  }
+
   private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
-    // A new user message allows a new overflow recovery.
-    if (event.type === "message_start" && event.message.role === "user") this._overflowRecoveryAttempted = false;
+    // A queued message that starts leaves its queue first, so a client sees the queue change before the message.
+    if (event.type === "message_start" && event.message.role === "user") {
+      this._overflowRecoveryAttempted = false; // a new user message allows a new overflow recovery
+      const content = event.message.content;
+      const messageText = typeof content === "string" ? content : content.filter((c): c is TextContent => c.type === "text").map((c) => c.text).join("");
+      if (messageText) {
+        const steeringIndex = this._steeringMessages.indexOf(messageText);
+        if (steeringIndex !== -1) {
+          this._steeringMessages.splice(steeringIndex, 1);
+          this._emitQueueUpdate();
+        } else {
+          const followUpIndex = this._followUpMessages.indexOf(messageText);
+          if (followUpIndex !== -1) {
+            this._followUpMessages.splice(followUpIndex, 1);
+            this._emitQueueUpdate();
+          }
+        }
+      }
+    }
 
     this._emit(event.type === "agent_end" ? { ...event, willRetry: false } : event); // edupi has no auto-retry
 
@@ -208,6 +240,25 @@ export class AgentSession {
     return this.agent.state.thinkingLevel;
   }
 
+  /** The levels the current model supports (only "off" without reasoning). */
+  getAvailableThinkingLevels(): ThinkingLevel[] {
+    return getSupportedThinkingLevels(this.model);
+  }
+
+  /**
+   * Sets the thinking level, clamped to what the model supports. Only a real change is saved as
+   * a thinking_level_change entry and announced with thinking_level_changed. The next model call uses it.
+   */
+  setThinkingLevel(level: ThinkingLevel): void {
+    const effectiveLevel = this.getAvailableThinkingLevels().includes(level) ? level : clampThinkingLevel(this.model, level);
+    const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
+    this.agent.state.thinkingLevel = effectiveLevel;
+    if (isChanging) {
+      this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+      this._emit({ type: "thinking_level_changed", level: effectiveLevel });
+    }
+  }
+
   get isStreaming(): boolean {
     return this._isAgentRunActive;
   }
@@ -216,12 +267,12 @@ export class AgentSession {
     return this._compactionAbortController !== undefined || this._autoCompactionAbortController !== undefined;
   }
 
-  get steeringMode(): "all" | "one-at-a-time" {
-    return "one-at-a-time"; // pi's default (settings-defaults.ts)
+  get steeringMode(): QueueMode {
+    return this.agent.steeringMode; // pi's default "one-at-a-time" (settings-defaults.ts)
   }
 
-  get followUpMode(): "all" | "one-at-a-time" {
-    return "one-at-a-time";
+  get followUpMode(): QueueMode {
+    return this.agent.followUpMode;
   }
 
   /** The session file, or undefined with --no-session. It exists once the first message is saved. */
@@ -237,8 +288,9 @@ export class AgentSession {
     return this.agent.state.messages;
   }
 
+  /** Steering plus follow-up messages that wait for the loop. */
   get pendingMessageCount(): number {
-    return 0; // no steering or follow-up queues yet
+    return this._steeringMessages.length + this._followUpMessages.length;
   }
 
   get autoCompactionEnabled(): boolean {
@@ -246,8 +298,8 @@ export class AgentSession {
   }
 
   /**
-   * Sends a prompt. While a run is active it needs a streamingBehavior. Before the run starts it
-   * checks the model's API key; after preflightResult("started"), failures arrive as events.
+   * Sends a prompt. While a run is active it needs a streamingBehavior and is queued. Before a run
+   * starts it checks the model's API key; after preflightResult("started"), failures are events.
    */
   async prompt(text: string, options?: PromptOptions): Promise<void> {
     text = this._expandSkillCommand(text); // pi expands /skill:name and prompt templates first
@@ -255,12 +307,55 @@ export class AgentSession {
       throw new Error("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.");
     }
     if (this.isStreaming) {
-      throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+      if (!options?.streamingBehavior) {
+        throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+      }
+      if (options.streamingBehavior === "followUp") this._queueFollowUp(text, options.images);
+      else this._queueSteer(text, options.images);
+      options.preflightResult?.("queued");
+      return;
     }
     if (!this._getApiKey(this.model.provider)) {
       throw new Error(`No API key found for ${this.model.provider}.\n\nSet OPENROUTER_API_KEY in the environment or in the repo-root .env file.`);
     }
     await this._startRun(text, options?.images ?? [], () => options?.preflightResult?.("started"));
+  }
+
+  /** Queues a steering message: it goes in after the current turn's tools, before the next model call. */
+  async steer(text: string, images?: ImageContent[]): Promise<PromptDisposition> {
+    this._queueSteer(text, images);
+    return "queued";
+  }
+
+  /** Queues a follow-up message: it runs when the agent has no more tool calls or steering messages. */
+  async followUp(text: string, images?: ImageContent[]): Promise<PromptDisposition> {
+    this._queueFollowUp(text, images);
+    return "queued";
+  }
+
+  private _queueSteer(text: string, images?: ImageContent[]): void {
+    this._steeringMessages.push(text);
+    this._emitQueueUpdate();
+    this.agent.steer({ role: "user", content: [{ type: "text", text }, ...(images ?? [])], timestamp: Date.now() });
+  }
+
+  private _queueFollowUp(text: string, images?: ImageContent[]): void {
+    this._followUpMessages.push(text);
+    this._emitQueueUpdate();
+    this.agent.followUp({ role: "user", content: [{ type: "text", text }, ...(images ?? [])], timestamp: Date.now() });
+  }
+
+  /** Aborts the active run (stream and tools) and resolves once it has settled. The queues stay. */
+  async abort(): Promise<void> {
+    if (this._isAgentRunActive) this._agentRunAbortRequested = true;
+    this.agent.abort();
+    await this.waitForIdle();
+  }
+
+  /** Resolves after the active run's agent_settled; at once when idle. */
+  waitForIdle(): Promise<void> {
+    if (!this._isAgentRunActive) return Promise.resolve();
+    return new Promise((resolve) => this._idleWaiters.push(resolve));
   }
 
   /**
@@ -314,6 +409,7 @@ export class AgentSession {
    */
   private async _startRun(text: string, images: ImageContent[], onStarted?: () => void): Promise<void> {
     this._isAgentRunActive = true;
+    this._agentRunAbortRequested = false;
     let messages: AgentMessage[];
     try {
       messages = await this._prepareRun(text, images);
@@ -324,7 +420,16 @@ export class AgentSession {
     onStarted?.();
     try {
       await this.agent.prompt(messages);
-      while (await this._handlePostAgentRun()) await this.agent.continue();
+      // Go on after an overflow retry, or while messages were queued too late for the loop. Not after an abort.
+      while (!this._agentRunAbortRequested) {
+        if (await this._handlePostAgentRun()) {
+          if (this._agentRunAbortRequested) break;
+          await this.agent.continue();
+          continue;
+        }
+        if (this._agentRunAbortRequested || !this.agent.hasQueuedMessages()) break;
+        await this.agent.continue();
+      }
     } finally {
       this._emitAgentSettled();
     }
@@ -344,7 +449,7 @@ export class AgentSession {
     return messages;
   }
 
-  /** After the loop: should it continue? Only after an overflow recovery (pi also: queued messages, retries). */
+  /** After the loop: should it continue? Only after an overflow recovery (pi also: retries). */
   private async _handlePostAgentRun(): Promise<boolean> {
     const message = this._lastAssistantMessage;
     const toolResults = this._lastAssistantToolResults;
@@ -365,7 +470,8 @@ export class AgentSession {
 
   private _emitAgentSettled(): void {
     this._isAgentRunActive = false;
-    this._emit({ type: "agent_settled", aborted: false });
+    this._emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
+    for (const resolve of this._idleWaiters.splice(0)) resolve();
   }
 
   // =========================================================================
@@ -394,12 +500,9 @@ export class AgentSession {
     return result;
   }
 
-  /**
-   * Manual compaction (RPC `compact`, pi's /compact). Never retries. pi aborts a running turn
-   * first; edupi has no abort yet, so it refuses while a run is active.
-   */
+  /** Manual compaction (RPC `compact`, pi's /compact). A running turn is aborted first. Never retries. */
   async compact(customInstructions?: string): Promise<CompactionResult> {
-    if (this.isStreaming) throw new Error("Cannot compact while the agent is running. edupi has no abort yet; wait for the run to end.");
+    await this.abort();
     this._compactionAbortController = new AbortController();
     this._emit({ type: "compaction_start", reason: "manual" });
     try {

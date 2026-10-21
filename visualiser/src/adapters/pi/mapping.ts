@@ -52,6 +52,8 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
         const id = `${msgId()}-c${e.contentIndex}`;
         if (e.type === "text_start") out.push({ type: "entry", entry: { kind: "assistant", id, text: "", streaming: true } });
         if (e.type === "text_delta") out.push({ type: "append", id, field: "text", delta: e.delta });
+        if (e.type === "thinking_start") out.push({ type: "entry", entry: { kind: "reasoning", id, summary: [""], streaming: true } });
+        if (e.type === "thinking_delta") out.push({ type: "append", id, field: "summary", delta: e.delta, index: 0 });
         break;
       }
       case "message_end": // a reply's timestamp is when it started, so add its durationMs; a tool result is made when the tool ends
@@ -67,6 +69,9 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
         break;
       case "tool_execution_end":
         out.push(toolEntry(m, text(m.result?.content), m.isError ? "failed" : "completed"));
+        break;
+      case "queue_update": // the full steering and follow-up queues, as texts
+        out.push({ type: "queue", steering: m.steering, followUp: m.followUp });
         break;
       case "compaction_start": // reason: manual, threshold or overflow
         out.push({ type: "entry", entry: { kind: "compaction", id: `${sessionId ?? "pi"}-k${++compaction}`, streaming: true, reason: m.reason } });
@@ -94,11 +99,37 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
     return { type: "entry", entry };
   }
 
-  // Replies to our own commands. get_state tells which session this process holds.
+  // Replies to our own commands. get_state tells which session this process holds;
+  // get_messages gives the conversation so far (a session that was already in progress); it
+  // fills only an empty chat, so a later get_messages does not repeat the turns.
   function response(m: Json): ViewAction[] {
     if (m.command === "get_state" && m.success && m.data.sessionId !== sessionId)
       return [{ type: "session", id: (sessionId = m.data.sessionId) }];
+    if (m.command === "get_messages" && m.success && turn === 0) return history(m.data.messages);
     return [];
+  }
+
+  // Past messages as finished turns: each user message starts one. A tool call and its result
+  // (a later toolResult message) become one tool entry.
+  function history(messages: Json[]): ViewAction[] {
+    const out: ViewAction[] = [];
+    const results = new Map(messages.filter((x) => x.role === "toolResult").map((x) => [x.toolCallId, x]));
+    let open: string | undefined;
+    const close = () => { if (open) out.push({ type: "turnEnded", id: open, status: "completed" }); open = undefined; };
+    for (const msg of messages) {
+      if (msg.role === "user") { close(); out.push({ type: "turnStarted", id: (open = `${sessionId ?? "pi"}-t${++turn}`) }); }
+      message++;
+      out.push(...messageEntries(msg, false));
+      if (msg.role !== "assistant") continue;
+      for (const c of msg.content as Json[]) {
+        if (c.type !== "toolCall") continue;
+        const result = results.get(c.id);
+        out.push(toolEntry({ toolCallId: c.id, toolName: c.name, args: c.arguments, result }, text(result?.content),
+          !result ? "aborted" : result.isError ? "failed" : "completed"));
+      }
+    }
+    close();
+    return out;
   }
 
   // User messages become one entry; an assistant message one entry per text block.
@@ -109,7 +140,8 @@ export function createPiMapping(): (message: Json) => ViewAction[] {
     if (!streaming && content.some((c) => c.type === "toolCall")) batch = [];
     const entries = content.flatMap((c, i): ViewAction[] => {
       const id = `${msgId()}-c${i}`;
-      const entry: Entry | null = c.type === "text" ? { kind: "assistant", id, text: c.text, streaming } : null;
+      const entry: Entry | null = c.type === "text" ? { kind: "assistant", id, text: c.text, streaming }
+        : c.type === "thinking" ? { kind: "reasoning", id, summary: [c.thinking], streaming } : null;
       return entry ? [{ type: "entry", entry }] : [];
     });
     if (!streaming && msg.stopReason === "error")

@@ -43,11 +43,12 @@ export type View = {
   pricing: Json | null; // trace "pricing": per-million-token prices
   costs: Json[]; // trace "cost" of every request in this session, in order
   costTotal: Json | null;
+  queue: { steering: string[]; followUp: string[] } | null; // messages waiting for the agent (pi's queues); null: none seen
 };
 
 export const initialView: View = {
   status: "connecting", closedReason: null, sessionId: null, running: false, turns: [], events: [], wire: [], approvals: [],
-  paused: null, pricing: null, costs: [], costTotal: null,
+  paused: null, pricing: null, costs: [], costTotal: null, queue: null,
 };
 
 export type ViewAction =
@@ -61,7 +62,8 @@ export type ViewAction =
   | { type: "event"; event: Omit<TimelineEvent, "seq" | "ts"> & { seq?: number; ts?: number } }
   | { type: "approval"; approval: Approval }
   | { type: "approvalResolved"; id: string | number }
-  | { type: "notice"; level: "info" | "error"; source: "client" | "backend"; text: string };
+  | { type: "notice"; level: "info" | "error"; source: "client" | "backend"; text: string }
+  | { type: "queue"; steering: string[]; followUp: string[] }; // the full queues after a change
 
 let localSeq = 1_000_000;
 let noticeId = 0;
@@ -91,6 +93,8 @@ export function reduceView(view: View, action: ViewAction): View {
       return { ...view, approvals: view.approvals.filter((a) => a.id !== action.id) };
     case "notice":
       return { ...view, turns: upsert(view.turns, { kind: "notice", id: `notice-${++noticeId}`, level: action.level, source: action.source, text: action.text }) };
+    case "queue":
+      return { ...view, queue: { steering: action.steering, followUp: action.followUp } };
   }
 }
 
