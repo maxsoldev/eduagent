@@ -33,8 +33,8 @@ pi checks the threshold at these points:
 **The overflow rule.** The provider answers with an error, for example OpenRouter's HTTP 400 `This endpoint's maximum context length is 128000 tokens. However, you requested about 140000 tokens.` Every provider says this in its own words, so pi matches the error text against a list of patterns ([`overflow.ts`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/overflow.ts#L38)). Then pi:
 
 1. writes a `context_edit` entry with `replacement: null` for the failed reply. The reply stays in the file, but it is no longer part of the context;
-2. compacts, with `reason: "overflow"`. `compaction_end` has `willRetry: true`;
-3. continues the run (`agent.continue()`): a new `agent_start`, and the model answers the same user message from the smaller context.
+2. compacts, with `reason: "overflow"`. `compaction_end` has `willRetry: true`. The user message that overflowed goes into the summary too (see the cut point below), so the retry does not send it again;
+3. continues the run (`agent.continue()`): a new `agent_start`, and the model answers from the smaller context.
 
 It does this once per user message. If the retry overflows again, pi stops with `Context overflow recovery failed after one compact-and-retry attempt. …`
 
@@ -61,6 +61,8 @@ If the cut is at an assistant message, it splits a **turn** (a user message and 
 
 <turn prefix summary>
 ```
+
+**After an overflow**, only the omitted failed reply (and its `context_edit`) follows the last user message. If the walk back reached `keepRecentTokens` there, pi moves the cut one entry on, to the omitted reply ([`findProjectedCutPoint`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/compaction/compaction.ts#L818)). The user message is then the prefix of a split turn and is summarised: a big prompt that caused the overflow does not cause it again.
 
 If there is nothing older than the cut, there is nothing to summarise. A manual `compact` then fails with `Nothing to compact (session too small)`. An automatic compaction stops **without any event**. This is why a quick test with tiny messages does not trigger threshold compaction: with `keepRecentTokens: 10`, the walk back reached 10 tokens only at the first user message, so the cut kept everything. Use longer messages, or a lower `keepRecentTokens`.
 
@@ -188,9 +190,12 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 ## Where edupi is simpler
 
 - **No extensions.** pi lets an extension cancel a compaction or supply its own summary (`session_before_compact`, `fromHook`). edupi always uses pi's built-in summary.
+- **Fewer message kinds.** edupi has no `bashExecution`, `custom` or `branchSummary` messages, no codemode nested calls and no branch summaries (`branch-summarization.ts`), so token estimates, cut points and file lists only know user, assistant, tool result and compaction summary messages.
 - **No summary retries.** pi retries a summary call after a transient network error (`retryAssistantCall`). edupi fails the compaction.
 - **Global settings only.** pi also reads `<cwd>/.pi/settings.json` once the project is trusted, and has per-model overrides (`compaction.modelOverrides`) and `set_auto_compaction`. edupi reads `<home>/settings.json`.
-- **Simpler overflow bookkeeping.** pi checks that the failed reply is still part of the context and has more cases for omissions of omissions. edupi omits the failed reply and its tool results, and tells replies from before a compaction by entry order instead of by millisecond timestamp (with the fast faux provider both can fall in the same millisecond).
+- **Simpler overflow bookkeeping.** pi checks that the failed reply is still part of the context and has more cases for omissions of omissions. edupi omits the failed reply and its tool results.
+- **Entry order, not timestamps.** A reply is "from before the latest compaction" (its usage is stale) if its entry comes before the compaction entry in the session file. pi compares millisecond timestamps; with the fast faux provider both can fall in the same millisecond. A message with no entry yet falls back to pi's timestamp rule.
+- **No cache settings.** pi sends summary requests with `cacheRetention: "none"`, so they carry no session header. edupi has no cache settings and sends a fresh `x-session-id` on each summary request.
 
 ## Try it
 
@@ -223,10 +228,10 @@ For the overflow trigger, set `keepRecentTokens` to `1` (so the old turn is summ
 ```json
 { "responses": ["Short answer.",
   {"error": {"status": 400, "message": "This endpoint's maximum context length is 1000 tokens. However, you requested about 5000 tokens."}},
-  "## Goal\nRecover.", "After the retry."] }
+  "## Goal\nRecover.", "## Original Request\nsecond", "After the retry."] }
 ```
 
-The second prompt fails. Look for the `entry_appended` event with the `context_edit`, `compaction_end` with `willRetry: true`, and the second `agent_start`, whose reply is "After the retry."
+The second prompt fails. Look for the `entry_appended` event with the `context_edit`, then two summary requests (the old turn, then the turn prefix with the second prompt), `compaction_end` with `willRetry: true`, and the second `agent_start`, whose reply is "After the retry."
 
 Run the tests:
 

@@ -319,7 +319,8 @@ const OVERFLOW = {
 };
 
 test("overflow: the provider refuses the context; edupi drops the failed reply, compacts and retries once", async () => {
-	// keepRecentTokens 1 keeps only the last prompt; everything before it is summarised.
+	// keepRecentTokens 1 stops the walk back at q3. As in pi, the cut then moves past q3 to the
+	// omitted reply: q3 goes into the summary too (a split turn), so the retry does not resend it.
 	edupi = startEdupi(
 		{
 			responses: [
@@ -327,6 +328,7 @@ test("overflow: the provider refuses the context; edupi drops the failed reply, 
 				"Second answer.",
 				OVERFLOW,
 				"## Goal\nOVERFLOW SUMMARY",
+				"## Original Request\nq3",
 				"Third answer, after the retry.",
 			],
 		},
@@ -372,19 +374,26 @@ test("overflow: the provider refuses the context; edupi drops the failed reply, 
 		reason: "overflow",
 		aborted: false,
 		willRetry: true,
-		result: { summary: "## Goal\nOVERFLOW SUMMARY" },
+		result: {
+			summary: "## Goal\nOVERFLOW SUMMARY\n\n---\n\n**Turn Context (split turn):**\n\n## Original Request\nq3",
+		},
 	});
 	expect(events.at(-3)).toMatchObject({
 		type: "turn_end",
 		message: { stopReason: "stop", content: [{ type: "text", text: "Third answer, after the retry." }] },
 	});
 
-	// The retry is rebuilt from the compaction: the summary, then q3. The failed reply is not in it.
+	// Two summary requests: the history, then the turn prefix (q3). The retry is rebuilt from the
+	// compaction alone; the failed reply is not in it.
 	const requests = edupi.requests().map((r) => r.body.messages);
 	expect(requests[3][1].content[0].text).toMatch(
 		/^<conversation>\n\[User\]: q1\n\n\[Assistant\]: First answer\.\n\n\[User\]: q2\n\n\[Assistant\]: Second answer\.\n<\/conversation>/,
 	);
-	expect(requests[4]).toEqual([requests[0][0], summaryMessage("## Goal\nOVERFLOW SUMMARY"), user("q3")]);
+	expect(requests[4][1].content[0].text).toMatch(/^# Conversation\n\[User\]: q3\n\n# Instructions\n/);
+	expect(requests[5]).toEqual([
+		requests[0][0],
+		summaryMessage("## Goal\nOVERFLOW SUMMARY\n\n---\n\n**Turn Context (split turn):**\n\n## Original Request\nq3"),
+	]);
 
 	// The session file keeps the failed reply; a context_edit entry leaves it out of the context.
 	const file = entries();
@@ -400,14 +409,19 @@ test("overflow: the provider refuses the context; edupi drops the failed reply, 
 	});
 	expect(events.find((m) => m.type === "entry_appended")!.entry).toEqual(edit);
 	expect(file.map((e) => e.type).slice(-3)).toEqual(["context_edit", "compaction", "message"]);
+	expect(file.find((e) => e.type === "compaction")!.firstKeptEntryId).toBe(failedEntry.id);
 	const { messages } = (await edupi.command("get_messages")).data;
-	expect(messages.map((m: Message) => m.role)).toEqual(["system", "compactionSummary", "user", "assistant"]);
+	expect(messages.map((m: Message) => m.role)).toEqual(["system", "compactionSummary", "assistant"]);
 });
 
 test("overflow: a second overflow after the retry gives up with pi's error", async () => {
-	edupi = startEdupi({ responses: ["First answer.", OVERFLOW, "## Goal\nOVERFLOW SUMMARY", OVERFLOW] }, [], {
-		dir: dirWithSettings({ compaction: { keepRecentTokens: 1 } }),
-	});
+	edupi = startEdupi(
+		{ responses: ["First answer.", OVERFLOW, "## Goal\nOVERFLOW SUMMARY", "## Original Request\nq2", OVERFLOW] },
+		[],
+		{
+			dir: dirWithSettings({ compaction: { keepRecentTokens: 1 } }),
+		},
+	);
 	await prompt("q1");
 	await prompt("q2");
 	const ends = edupi.seen.filter((m) => m.type === "compaction_end");
