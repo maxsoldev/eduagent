@@ -59,12 +59,16 @@ export interface FauxError {
 	error: { status?: number; message: string };
 }
 
-export type FauxResponse = AssistantMessage | FauxError;
+/** edupi: a reply whose connection breaks after its content chunks, before the finish chunk. */
+export type FauxBrokenStream = AssistantMessage & { streamError: string };
+
+export type FauxResponse = AssistantMessage | FauxBrokenStream | FauxError;
 
 export interface RegisterFauxProviderOptions {
 	tokensPerSecond?: number; // delay between chunks; unset = as fast as possible
 	tokenSize?: { min?: number; max?: number }; // chunk size in tokens (4 characters each)
-	onRequest?: (request: { url: string; body: unknown }) => void;
+	/** headers: only `x-session-id` (OpenRouter's cache affinity), when the request has it. */
+	onRequest?: (request: { url: string; body: unknown; headers?: Record<string, string> }) => void;
 	models?: OpenRouterModel[]; // the GET /models list
 }
 
@@ -113,7 +117,8 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 		if ((init?.method ?? "GET") === "GET" && url.endsWith("/models"))
 			return Response.json({ data: options.models ?? [] });
 		const body = JSON.parse(String(init?.body ?? "null"));
-		options.onRequest?.({ url, body });
+		const sessionHeader = new Headers(init?.headers).get("x-session-id");
+		options.onRequest?.({ url, body, ...(sessionHeader ? { headers: { "x-session-id": sessionHeader } } : {}) });
 		state.callCount++;
 		const message = pendingResponses.shift();
 		if (!message) {
@@ -182,17 +187,17 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 								],
 							}),
 						);
-						for (const piece of splitStringByTokenSize(
-							JSON.stringify(block.arguments),
-							minTokenSize,
-							maxTokenSize,
-						)) {
+						// edupi: `rawArguments` in a script streams malformed JSON as a model may send it.
+						const argumentsText =
+							(block as { rawArguments?: string }).rawArguments ?? JSON.stringify(block.arguments);
+						for (const piece of splitStringByTokenSize(argumentsText, minTokenSize, maxTokenSize)) {
 							await scheduleChunk(piece, options.tokensPerSecond);
 							if (init?.signal?.aborted) return controller.error(new Error("Request was aborted"));
 							send(chunk({ tool_calls: [{ index, function: { arguments: piece } }] }));
 						}
 					}
 				}
+				if ("streamError" in message) return controller.error(new Error(message.streamError));
 				send(chunk({}, FINISH_REASONS[message.stopReason] ?? "stop"));
 				send(chunk({}, null, usage));
 				controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -219,23 +224,32 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 
 // Reads a faux script: `{"models"?: [OpenRouter list items], "tokensPerSecond"?: n, "responses": [...]}`.
 // A response is a text string, `{"content": string | blocks, "stopReason"?}` (fauxAssistantMessage's
-// arguments) or `{"error": {"status"?, "message"}}` (an HTTP error, e.g. a context overflow).
+// arguments, plus `"streamError"`: the stream breaks with this error before the finish chunk) or
+// `{"error": {"status"?, "message"}}` (an HTTP error, e.g. a context overflow).
 // Blocks: `{"type": "text", "text"}`, `{"type": "thinking", "thinking"}`,
-// `{"type": "toolCall", "id", "name", "arguments"}`.
+// `{"type": "toolCall", "id", "name", "arguments", "rawArguments"?}` (rawArguments: text sent instead of the JSON).
 export function loadFauxScript(path: string): {
 	models: OpenRouterModel[];
 	tokensPerSecond?: number;
 	responses: FauxResponse[];
 } {
 	const script = JSON.parse(readFileSync(path, "utf8"));
-	type Step = string | FauxError | { content: string | FauxContentBlock[]; stopReason?: StopReason };
+	type Step =
+		| string
+		| FauxError
+		| { content: string | FauxContentBlock[]; stopReason?: StopReason; streamError?: string };
 	const responses = script.responses.map(
 		(step: Step): FauxResponse =>
 			typeof step === "string"
 				? fauxAssistantMessage(step)
 				: "error" in step
 					? step
-					: fauxAssistantMessage(step.content, { stopReason: step.stopReason }),
+					: step.streamError !== undefined
+						? {
+								...fauxAssistantMessage(step.content, { stopReason: step.stopReason }),
+								streamError: step.streamError,
+							}
+						: fauxAssistantMessage(step.content, { stopReason: step.stopReason }),
 	);
 	return { models: script.models ?? [], tokensPerSecond: script.tokensPerSecond, responses };
 }

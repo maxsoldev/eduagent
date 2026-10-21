@@ -1,10 +1,60 @@
 // Mirrors pi packages/ai/src/utils/validation.ts (pinned 16f5f0af4), validateToolArguments: the
 // model's arguments are checked against the tool's typebox schema before the tool runs. A failure
 // becomes an error tool result, so the model reads what was wrong and can try again.
-// edupi leaves out pi's extra coercion for plain JSON schemas and null-to-undefined fixes.
+// edupi leaves out pi's extra coercion for plain JSON schemas (edupi's tools all use typebox) and
+// pi's compiled-validator cache.
 import { Compile } from "typebox/compile";
 import { Value } from "typebox/value";
 import type { Tool, ToolCall } from "../types.ts";
+
+interface JsonSchemaObject {
+	properties?: Record<string, JsonSchemaObject>;
+	required?: string[];
+	items?: JsonSchemaObject | JsonSchemaObject[];
+}
+
+/**
+ * Models often send null for an optional argument they mean to leave out. pi deletes such a
+ * null when the property's schema does not allow null, so `Value.Convert` cannot turn it into 0 or "".
+ */
+function normalizeOptionalNulls(value: unknown, schema: JsonSchemaObject): void {
+	if (Array.isArray(value)) {
+		if (Array.isArray(schema.items)) {
+			for (let index = 0; index < value.length; index++) {
+				const itemSchema = schema.items[index];
+				if (itemSchema) normalizeOptionalNulls(value[index], itemSchema);
+			}
+		} else if (schema.items) {
+			for (const item of value) normalizeOptionalNulls(item, schema.items);
+		}
+		return;
+	}
+	if (typeof value !== "object" || value === null || !schema.properties) return;
+
+	const object = value as Record<string, unknown>;
+	const required = new Set(schema.required ?? []);
+	for (const [key, propertySchema] of Object.entries(schema.properties)) {
+		if (!(key in object)) continue;
+		if (
+			object[key] === null &&
+			!required.has(key) &&
+			typeof (propertySchema as { $ref?: unknown }).$ref !== "string" &&
+			getSubSchemaValidator(propertySchema)?.Check(null) === false
+		) {
+			delete object[key];
+		} else {
+			normalizeOptionalNulls(object[key], propertySchema);
+		}
+	}
+}
+
+function getSubSchemaValidator(schema: JsonSchemaObject): ReturnType<typeof Compile> | undefined {
+	try {
+		return Compile(schema as Tool["parameters"]);
+	} catch {
+		return undefined;
+	}
+}
 
 type ValidationError = { instancePath: string; keyword: string; message: string; params: unknown };
 
@@ -25,6 +75,7 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 		throw new Error(`Invalid arguments for tool "${toolCall.name}": ${toolCall.argumentsError}`);
 	}
 	const args = structuredClone(toolCall.arguments);
+	normalizeOptionalNulls(args, tool.parameters as JsonSchemaObject);
 	Value.Convert(tool.parameters, args);
 	const validator = Compile(tool.parameters);
 	if (validator.Check(args)) return args;

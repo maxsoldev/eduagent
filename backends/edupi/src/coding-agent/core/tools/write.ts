@@ -26,6 +26,7 @@ export function createWriteTool(cwd: string): AgentTool<WriteToolInput, undefine
 		description:
 			"Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
 		parameters: writeSchema,
+		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		async execute(_toolCallId, { path, content }, signal) {
 			const absolutePath = resolveToCwd(path, cwd);
 			return withFileMutationQueue(absolutePath, async () => {
