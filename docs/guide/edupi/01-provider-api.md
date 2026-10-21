@@ -32,18 +32,24 @@ Model ids name the provider and the model: `openai/gpt-6-luna`, `anthropic/claud
 
 ### A request
 
-This is the body edupi sends for its first prompt, recorded by the faux provider (see "Try it"):
+This is the body edupi sends for its first prompt, recorded by the faux provider (see "Try it"), shortened:
 
 ```json
 {
   "model": "openai/gpt-6-luna",
-  "messages": [{"role": "user", "content": [{"type": "text", "text": "Say hello."}]}],
+  "messages": [
+    {"role": "system", "content": "You are an expert coding assistant operating inside pi, ..."},
+    {"role": "user", "content": [{"type": "text", "text": "Say hello."}]}
+  ],
   "stream": true,
   "stream_options": {"include_usage": true},
   "store": false,
-  "max_completion_tokens": 16384
+  "max_completion_tokens": 16384,
+  "tools": [{"type": "function", "function": {"name": "read", "description": "...", "parameters": {...}}}, ...]
 }
 ```
+
+The system prompt ([chapter 03](03-prompt-assembly.md)) and the tools ([chapter 04](04-tools.md)) come from system messages in the transcript.
 
 - The request is stateless, as in Codex: the second request carries the first question and answer again. `store: false` asks the server to keep nothing.
 - `stream_options.include_usage` asks for one last chunk with the token counts.
@@ -92,11 +98,13 @@ So the agent loop never sees SSE, chunks or provider fields. This is why pi can 
 4. `client.chat.completions.create(params, {signal, maxRetries: 0})`, then push `start`.
 5. For each chunk: keep the response id and usage, map `finish_reason` (`stop` → `stop`, `tool_calls` → `toolUse`, `length` → `length`, anything else → error), turn `delta.content` into `text_start` / `text_delta`, and `delta.tool_calls` into `toolcall_start` / `toolcall_delta` (chapter 04).
 6. After the last chunk: `text_end` or `toolcall_end` (with the parsed arguments) for each block, then `done`. A stream without `finish_reason` is an error.
-7. Any exception becomes an `error` event with `stopReason: "error"` (or `"aborted"`). `stream()` never throws, so the loop has one way to see failures.
+7. Any exception becomes an `error` event with `stopReason: "error"` (or `"aborted"`). `stream()` never throws, so the loop has one way to see failures. The text is pi's `formatProviderError`: for an HTTP error the status and the error body, for example `400: {"message":"Invalid model","code":400}`. Unfinished blocks lose their stream buffers first, so a broken stream never persists them.
 
-`streamSimple()` is what the agent calls. It fills request options from the model (`maxTokens`), then calls `stream()`.
+`streamSimple()` is what the agent calls. It fills request options from the model (`maxTokens`), clamps the thinking level to the model and passes it on as the reasoning effort, then calls `stream()`.
 
-**The faux provider.** pi's tests use a faux provider: you queue assistant messages, and each request streams the next one back in random chunks of 3 to 5 "tokens" (4 characters each). edupi keeps that idea, but fakes the HTTP endpoint instead of the whole provider. `fauxProvider().fetch` is passed to the OpenAI SDK, and it answers each request with the Chat Completions SSE chunks for the next scripted message. So in tests the real `openai-completions.ts` code runs, and every request body can be recorded. `--faux script.json` turns it on; `--faux-log file.jsonl` writes one `{url, body}` line per request. A script is `{"responses": ["a text reply", {"content": [...], "stopReason": "stop"}]}`; a content block is `{"type": "text", "text"}`, `{"type": "thinking", "thinking"}` (streamed as `reasoning` deltas) or `{"type": "toolCall", "id", "name", "arguments"}` (streamed as `tool_calls` deltas, with `"stopReason": "toolUse"`). `"tokensPerSecond": n` slows the stream down, so a test can steer or abort while it runs.
+Two small text fixes run on the way, as in pi: `convertMessages` removes unpaired UTF-16 surrogates (half an emoji) from the text it sends (`sanitizeSurrogates`), and finished tool-call arguments with raw control characters or bad escapes in a string are repaired before they are parsed (`repairJson`). When the arguments are validated, a `null` for an optional argument counts as left out (`normalizeOptionalNulls` in `utils/validation.ts`).
+
+**The faux provider.** pi's tests use a faux provider: you queue assistant messages, and each request streams the next one back in random chunks of 3 to 5 "tokens" (4 characters each). edupi keeps that idea, but fakes the HTTP endpoint instead of the whole provider. `fauxProvider().fetch` is passed to the OpenAI SDK, and it answers each request with the Chat Completions SSE chunks for the next scripted message. So in tests the real `openai-completions.ts` code runs, and every request body can be recorded. `--faux script.json` turns it on; `--faux-log file.jsonl` writes one `{url, body}` line per request. A script is `{"responses": ["a text reply", {"content": [...], "stopReason": "stop"}]}`; a content block is `{"type": "text", "text"}`, `{"type": "thinking", "thinking"}` (streamed as `reasoning` deltas) or `{"type": "toolCall", "id", "name", "arguments"}` (streamed as `tool_calls` deltas, with `"stopReason": "toolUse"`). `"tokensPerSecond": n` slows the stream down, so a test can steer or abort while it runs. For error paths: `{"error": {"status", "message"}}` is an HTTP error, `"streamError": "text"` on a reply breaks its stream before the finish chunk, and `"rawArguments": "text"` on a tool call streams that text instead of the JSON of `arguments`.
 
 The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-provider.test.ts) check the recorded bodies.
 
@@ -105,6 +113,7 @@ The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-prov
 ## In pi
 
 - [`stream`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L304) in `packages/ai/src/api/openai-completions.ts` is the main function. [`streamSimple`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L738), [`createClient`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L759), [`buildParams`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L804), [`convertMessages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1197) (the [`developer` or `system` choice](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1239)), [`parseChunkUsage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1527) and [`mapStopReason`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1570) are in the same file. OpenRouter's [`reasoning` field](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L942) is one of many reasoning formats pi supports.
+- Errors and text fixes: [the `catch` block](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L709) of `stream`, [`normalizeProviderError`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/error-body.ts#L38) and [`formatProviderError`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/error-body.ts#L128), [`sanitizeSurrogates`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/sanitize-unicode.ts#L21), [`repairJson`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/json-parse.ts#L33).
 - [`OPENROUTER_BASE_URL`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/openrouter.ts#L13) and [`openrouterProvider`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/openrouter.ts#L62): OpenRouter offers two APIs in pi, `openai-completions` and `anthropic-messages` (for Claude models).
 - The stream types: [`AssistantMessageEvent`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/types.ts#L790) with the protocol rules in its comment, and [`AssistantMessageEventStream`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/event-stream.ts#L97).
 - The faux provider: [`fauxAssistantMessage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/faux.ts#L78), [`streamWithDeltas`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/faux.ts#L356), [`createFauxCore`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/faux.ts#L454).
@@ -123,7 +132,11 @@ The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-prov
 - **Reasoning text only.** Reasoning deltas (`reasoning_content`, `reasoning`, `reasoning_text`) become a thinking block and go back in the same field. OpenRouter's structured `reasoning_details` are not kept.
 - **No retries.** pi retries some provider errors (`retryProviderRequest`); edupi calls once.
 - **No `max_completion_tokens` clamp.** pi lowers it so that the prompt plus the answer fit in the context window. edupi sends the model's `maxTokens`.
-- **Fewer compat switches.** pi detects about twenty differences between OpenAI-compatible servers (`detectCompat`). edupi keeps only OpenRouter's values.
+- **Fewer compat switches.** pi detects about twenty differences between OpenAI-compatible servers (`detectCompat`). edupi keeps only OpenRouter's values. So it also leaves out pi's handling of other servers' quirks: usage inside `choices[0]`, other cached-token fields, tool-call deltas without an `index` (pi matches them by id), non-object chunks.
+- **No Anthropic prompt caching.** For `anthropic/` models pi uses OpenRouter's Anthropic Messages API, and adds `cache_control` marks in Chat Completions. edupi sends every model the same Chat Completions body.
+- **No `User-Agent` header and no request timeout.** pi sends `User-Agent: pi (<os> <release>; <arch>)` and supports `timeoutMs`; edupi sends the SDK's defaults.
+- **No early key check in `streamSimple`.** pi's `streamSimple` throws at once without an API key; edupi's `stream()` turns it into an `error` event. `AgentSession.prompt` checks the key before a run in both.
+- **Error text from the OpenAI SDK only.** pi's `normalizeProviderError` also reads the error shapes of the Mistral, Google and Bedrock SDKs.
 - **The faux provider fakes HTTP**, not the API (see above), and has no deferred responses or factory steps.
 
 ## Try it
