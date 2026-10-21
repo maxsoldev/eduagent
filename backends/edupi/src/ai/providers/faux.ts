@@ -3,9 +3,12 @@
 // small random chunks, as a real model would.
 // Unlike pi's faux provider, which replaces the whole API, edupi's fakes only the HTTP endpoint:
 // it is a `fetch` for the OpenAI SDK that answers with Chat Completions SSE chunks. So the real
-// openai-completions code runs in tests too, and every request body can be recorded.
+// openai-completions code runs in tests too, and every request body can be recorded. It also
+// answers OpenRouter's GET /models with the models of the script, so model metadata (context
+// window, prices) comes from the faux provider in tests.
 import { readFileSync } from "node:fs";
 import type { AssistantMessage, JsonObject, StopReason, TextContent, ToolCall } from "../types.ts";
+import type { OpenRouterModel } from "./openrouter.ts";
 
 const DEFAULT_MIN_TOKEN_SIZE = 3;
 const DEFAULT_MAX_TOKEN_SIZE = 5;
@@ -40,6 +43,7 @@ export interface RegisterFauxProviderOptions {
   tokensPerSecond?: number; // delay between chunks; unset = as fast as possible
   tokenSize?: { min?: number; max?: number }; // chunk size in tokens (4 characters each)
   onRequest?: (request: { url: string; body: unknown }) => void;
+  models?: OpenRouterModel[]; // the GET /models list
 }
 
 export interface FauxProvider {
@@ -81,6 +85,7 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 
   const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = String(input instanceof Request ? input.url : input);
+    if ((init?.method ?? "GET") === "GET" && url.endsWith("/models")) return Response.json({ data: options.models ?? [] });
     const body = JSON.parse(String(init?.body ?? "null"));
     options.onRequest?.({ url, body });
     state.callCount++;
@@ -147,12 +152,14 @@ export function fauxProvider(options: RegisterFauxProviderOptions = {}): FauxPro
 }
 
 /**
- * Reads a faux script file: `{"responses": [...]}`. A response is a string (one text reply) or
- * `{"content": string | blocks, "stopReason"?: ...}`, the arguments of fauxAssistantMessage.
+ * Reads a faux script file: `{"models"?: [...], "responses": [...]}`. `models` is the GET /models
+ * list (OpenRouter's fields). A response is a string (one text reply) or `{"content": string |
+ * blocks, "stopReason"?: ...}`, the arguments of fauxAssistantMessage.
  * A block is `{"type": "text", "text"}` or `{"type": "toolCall", "id", "name", "arguments"}`.
  */
-export function loadFauxScript(path: string): AssistantMessage[] {
+export function loadFauxScript(path: string): { models: OpenRouterModel[]; responses: AssistantMessage[] } {
   const script = JSON.parse(readFileSync(path, "utf8"));
-  return script.responses.map((step: string | { content: string | FauxContentBlock[]; stopReason?: StopReason }) =>
+  const responses = script.responses.map((step: string | { content: string | FauxContentBlock[]; stopReason?: StopReason }) =>
     typeof step === "string" ? fauxAssistantMessage(step) : fauxAssistantMessage(step.content, { stopReason: step.stopReason }));
+  return { models: script.models ?? [], responses };
 }
