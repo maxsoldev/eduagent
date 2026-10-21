@@ -223,7 +223,7 @@ It is used in three places:
 
 1. **Web UI, offline:**
    ```bash
-   cd web && pnpm install && pnpm build && cd ..
+   (cd ../.. && pnpm install && pnpm build)
    uv run educodex app-server --fake-model examples/fake/demo.json --cwd /tmp/edx
    ```
    (`mkdir -p /tmp/edx` first.) Open http://127.0.0.1:8765 and send any message (the box unlocks once the thread has started). Click rows in the **Timeline** and follow the "guide ch.NN" and "Codex:" links. In **Requests**, confirm that each request only appends items.
@@ -237,7 +237,7 @@ It is used in three places:
 5. **Tests:**
    ```bash
    uv run --group dev pytest tests/test_app_server.py tests/test_tui.py
-   cd web && pnpm exec playwright install chromium && pnpm build && pnpm test:e2e
+   cd ../../visualiser && pnpm exec playwright install chromium && pnpm build && pnpm test:e2e
    ```
 6. **Write your own client.** In ~30 lines of Python, start `educodex app-server --listen stdio://`, opt out of every `trace/*` method, and print only `item/completed` items. That is a complete (if plain) agent UI.
 

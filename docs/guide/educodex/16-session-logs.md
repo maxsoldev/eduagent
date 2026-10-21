@@ -19,7 +19,7 @@ Codex writes every session to a **rollout file**: one JSON object per line (JSON
                   └─ YYYY/MM/DD ┘        └─ local start time ┘ └──────── thread id ────────────┘
 ```
 
-educodex uses the same layout under `~/.educodex/sessions/` (or `$EDUCODEX_HOME/sessions/`).
+educodex uses the same layout under `~/.eduagent/.educodex/sessions/` (or `$EDUCODEX_HOME/sessions/`).
 
 ### What a line looks like
 
@@ -157,7 +157,7 @@ Run something, then read its log (needs `OPENROUTER_API_KEY`):
 
 ```bash
 uv run educodex exec "List the files here and count them"
-f=$(find ~/.educodex/sessions -name 'rollout-*.jsonl' | sort | tail -1)
+f=$(find ~/.eduagent/.educodex/sessions -name 'rollout-*.jsonl' | sort | tail -1)
 jq -r '.type + " " + (.payload.type // "")' "$f"
 ```
 

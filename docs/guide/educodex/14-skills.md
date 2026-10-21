@@ -52,7 +52,7 @@ Skills live in **roots**, folders the harness scans:
 | `<home>/skills/` | user | The older Codex location (Codex marks it deprecated) |
 | `<home>/skills/.system/` | system | Skills that ship with the harness |
 
-`<home>` is `~/.codex` in Codex and `~/.educodex` in educodex. `.agents/skills` is a convention shared by several agents, so one skill folder can work with Codex, Claude Code and others.
+`<home>` is `~/.codex` in Codex and `~/.eduagent/.educodex` in educodex. `.agents/skills` is a convention shared by several agents, so one skill folder can work with Codex, Claude Code and others.
 
 ## In educodex
 

@@ -172,7 +172,7 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 
 ## Try it
 
-1. Start the server and open http://127.0.0.1:8765 (build the UI first: `cd web && pnpm install && pnpm build`):
+1. Start the server and open http://127.0.0.1:8765 (build the UI first: `(cd ../.. && pnpm install && pnpm build)`):
    ```bash
    uv run educodex app-server
    ```

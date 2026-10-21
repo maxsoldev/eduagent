@@ -4,6 +4,8 @@ A guide to how coding agents work under the hood. It goes from "what is an LLM A
 
 No prior knowledge of agents is needed. You should be comfortable reading Python.
 
+This is the educodex section of the eduagent guide. Paths and commands in it are relative to `backends/educodex/`, where educodex's Python package lives. Run them from there.
+
 ## How to read each chapter
 
 Every chapter uses the same blocks:

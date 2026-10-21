@@ -216,7 +216,7 @@ uv run educodex exec --mcp notes="python examples/mcp/notes_server.py" \
   "Add a note 'buy milk', then list all notes"
 ```
 
-Watch for `trace/mcpToolExposed` at the start, then a `policy` line for each call. Notes are stored in `~/.educodex/notes.json`. Set `NOTES_FILE=/tmp/notes.json` to keep them elsewhere.
+Watch for `trace/mcpToolExposed` at the start, then a `policy` line for each call. Notes are stored in `~/.eduagent/.educodex/notes.json`. Set `NOTES_FILE=/tmp/notes.json` to keep them elsewhere.
 
 In the web UI:
 

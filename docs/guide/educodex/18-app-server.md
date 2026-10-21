@@ -175,7 +175,7 @@ if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1")
    When `item/commandExecution/requestApproval` arrives, answer it with its id: `{"id":"srv-…","result":{"decision":"decline"}}`.
 2. **Remove the noise.** Add `"trace/promptAssembled"`, `"trace/modelRequest"` and other `trace/*` names to `optOutNotificationMethods`. What is left is what a Codex client would see.
 3. **Step mode.** After `thread/start`, send `{"id":4,"method":"debug/stepMode/set","params":{"threadId":"…","enabled":true}}`. Then start a turn and send `{"id":5,"method":"debug/continue","params":{"threadId":"…"}}` after each `trace/paused`.
-4. **Watch the wire in the browser.** Run `uv run educodex app-server --fake-model examples/fake/demo.json` (build the UI first: `cd web && pnpm install && pnpm build`), open http://127.0.0.1:8765 and use the **Protocol** tab. It lists every message in both directions.
+4. **Watch the wire in the browser.** Run `uv run educodex app-server --fake-model examples/fake/demo.json` (build the UI first: `(cd ../.. && pnpm install && pnpm build)`), open http://127.0.0.1:8765 and use the **Protocol** tab. It lists every message in both directions.
 
 ## Further reading
 - [Unlocking the Codex harness: how we built the App Server](https://openai.com/index/unlocking-the-codex-harness/): why JSON-RPC, the three primitives, and how IDEs, web and the TUI embed it.

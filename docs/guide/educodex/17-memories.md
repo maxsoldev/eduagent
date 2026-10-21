@@ -20,7 +20,7 @@ Two ideas from earlier chapters come back:
 ### The memory folder
 
 ```
-~/.educodex/memories/            (Codex: ~/.codex/memories/)
+~/.eduagent/.educodex/memories/  (Codex: ~/.codex/memories/)
 ├── memory_summary.md     goes into every new thread's prompt; first line is "v1"
 ├── MEMORY.md             the handbook: task groups, keywords, what worked, what failed
 ├── raw_memories.md       input of phase 2: all phase-1 notes, one section per thread

@@ -131,7 +131,7 @@ def plain_segments(cmd: str) -> list[list[str]] | None:
     ...
 ```
 
-**Rules** ([`policy/rules.py`](../../../backends/educodex/src/educodex/core/policy/rules.py)). Rule files use Codex's syntax, but are read with Python's `ast` module, and only `prefix_rule(pattern=..., decision=..., justification=...)` is supported. They load from `~/.educodex/rules/*.rules` (or `$EDUCODEX_HOME/rules/`), plus `Config(rules=[{"pattern": [...], "decision": ...}])`. Strictness is just the order of a tuple:
+**Rules** ([`policy/rules.py`](../../../backends/educodex/src/educodex/core/policy/rules.py)). Rule files use Codex's syntax, but are read with Python's `ast` module, and only `prefix_rule(pattern=..., decision=..., justification=...)` is supported. They load from `~/.eduagent/.educodex/rules/*.rules` (or `$EDUCODEX_HOME/rules/`), plus `Config(rules=[{"pattern": [...], "decision": ...}])`. Strictness is just the order of a tuple:
 
 ```python
 DECISIONS = ("allow", "prompt", "forbidden")
@@ -219,8 +219,8 @@ Look at the third line: the allow rule for `git status` does *not* apply, and th
 Write a rule file and watch it in a real run (needs an API key):
 
 ```bash
-mkdir -p ~/.educodex/rules
-echo 'prefix_rule(pattern=["git", "log"], decision="forbidden", justification="use git show")' > ~/.educodex/rules/demo.rules
+mkdir -p ~/.eduagent/.educodex/rules
+echo 'prefix_rule(pattern=["git", "log"], decision="forbidden", justification="use git show")' > ~/.eduagent/.educodex/rules/demo.rules
 uv run educodex exec "Run git status and then git log -1, and tell me what happened"
 ```
 

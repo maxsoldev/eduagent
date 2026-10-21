@@ -1,4 +1,8 @@
-# educodex
+# eduagent
+
+Readable re-implementations of real coding-agent harnesses, with one web UI (the visualiser) that shows every hidden step. The first backend is **educodex**, below. The repo layout is in [`AGENTS.md`](AGENTS.md#repo-layout).
+
+## educodex
 
 **An educational Python re-implementation of the [OpenAI Codex](https://github.com/openai/codex) harness, in which every hidden step is visible.**
 
@@ -12,11 +16,13 @@ CLI ────────────┘                                     
 ```
 
 - **Same wire format as Codex.** It uses the stateless Responses API (`store: false`, full history on every call), base instructions as the first developer message, the freeform `apply_patch` tool with Codex's Lark grammar, `exec_command`/`write_stdin`, and MCP namespace tools.
-- **Codex's own prompts.** System prompts, permission texts, the compaction prompt and the Seatbelt sandbox policies are copied from Codex at a pinned commit (`src/educodex/vendor/codex/`).
+- **Codex's own prompts.** System prompts, permission texts, the compaction prompt and the Seatbelt sandbox policies are copied from Codex at a pinned commit (`backends/educodex/src/educodex/vendor/codex/`).
 - **Real guardrails.** Approval policies, a dangerous-command check, exec-policy prefix rules, and the macOS `sandbox-exec` sandbox.
-- **Every module names the Codex file it mirrors.** A guide in [`docs/guide/`](docs/guide/README.md) walks from basics to advanced topics.
+- **Every module names the Codex file it mirrors.** A guide in [`docs/guide/educodex/`](docs/guide/educodex/README.md) walks from basics to advanced topics.
 
 ## Quick start
+
+Run these from `backends/educodex/`. The `.env` file can sit there or at the repo root.
 
 ```bash
 echo 'OPENROUTER_API_KEY=sk-or-...' > .env      # uses openai/gpt-6-luna via OpenRouter by default
@@ -26,7 +32,7 @@ uv sync --group dev
 uv run educodex exec --cwd /path/to/project "Fix the failing test"
 
 # The web UI
-(cd web && pnpm install && pnpm build)
+(cd ../.. && pnpm install && pnpm build)
 uv run educodex app-server --cwd /path/to/project     # open http://127.0.0.1:8765
 
 # Offline demo: a scripted fake model, no API key needed
@@ -42,6 +48,8 @@ uv run educodex exec --mcp notes="python examples/mcp/notes_server.py" "List my 
 Options: `--approval on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--effort low|medium|high`, `--network`, `--model openai/<slug>`, `--memories`.
 
 In the web UI and the TUI, type `/` for commands (`/skills`, `/new`, `/compact`, `/memory-update`, `/memory-drop`) and `$` to use a skill. Skills are `SKILL.md` folders in `.agents/skills/` of your project or `~/.agents/skills/`.
+
+**Home folder.** educodex keeps sessions, rules, skills and memories in `~/.eduagent/.educodex` (laid out as `~/.codex`). Set `EDUCODEX_HOME` to use another folder. The home used to be `~/.educodex`. If you have one, move it by hand: `mkdir -p ~/.eduagent && mv ~/.educodex ~/.eduagent/.educodex`.
 
 ## What the web UI shows
 
@@ -60,11 +68,13 @@ Turn on **step mode** to pause before every model request and tool call.
 ## Tests
 
 ```bash
-uv run --group dev pytest           # core, policy, sandbox, MCP, app server, TUI
-cd web && pnpm test:e2e             # Playwright: drives the web UI against the fake model
+cd backends/educodex && uv run --group dev pytest   # core, policy, sandbox, MCP, app server, TUI
+pnpm test:e2e                                       # at the repo root. Playwright: drives the web UI against the fake model
 ```
 
 ## Layout
+
+Paths are relative to `backends/educodex/`, except the last two rows.
 
 | Path | What |
 |---|---|
@@ -80,7 +90,7 @@ cd web && pnpm test:e2e             # Playwright: drives the web UI against the 
 | `src/educodex/core/probe.py` | No-op observability hooks the core calls (like Codex's OpenTelemetry calls, `otel/`) |
 | `src/educodex/observe/` | educodex only: `trace/*` events (`Tracer`), costs, step mode |
 | `src/educodex/app_server/` | JSON-RPC lite server (`app-server/`, `app-server-protocol/`) |
-| `web/` | React UI |
-| `docs/design.md`, `docs/guide/` | Design and the guide |
+| `visualiser/` (repo root) | React UI |
+| `docs/design.md`, `docs/guide/educodex/` (repo root) | Design and the guide |
 
-Codex files under `src/educodex/vendor/codex/` are Apache-2.0 (see its `LICENSE`/`NOTICE`). Re-sync them with `uv run scripts/sync_vendor.py ../codex`.
+Codex files under `src/educodex/vendor/codex/` are Apache-2.0 (see its `LICENSE`/`NOTICE`). Re-sync them with `uv run scripts/sync_vendor.py [path/to/codex]` from `backends/educodex/`.

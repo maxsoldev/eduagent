@@ -96,7 +96,7 @@ fragments.append(render_environment_context(config.cwd, config.sandbox_mode, roo
 
 (`developer_instructions` comes first when set.) Each renderer lives in its own module:
 - [`permissions.py`](../../../backends/educodex/src/educodex/core/context/permissions.py) joins Codex's vendored templates (`sandbox_mode/*.md` + `approval_policy/*.md`). Under `workspace-write` it ends with every root the sandbox lets the agent write, e.g. ``The writable roots are `/repo`, `/private/tmp`, `/private/var/folders/…/T`.`` (cwd, `/tmp` and `$TMPDIR`, the same list the Seatbelt policy uses, chapter 10).
-- [`agents_md.py`](../../../backends/educodex/src/educodex/core/context/agents_md.py) finds `AGENTS.override.md` or `AGENTS.md` in the educodex home (`~/.educodex`) and in every folder from the git root down to cwd, up to 32 KiB in total.
+- [`agents_md.py`](../../../backends/educodex/src/educodex/core/context/agents_md.py) finds `AGENTS.override.md` or `AGENTS.md` in the educodex home (`~/.eduagent/.educodex`) and in every folder from the git root down to cwd, up to 32 KiB in total.
 - [`environment.py`](../../../backends/educodex/src/educodex/core/context/environment.py) writes `<environment_context>`.
 
 `diff` and `to_messages` implement "append only what changed":
