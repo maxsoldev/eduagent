@@ -7,12 +7,13 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 | Path | What |
 |---|---|
 | `backends/educodex/` | educodex, the Codex backend (Python): `src/educodex/`, `tests/`, `scripts/`, `examples/`, `spikes/`, `pyproject.toml`, `uv.lock` |
+| `backends/edupi/` | edupi, the pi backend (TypeScript, run with tsx): `src/ai/`, `src/agent/`, `src/coding-agent/` mirror pi's packages; `test/` (vitest over stdio, with the faux provider); `bin/edupi.mjs` |
 | `visualiser/` | The shared web UI (React, Vite, Playwright tests in `e2e/`) |
 | `launcher/` | Serves the visualiser and starts one stdio backend per viewer (TypeScript, tsx). Backend list in `backends.json`; `backends.local.json` is git-ignored; `backends.test.json` is for Playwright |
-| `docs/guide/<backend>/` | The guide, one section per backend (`docs/guide/educodex/` now) |
+| `docs/guide/<backend>/` | The guide, one section per backend (`docs/guide/educodex/`, `docs/guide/edupi/`) |
 | `docs/design.md` | educodex design |
 | `docs/adr/`, `GLOSSARY.md` | Architecture decisions and domain terms for the suite |
-| `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`, `launcher`) |
+| `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`, `launcher`, `backends/edupi`) |
 
 ## Harness sources
 
@@ -39,11 +40,19 @@ Guide links use the pinned commit.
 - Home: `~/.eduagent/.educodex` (laid out as `~/.codex`); `EDUCODEX_HOME` overrides it.
 - `educodex app-server` speaks stdio only (Codex's default transport). It has no web server; the launcher serves the visualiser and the guide. Test it over stdio with the `app_server` fixture in `backends/educodex/tests/conftest.py`.
 
+### edupi only
+
+- Each file starts with the pi file it mirrors at `16f5f0af4`. Folders and file names follow pi's packages (`packages/ai/src` → `src/ai`, `packages/agent/src` → `src/agent`, `packages/coding-agent/src` → `src/coding-agent`).
+- The core is `src/ai/`, `src/agent/` and `src/coding-agent/core/`. It never imports `src/observe/`, `src/coding-agent/modes/`, `src/coding-agent/cli/` or `main.ts` (`backends/edupi/test/layers.test.ts`).
+- Dependencies are pi's own only: the OpenAI SDK (pointed at OpenRouter), and later typebox, diff and yaml.
+- `edupi --mode rpc` speaks pi's RPC protocol unchanged. Test it over stdio with `startEdupi(script)` in `backends/edupi/test/rpc-client.ts`; `--faux script.json` replaces OpenRouter with the faux provider, `--faux-log file` records each request body.
+
 ## Commands
 
 ```bash
 cd backends/educodex && uv run --group dev pytest   # educodex Python tests
 pnpm install && pnpm build                          # at the repo root: build the visualiser
+pnpm test                                           # at the repo root: vitest for the visualiser and edupi (edupi also typechecks)
 pnpm test:e2e                                       # at the repo root: Playwright tests (starts the launcher with backends.test.json)
 pnpm eduagent                                       # at the repo root: start the launcher on http://127.0.0.1:8765
 ```

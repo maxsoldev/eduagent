@@ -1,3 +1,4 @@
 packages:
   - visualiser
   - launcher
+  - backends/edupi

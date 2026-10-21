@@ -1,0 +1,133 @@
+// Mirrors pi packages/coding-agent/src/core/agent-session.ts (pinned 16f5f0af4): the coding
+// agent's session around the Agent. Every mode (pi's TUI, print, JSON, RPC) drives an
+// AgentSession. It turns a prompt into a run, forwards the Agent's events with the session's
+// own events added (agent_settled), and answers the state questions of get_state.
+import type { Agent } from "../../agent/agent.ts";
+import type { AgentEvent, AgentMessage } from "../../agent/types.ts";
+import type { ImageContent, Model, ThinkingLevel } from "../../ai/types.ts";
+
+/** The Agent's events, with willRetry on agent_end, plus the session's own events. */
+export type AgentSessionEvent =
+  | Exclude<AgentEvent, { type: "agent_end" }>
+  | { type: "agent_end"; messages: AgentMessage[]; willRetry: boolean }
+  | { type: "agent_settled"; aborted: boolean };
+
+export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
+
+export type PromptDisposition = "handled" | "queued" | "started";
+
+export interface PromptOptions {
+  images?: ImageContent[];
+  /** While a run is active, queue the prompt as a steering or follow-up message. */
+  streamingBehavior?: "steer" | "followUp";
+  /** Called once the prompt is accepted, before the first model request. */
+  preflightResult?: (disposition: PromptDisposition) => void;
+}
+
+export interface AgentSessionConfig {
+  agent: Agent;
+  sessionId: string;
+  /** The key for a provider, or undefined if none is configured. */
+  getApiKey: (provider: string) => string | undefined;
+}
+
+export class AgentSession {
+  readonly agent: Agent;
+  private readonly _sessionId: string;
+  private readonly _getApiKey: (provider: string) => string | undefined;
+  private _eventListeners: AgentSessionEventListener[] = [];
+  private _isAgentRunActive = false; // from _startRun until agent_settled
+
+  constructor(config: AgentSessionConfig) {
+    this.agent = config.agent;
+    this._sessionId = config.sessionId;
+    this._getApiKey = config.getApiKey;
+    this.agent.subscribe(this._handleAgentEvent);
+  }
+
+  subscribe(listener: AgentSessionEventListener): () => void {
+    this._eventListeners.push(listener);
+    return () => {
+      this._eventListeners = this._eventListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private _emit(event: AgentSessionEvent): void {
+    for (const listener of this._eventListeners) listener(event);
+  }
+
+  private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+    this._emit(event.type === "agent_end" ? { ...event, willRetry: false } : event); // edupi has no auto-retry
+  };
+
+  get model(): Model {
+    return this.agent.state.model;
+  }
+
+  get thinkingLevel(): ThinkingLevel {
+    return this.agent.state.thinkingLevel;
+  }
+
+  get isStreaming(): boolean {
+    return this._isAgentRunActive;
+  }
+
+  get isCompacting(): boolean {
+    return false; // edupi does not compact yet
+  }
+
+  get steeringMode(): "all" | "one-at-a-time" {
+    return "one-at-a-time"; // pi's default (settings-defaults.ts)
+  }
+
+  get followUpMode(): "all" | "one-at-a-time" {
+    return "one-at-a-time";
+  }
+
+  get sessionId(): string {
+    return this._sessionId;
+  }
+
+  get messages(): AgentMessage[] {
+    return this.agent.state.messages;
+  }
+
+  get pendingMessageCount(): number {
+    return 0; // no steering or follow-up queues yet
+  }
+
+  get autoCompactionEnabled(): boolean {
+    return false; // edupi does not compact yet; pi's default is true
+  }
+
+  /**
+   * Sends a prompt. While a run is active it needs a streamingBehavior. Before the run starts it
+   * checks the model's API key; after preflightResult("started"), failures arrive as events.
+   */
+  async prompt(text: string, options?: PromptOptions): Promise<void> {
+    if (this.isStreaming) {
+      throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+    }
+    if (!this._getApiKey(this.model.provider)) {
+      throw new Error(`No API key found for ${this.model.provider}.\n\nSet OPENROUTER_API_KEY in the environment or in the repo-root .env file.`);
+    }
+    await this._startRun(text, options?.images ?? [], () => options?.preflightResult?.("started"));
+  }
+
+  /** One run: the user message, then the Agent's loop, then agent_settled. */
+  private async _startRun(text: string, images: ImageContent[], onStarted?: () => void): Promise<void> {
+    this._isAgentRunActive = true;
+    const messages: AgentMessage[] = [{ role: "user", content: [{ type: "text", text }, ...images], timestamp: Date.now() }];
+    onStarted?.();
+    try {
+      await this.agent.prompt(messages);
+    } finally {
+      this._emitAgentSettled();
+    }
+  }
+
+  private _emitAgentSettled(): void {
+    this._isAgentRunActive = false;
+    this._emit({ type: "agent_settled", aborted: false });
+  }
+}

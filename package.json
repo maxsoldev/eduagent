@@ -5,6 +5,6 @@
     "eduagent": "pnpm --silent --filter @eduagent/launcher exec tsx src/main.ts",
     "build": "pnpm --filter @eduagent/visualiser build",
     "test:e2e": "pnpm --filter @eduagent/visualiser test:e2e",
-    "test": "pnpm --filter @eduagent/visualiser test"
+    "test": "pnpm --filter @eduagent/visualiser --filter @eduagent/edupi test"
   }
 }

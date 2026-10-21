@@ -1,6 +1,6 @@
 # eduagent
 
-Readable re-implementations of real coding-agent harnesses, with one web UI (the visualiser) that shows every hidden step. The first backend is **educodex**, below. The repo layout is in [`AGENTS.md`](AGENTS.md#repo-layout).
+Readable re-implementations of real coding-agent harnesses, with one web UI (the visualiser) that shows every hidden step. The backends are **educodex** (Codex, Python, below) and **edupi** (pi, TypeScript, see [its guide](docs/guide/edupi/README.md)). The repo layout is in [`AGENTS.md`](AGENTS.md#repo-layout).
 
 ## Start the launcher
 
@@ -15,6 +15,10 @@ pnpm eduagent                                 # open http://127.0.0.1:8765
 Pick a backend and a working directory (prefilled with the directory where you ran `pnpm eduagent`), then click **Open**. To compare backends, open a second tab and pick another one. Each tab gets its own process; closing the tab stops it. Options: `--port 8765`, `--cwd DIR` (the prefilled directory), `--config FILE` (relative to `launcher/`).
 
 The backends are listed in [`launcher/backends.json`](launcher/backends.json). Each entry has a `name`, the `harness` it re-implements, the `protocol` it speaks, the `command` to run (an argv list, no shell, `${REPO}` and `${ENV_VAR}` are replaced), an optional `env`, and `capabilities`. For machine-specific entries, create `launcher/backends.local.json` in the same format. It is git-ignored, and an entry there replaces the shared entry with the same name. For the visualiser's hot reload, run `pnpm --filter @eduagent/visualiser dev` next to the launcher; Vite forwards `/backends` and `/guide` to it.
+
+## edupi
+
+**A readable TypeScript re-implementation of the [pi](https://github.com/earendil-works/pi) harness** at the pinned commit `16f5f0af4`. It speaks pi's RPC protocol over stdio, so the visualiser uses the same adapter for edupi and for the real pi. It calls OpenRouter's Chat Completions endpoint with the OpenAI SDK; the default model is `openai/gpt-6-luna`, as for educodex. Pick **edupi** in the launcher. Its code is in `backends/edupi/`, its tests run with `pnpm test`, and its guide is [`docs/guide/edupi/`](docs/guide/edupi/README.md).
 
 ## The real pi
 

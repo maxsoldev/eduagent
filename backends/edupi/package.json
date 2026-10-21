@@ -1,0 +1,23 @@
+{
+  "name": "@eduagent/edupi",
+  "private": true,
+  "version": "0.1.0",
+  "description": "edupi: a readable TypeScript re-implementation of the pi harness",
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "bin": { "edupi": "bin/edupi.mjs" },
+  "scripts": {
+    "start": "node bin/edupi.mjs --mode rpc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "openai": "7.19.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.5"
+  }
+}

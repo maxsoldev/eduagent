@@ -1,0 +1,145 @@
+# 01 — The provider API
+
+Read [educodex chapter 02, Talking to a model](../educodex/02-talking-to-a-model.md) first. It explains requests, roles, tokens, streaming with SSE and stateless requests. This chapter shows what pi does differently.
+
+## Concept
+
+### Two OpenAI APIs
+
+OpenAI has two HTTP APIs for chat models, and other providers copy both:
+
+| | Chat Completions | Responses |
+|---|---|---|
+| Endpoint | `POST /chat/completions` | `POST /responses` |
+| History | `messages`: a list of `{role, content}` | `input`: a list of typed items |
+| Tool calls | inside the assistant message: `tool_calls[]` | separate `function_call` items |
+| Tool results | `{role: "tool", tool_call_id, content}` messages | `function_call_output` items |
+| Reasoning | provider-specific fields (`reasoning`, `reasoning_content`, ...) | `reasoning` items with `encrypted_content` |
+| Stream | `chat.completion.chunk` deltas | named events (`response.output_text.delta`, ...) |
+
+Chat Completions is older and simpler. Almost every provider and proxy accepts it, so it is the common language of the model world. Codex uses only Responses. pi supports both, and many more provider APIs. edupi uses only Chat Completions, as pi does for OpenRouter.
+
+### OpenRouter is an OpenAI-compatible endpoint
+
+[OpenRouter](https://openrouter.ai/docs/quickstart) routes one request to many model providers (OpenAI, Anthropic, Google, open models). It accepts the OpenAI Chat Completions format at `https://openrouter.ai/api/v1/chat/completions`. So the official OpenAI SDK works with it: you only change the base URL and the key.
+
+```ts
+const client = new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: "https://openrouter.ai/api/v1" });
+const stream = await client.chat.completions.create({ model: "openai/gpt-6-luna", messages, stream: true });
+```
+
+Model ids name the provider and the model: `openai/gpt-6-luna`, `anthropic/claude-sonnet-5`. One code path reaches every model family. OpenRouter adds a few fields of its own, for example one `reasoning: {effort}` object for every model family (chapter 02 of this section, when edupi has thinking levels).
+
+### A request
+
+This is the body edupi sends for its first prompt, recorded by the faux provider (see "Try it"):
+
+```json
+{
+  "model": "openai/gpt-6-luna",
+  "messages": [{"role": "user", "content": [{"type": "text", "text": "Say hello."}]}],
+  "stream": true,
+  "stream_options": {"include_usage": true},
+  "store": false,
+  "max_completion_tokens": 16384
+}
+```
+
+- The request is stateless, as in Codex: the second request carries the first question and answer again. `store: false` asks the server to keep nothing.
+- `stream_options.include_usage` asks for one last chunk with the token counts.
+- Assistant text goes back as a plain string: `{"role": "assistant", "content": "First answer."}`.
+
+### A streamed reply
+
+The server sends SSE lines. Each `data:` line is a `chat.completion.chunk` (shortened below). The first chunk names the role, the next ones carry text deltas, one chunk has the `finish_reason`, and the last one has `usage` and no `choices`:
+
+```
+data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}
+data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"content":"Hello from t"}}]}
+data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"content":"he faux model."}}]}
+data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+data: {"id":"chatcmpl-1","choices":[],"usage":{"prompt_tokens":17,"completion_tokens":7,"total_tokens":24}}
+data: [DONE]
+```
+
+Compare this with the Responses stream in educodex chapter 02. Chat Completions has no "item done" event: the client must build the final message from the deltas itself.
+
+### pi's own message format
+
+pi does not keep Chat Completions messages in its history. Its provider layer (`packages/ai`) has **one message format for every provider**: `user`, `assistant` (with `text`, `thinking` and `toolCall` content blocks), `toolResult` and `system` messages. Each provider API converts this format to its wire format before a request, and turns the stream back into **AssistantMessageEvents**:
+
+```
+start → text_start → text_delta* → text_end → done      (or error)
+```
+
+So the agent loop never sees SSE, chunks or provider fields. This is why pi can switch a session from one provider to another between two requests.
+
+## In edupi
+
+| File | Mirrors (pi) | What it does |
+|---|---|---|
+| [`src/ai/types.ts`](../../../backends/edupi/src/ai/types.ts) | `packages/ai/src/types.ts` | Messages, content blocks, `Usage`, `Model`, `AssistantMessageEvent` |
+| [`src/ai/utils/event-stream.ts`](../../../backends/edupi/src/ai/utils/event-stream.ts) | `packages/ai/src/utils/event-stream.ts` | `AssistantMessageEventStream`: a queue the loop reads with `for await`, plus `result()` |
+| [`src/ai/api/openai-completions.ts`](../../../backends/edupi/src/ai/api/openai-completions.ts) | `packages/ai/src/api/openai-completions.ts` | The Chat Completions API |
+| [`src/ai/providers/openrouter.ts`](../../../backends/edupi/src/ai/providers/openrouter.ts) | `packages/ai/src/providers/openrouter.ts` | OpenRouter's base URL, key variable and models |
+| [`src/ai/providers/faux.ts`](../../../backends/edupi/src/ai/providers/faux.ts) | `packages/ai/src/providers/faux.ts` | The scripted test model |
+
+`stream()` in `openai-completions.ts` does pi's steps in pi's order:
+
+1. Make an empty assistant message with `stopReason: "pending"`.
+2. `createClient`: an OpenAI SDK client with OpenRouter's base URL. With a session id it adds `x-session-id`, so OpenRouter sends the session's requests to the same upstream (warm prompt cache).
+3. `buildParams`: the body above. `convertMessages` turns pi messages into Chat Completions messages. System messages become `developer` messages for reasoning models that support it, else `system`.
+4. `client.chat.completions.create(params, {signal, maxRetries: 0})`, then push `start`.
+5. For each chunk: keep the response id and usage, map `finish_reason` (`stop` → `stop`, `tool_calls` → `toolUse`, `length` → `length`, anything else → error), and turn `delta.content` into `text_start` / `text_delta`.
+6. After the last chunk: `text_end` for each block, then `done`. A stream without `finish_reason` is an error.
+7. Any exception becomes an `error` event with `stopReason: "error"` (or `"aborted"`). `stream()` never throws, so the loop has one way to see failures.
+
+`streamSimple()` is what the agent calls. It fills request options from the model (`maxTokens`), then calls `stream()`.
+
+**The faux provider.** pi's tests use a faux provider: you queue assistant messages, and each request streams the next one back in random chunks of 3 to 5 "tokens" (4 characters each). edupi keeps that idea, but fakes the HTTP endpoint instead of the whole provider. `fauxProvider().fetch` is passed to the OpenAI SDK, and it answers each request with the Chat Completions SSE chunks for the next scripted message. So in tests the real `openai-completions.ts` code runs, and every request body can be recorded. `--faux script.json` turns it on; `--faux-log file.jsonl` writes one `{url, body}` line per request. A script is `{"responses": ["a text reply", {"content": [...], "stopReason": "stop"}]}`.
+
+The tests in [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-provider.test.ts) check the recorded bodies.
+
+## In pi
+
+- [`stream`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L304) in `packages/ai/src/api/openai-completions.ts` is the main function. [`streamSimple`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L738), [`createClient`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L759), [`buildParams`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L804), [`convertMessages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1197) (the [`developer` or `system` choice](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1239)), [`parseChunkUsage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1527) and [`mapStopReason`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L1570) are in the same file. OpenRouter's [`reasoning` field](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/api/openai-completions.ts#L942) is one of many reasoning formats pi supports.
+- [`OPENROUTER_BASE_URL`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/openrouter.ts#L13) and [`openrouterProvider`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/openrouter.ts#L62): OpenRouter offers two APIs in pi, `openai-completions` and `anthropic-messages` (for Claude models).
+- The stream types: [`AssistantMessageEvent`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/types.ts#L790) with the protocol rules in its comment, and [`AssistantMessageEventStream`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/utils/event-stream.ts#L97).
+- The faux provider: [`fauxAssistantMessage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/faux.ts#L78), [`streamWithDeltas`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/faux.ts#L356), [`createFauxCore`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/src/providers/faux.ts#L454).
+
+## How Codex does it differently
+
+- **One API, Responses.** Codex's [`build_responses_request`](https://github.com/openai/codex/blob/1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d/codex-rs/core/src/client.rs#L891) builds a Responses body, and its history is a list of Responses items (educodex chapter 02). pi's history is in its own format, and each request converts it. Codex's history *is* the wire format.
+- **Reasoning travels differently.** Codex sends reasoning back as `encrypted_content` items. Chat Completions has no standard field for this; OpenRouter streams `reasoning` text and `reasoning_details`, and pi keeps them in a `thinking` block's `thinkingSignature` for replay.
+- **Models.** Codex has a model catalog (`models.json`) that decides prompts and tools per model (educodex chapter 06). pi's catalog has only limits, prices and capability flags, and the same prompt is used for every model.
+- **Both use OpenRouter in eduagent.** educodex calls OpenRouter's Responses endpoint, edupi its Chat Completions endpoint, with the same default model.
+
+## Where edupi is simpler
+
+- **One API, one provider.** pi has more than ten provider APIs (Anthropic Messages, Google, Bedrock, Mistral, ...) and a registry that picks one by `model.api`. edupi calls `openai-completions` directly.
+- **No model catalog yet.** pi reads model metadata (context window, prices, reasoning support) from a catalog generated from OpenRouter's models list. edupi accepts any OpenRouter model id and fills in the defaults of pi's `models.json` (`contextWindow: 128000`, `maxTokens: 16384`, no reasoning). So for now edupi sends no `reasoning` field and uses the `system` role.
+- **Text only, for now.** The chunk loop handles text deltas. Tool calls and reasoning deltas come with tools and thinking levels.
+- **No retries.** pi retries some provider errors (`retryProviderRequest`); edupi calls once.
+- **No `max_completion_tokens` clamp.** pi lowers it so that the prompt plus the answer fit in the context window. edupi sends the model's `maxTokens`.
+- **Fewer compat switches.** pi detects about twenty differences between OpenAI-compatible servers (`detectCompat`). edupi keeps only OpenRouter's values.
+- **The faux provider fakes HTTP**, not the API (see above), and has no deferred responses or factory steps.
+
+## Try it
+
+Run edupi with the faux provider, log its requests, and send two prompts:
+
+```bash
+node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json --faux-log /tmp/edupi-requests.jsonl
+{"type":"prompt","message":"First question?"}
+{"type":"prompt","message":"Second question?"}
+```
+
+Press Ctrl-D, then read `/tmp/edupi-requests.jsonl`. The second body repeats the first question and answer.
+
+In the web UI, pick **edupi** (or **edupi-faux**) and send a message. In the **Protocol** tab, filter for `text_delta` to see the reply arrive piece by piece.
+
+## Further reading
+
+- [OpenRouter quickstart](https://openrouter.ai/docs/quickstart) and [API reference](https://openrouter.ai/docs/api-reference/overview): the OpenAI-compatible endpoint and OpenRouter's extra fields.
+- [OpenAI: Chat Completions API](https://platform.openai.com/docs/api-reference/chat) and [Migrate to the Responses API](https://platform.openai.com/docs/guides/migrate-to-responses): the two APIs side by side.
+- pi's own docs at the pinned commit: [`packages/ai/README.md`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/ai/README.md).
