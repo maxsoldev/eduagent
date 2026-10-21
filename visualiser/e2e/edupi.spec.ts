@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { expect, type Page, test } from "@playwright/test";
 import { E2E_DIR } from "./env";
 
 // An edupi viewer through the launcher. The test entry "edupi" runs edupi with the faux provider

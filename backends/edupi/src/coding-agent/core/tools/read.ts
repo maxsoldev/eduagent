@@ -5,8 +5,8 @@
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { type Static, Type } from "typebox";
-import type { TextContent } from "../../../ai/types.ts";
 import type { AgentTool } from "../../../agent/types.ts";
+import type { TextContent } from "../../../ai/types.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 

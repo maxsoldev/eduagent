@@ -63,14 +63,14 @@ pnpm eduagent                                       # at the repo root: start th
 Run these before every commit, and commit only when they are clean.
 
 ```bash
-pnpm format && pnpm lint                            # at the repo root: Biome (TypeScript and JavaScript; config in biome.json)
+pnpm format && pnpm lint                            # at the repo root: Biome (TypeScript and JavaScript; config in biome.jsonc)
 cd backends/educodex && uv run ruff format && uv run ruff check   # educodex: Ruff (config in pyproject.toml)
 ```
 
 - `pnpm format` is `biome check --write`: it formats, sorts imports and applies safe fixes. `pnpm lint` is `biome check`. `pnpm test` runs `biome check` first, so it fails on lint errors.
 - `uv run ruff check --fix` applies Ruff's safe fixes.
 - The style follows pi (tabs, indent width 3, line width 120), so edupi files look like the pi files they mirror. Do not reformat by hand against it.
-- Disable a rule only where it fights a deliberate pattern, and say why next to it (in `biome.json`, `pyproject.toml` or a `biome-ignore` / `noqa` comment).
+- Disable a rule only where it fights a deliberate pattern, and say why next to it (in `biome.jsonc`, `pyproject.toml` or a `biome-ignore` / `noqa` comment).
 
 ## Agent skills
 

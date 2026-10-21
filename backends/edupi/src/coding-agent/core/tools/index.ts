@@ -2,15 +2,10 @@
 // pi's default tool set. pi also has grep, find and ls (read-only tools, off by default); edupi
 // leaves them out.
 import type { AgentTool } from "../../../agent/types.ts";
-import { createBashTool } from "./bash.ts";
-import { createEditTool } from "./edit.ts";
-import { createReadTool } from "./read.ts";
-import { createWriteTool } from "./write.ts";
-
-import { bashToolSystemPromptContribution } from "./bash.ts";
-import { editToolSystemPromptContribution } from "./edit.ts";
-import { readToolSystemPromptContribution } from "./read.ts";
-import { writeToolSystemPromptContribution } from "./write.ts";
+import { bashToolSystemPromptContribution, createBashTool } from "./bash.ts";
+import { createEditTool, editToolSystemPromptContribution } from "./edit.ts";
+import { createReadTool, readToolSystemPromptContribution } from "./read.ts";
+import { createWriteTool, writeToolSystemPromptContribution } from "./write.ts";
 
 /** Each tool's line in the prompt's <tools> section and its bullets in <rules> (pi: ToolDefinition promptSnippet, promptGuidelines). */
 export const toolSystemPromptContributions: Record<string, { snippet: string; guidelines: readonly string[] }> = {

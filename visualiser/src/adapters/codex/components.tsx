@@ -1,9 +1,10 @@
 // Codex-only parts: plans, file-change diffs, memory updates, memory citations, approval
 // prompts and the approval/sandbox controls. They read Codex item shapes directly.
-import type { AdapterModule } from "../types";
+
+import { AssistantMessage, Status, ToolCard } from "../../components/parts";
 import { shows } from "../../view/capabilities";
 import type { Approval, Entry, Json, NativePart } from "../../view/model";
-import { AssistantMessage, Status, ToolCard } from "../../components/parts";
+import type { AdapterModule } from "../types";
 
 function NativeEntry({ entry, part }: { entry: Entry; part: NativePart }) {
 	const item = part.data;
@@ -69,7 +70,7 @@ function FileChange({ item, status }: { item: Json; status: string }) {
 												: ""
 								}
 							>
-								{line + "\n"}
+								{`${line}\n`}
 							</span>
 						))}
 					</pre>
@@ -199,6 +200,7 @@ function ApprovalCard({ approval, onAnswer }: { approval: Approval; onAnswer: (r
 			<div className="row">
 				{choices.map((c) => (
 					<button
+						type="button"
 						key={c}
 						className={c === "accept" ? "primary" : c === "cancel" ? "danger" : ""}
 						data-testid={`approve-${c}`}

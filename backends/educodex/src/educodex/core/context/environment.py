@@ -30,7 +30,8 @@ def _filesystem(sandbox_mode: str, writable_roots: list[str]) -> str:
         entries = '<entry access="read"><special>:root</special></entry>'
         if sandbox_mode == "workspace-write":
             entries += "".join(f'<entry access="write"><path>{escape(r)}</path></entry>' for r in writable_roots)
-        profile = f'<permission_profile type="managed"><file_system type="restricted">{entries}</file_system></permission_profile>'
+        file_system = f'<file_system type="restricted">{entries}</file_system>'
+        profile = f'<permission_profile type="managed">{file_system}</permission_profile>'
     return f"<filesystem><workspace_roots>{roots}</workspace_roots>{profile}</filesystem>"
 
 

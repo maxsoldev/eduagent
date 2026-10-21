@@ -11,13 +11,13 @@ import type {
 	ChatCompletionMessageParam,
 	ChatCompletionTool,
 } from "openai/resources/chat/completions";
+import { clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
 	Message,
 	Model,
 	SimpleStreamOptions,
 	StopReason,
-	SystemMessage,
 	TextContent,
 	ThinkingContent,
 	ThinkingLevel,
@@ -27,11 +27,10 @@ import type {
 	TranscriptContext,
 	Usage,
 } from "../types.ts";
-import { clampThinkingLevel } from "../models.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
-import { transformMessages } from "./transform-messages.ts";
 import { collapseSystemMessages, getCurrentTools, getSystemMessageText } from "../utils/transcript.ts";
+import { transformMessages } from "./transform-messages.ts";
 
 /** pi's resolved OpenRouter compat values (detectCompat); edupi has no other provider. */
 interface Compat {

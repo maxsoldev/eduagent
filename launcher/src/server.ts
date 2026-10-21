@@ -1,8 +1,9 @@
 // The launcher's HTTP server: the built visualiser, the guide, GET /backends, and one WebSocket per viewer
 // at /backends/<name>?cwd=<dir>. It binds to loopback and refuses pages from other origins, because a
 // connection starts a process that can run commands on this machine.
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer } from "ws";
 import type { BackendList } from "./api.ts";

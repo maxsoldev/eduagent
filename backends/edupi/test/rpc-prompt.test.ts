@@ -1,6 +1,6 @@
 // Seam A: a prompt over pi's RPC protocol, answered by the faux provider.
 import { afterEach, expect, test } from "vitest";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {

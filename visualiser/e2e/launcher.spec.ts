@@ -1,6 +1,7 @@
 // The launcher at its HTTP and WebSocket seam, with the echo test backend (launcher/test/echo-backend.mjs).
-import { request as httpRequest } from "node:http";
+
 import { realpathSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { expect, test } from "@playwright/test";
 import { E2E_DIR, PORT } from "./env";
 

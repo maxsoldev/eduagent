@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { matchCommands, matchSkills } from "../commands";
 import type { Command, SkillInfo } from "../adapters/types";
+import { matchCommands, matchSkills } from "../commands";
 
 // The message box. Typing "/" lists slash commands; typing "$" lists skills (as Codex's TUI does).
 // A skill picked from the list is sent as a {type: "skill", name, path} input item next to the text.
@@ -60,6 +60,7 @@ export function Composer({
 				.then(setSkills)
 				.catch(() => setSkills([]));
 	}, [mentionActive, loadSkills]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the deps are triggers: a new popup list selects its first item
 	useEffect(() => setSelected(0), [open?.kind, open?.items.length]);
 
 	const edit = (value: string, at: number) => {
@@ -194,6 +195,7 @@ export function Composer({
 			{turnRunning && queues && (
 				<>
 					<button
+						type="button"
 						className="primary"
 						onClick={() => queue("steer")}
 						disabled={disabled}
@@ -203,6 +205,7 @@ export function Composer({
 						steer
 					</button>
 					<button
+						type="button"
 						onClick={() => queue("followUp")}
 						disabled={disabled}
 						title="runs when the agent would stop (Alt+Enter)"
@@ -213,11 +216,11 @@ export function Composer({
 				</>
 			)}
 			{turnRunning ? (
-				<button className="danger" onClick={onInterrupt} data-testid="interrupt">
+				<button type="button" className="danger" onClick={onInterrupt} data-testid="interrupt">
 					{queues ? "abort" : "interrupt"}
 				</button>
 			) : (
-				<button className="primary" onClick={send} disabled={disabled} data-testid="send">
+				<button type="button" className="primary" onClick={send} disabled={disabled} data-testid="send">
 					send
 				</button>
 			)}

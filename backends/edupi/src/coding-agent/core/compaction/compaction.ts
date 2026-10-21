@@ -20,7 +20,6 @@ import {
 	type ProjectedSessionEntry,
 	type SessionEntry,
 	type SessionProjection,
-	sessionEntryToContextMessages,
 } from "../session-manager.ts";
 import {
 	computeFileLists,

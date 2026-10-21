@@ -168,7 +168,7 @@ const SCENARIOS = [
 
 const NOTE = `Recorded from real pi at ${PINNED.slice(0, 9)} by visualiser/test/record-pi.mjs`;
 const writeFile = (name, text) => writeFileSync(join(EDUPI_OUT, name), text);
-const writeJson = (name, value) => writeFile(name, JSON.stringify(value, null, 1) + "\n");
+const writeJson = (name, value) => writeFile(name, `${JSON.stringify(value, null, 1)}\n`);
 
 /** The one session file pi wrote under its agent dir (sessions/<cwd>/<id>.jsonl). */
 function sessionFile(dir) {
@@ -243,8 +243,11 @@ async function record(scenario) {
 		nextId = 0;
 	p.stdout.on("data", (data) => {
 		buffer += data;
-		for (let k; (k = buffer.indexOf("\n")) >= 0; buffer = buffer.slice(k + 1)) {
+		while (true) {
+			const k = buffer.indexOf("\n");
+			if (k < 0) break;
 			const m = JSON.parse(buffer.slice(0, k));
+			buffer = buffer.slice(k + 1);
 			lines.push(m);
 			for (const w of [...waiters])
 				if (w.match(m)) {
@@ -261,7 +264,7 @@ async function record(scenario) {
 			const id = String(++nextId);
 			const reply = pi.until((m) => m.type === "response" && m.id === id);
 			sent.push({ id, ...command });
-			p.stdin.write(JSON.stringify({ id, ...command }) + "\n");
+			p.stdin.write(`${JSON.stringify({ id, ...command })}\n`);
 			return reply;
 		},
 		/** Sends a prompt and waits until the run settles. */
@@ -277,7 +280,7 @@ async function record(scenario) {
 	await new Promise((r) => p.on("close", r));
 	await server.close();
 
-	const jsonl = (items) => items.map((x) => JSON.stringify(x)).join("\n") + "\n";
+	const jsonl = (items) => `${items.map((x) => JSON.stringify(x)).join("\n")}\n`;
 	if (scenario.edupi) {
 		scenario.edupi({ session: sessionFile(join(dir, "agent", "sessions")), requests });
 		console.log(`${scenario.name}: ${requests.length} model requests, for edupi's fixtures`);
@@ -297,7 +300,7 @@ for (const s of chosen) await record(s);
 if (chosen.some((s) => !s.edupi))
 	writeFileSync(
 		join(OUT, "meta.json"),
-		JSON.stringify(
+		`${JSON.stringify(
 			{
 				pi: { repo: "https://github.com/earendil-works/pi", commit },
 				recordedAt: new Date().toISOString().slice(0, 10),
@@ -307,5 +310,5 @@ if (chosen.some((s) => !s.edupi))
 			},
 			null,
 			2,
-		) + "\n",
+		)}\n`,
 	);

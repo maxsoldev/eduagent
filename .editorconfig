@@ -1,4 +1,4 @@
-# Matches biome.json (TypeScript, JavaScript) and [tool.ruff] in backends/educodex/pyproject.toml (Python).
+# Matches biome.jsonc (TypeScript, JavaScript) and [tool.ruff] in backends/educodex/pyproject.toml (Python).
 root = true
 
 [*]

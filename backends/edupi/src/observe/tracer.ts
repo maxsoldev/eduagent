@@ -3,10 +3,9 @@
 // {type: "trace", name, ...payload}, on the same stdout as the RPC events. Names and payloads
 // are the shared trace vocabulary in protocol/README.md section 6.
 import type { AgentMessage, AgentToolCall, AgentToolResult, Checkpoint, LoopIteration } from "../agent/types.ts";
-import type { AssistantMessage } from "../ai/types.ts";
+import type { AssistantMessage, ModelCost } from "../ai/types.ts";
 import type { CompactionResult } from "../coding-agent/core/compaction/compaction.ts";
 import type { Probe, PromptAssembledInfo, SkillsLoadedInfo } from "../coding-agent/core/probe.ts";
-import type { ModelCost } from "../ai/types.ts";
 import { addTotals, type CostTotal, costBreakdown, pricingJson } from "./pricing.ts";
 import { Stepper } from "./stepper.ts";
 

@@ -1,8 +1,9 @@
 // pi-only parts. pi's edit tool returns a diff in result.details: "+NN line" (added, new line
 // number), "-NN line" (removed, old line number), " NN line" (context) and " ..." (skipped lines).
 // Source: packages/coding-agent/src/core/tools/edit-diff.ts generateDiffString, at the pinned commit.
-import type { Entry, NativePart } from "../../view/model";
+
 import { Status, ToolCard } from "../../components/parts";
+import type { Entry, NativePart } from "../../view/model";
 
 export function NativeEntry({ entry, part }: { entry: Entry; part: NativePart }) {
 	if (part.type === "editDiff" && entry.kind === "tool")
@@ -25,7 +26,7 @@ function EditDiff({ entry, path, diff }: { entry: Extract<Entry, { kind: "tool" 
 			<pre className="diff">
 				{diff.split("\n").map((line, i) => (
 					<span key={i} className={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : ""}>
-						{line + "\n"}
+						{`${line}\n`}
 					</span>
 				))}
 			</pre>

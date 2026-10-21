@@ -26,8 +26,8 @@ from typing import TYPE_CHECKING, Any
 from educodex.core import compact, hooks
 from educodex.core.client import Prompt
 from educodex.core.context import world_state
-from educodex.core.memories.citations import parse_memory_citation, strip_citations
 from educodex.core.items import ResponseItem, clean_output_item, is_tool_call, message_text, tool_output, user_message
+from educodex.core.memories.citations import parse_memory_citation, strip_citations
 from educodex.core.skills.loader import load_skills
 from educodex.core.skills.mentions import collect_explicit_skill_mentions
 from educodex.core.skills.render import skill_instructions

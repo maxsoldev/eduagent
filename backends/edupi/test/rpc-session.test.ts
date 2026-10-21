@@ -1,11 +1,11 @@
 // Seam A: sessions in pi's file format. edupi writes each session as a JSONL file of entries
 // (id + parentId) under its home, rebuilds the context from the entries, and answers
 // new_session and get_messages as pi does. The home is a temporary dir (EDUPI_CODING_AGENT_DIR).
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -248,7 +248,7 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
 		/^The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSECOND SUMMARY/,
 	);
 	expect(edupi.requests()[0].body.messages).toEqual([
-		{ role: "system", content: pi[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace(recorded[0].cwd, dir) },
+		{ role: "system", content: pi[0].content.replace(/\n\n<docs>[\s\S]*<\/docs>/, "").replace(recorded[0].cwd, dir) },
 		...pi.slice(1),
 		{ role: "assistant", content: "Fourth." },
 		{ role: "user", content: [{ type: "text", text: "q5" }] },

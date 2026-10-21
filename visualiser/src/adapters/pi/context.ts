@@ -3,9 +3,9 @@
 // system-prompt.ts); edupi's promptAssembled trace event names them, so the first item shows
 // one part per section: preamble, tools, rules, project_context (AGENTS.md), skills, cwd.
 import type { CtxCat } from "../../components/ContextBar";
-import type { ContextItem, ContextSnapshot } from "../types";
 import type { Json } from "../../view/model";
 import { approxTokens, clip } from "../context";
+import type { ContextItem, ContextSnapshot } from "../types";
 
 /** One prompt section of edupi's promptAssembled trace event (protocol/README.md section 6). */
 export type Fragment = { kind: string; text: string; tokens: number; changed?: boolean };

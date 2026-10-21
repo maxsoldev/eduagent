@@ -64,7 +64,7 @@ def collect_explicit_skill_mentions(inputs: list[dict], outcome: SkillLoadOutcom
             if any(_same_file(skill, p) for p in paths):
                 select(skill)
         for skill in outcome.skills:
-            if skill.name in names and skill.name not in blocked_names and counts[skill.name] == 1:
-                if all(s.name != skill.name for s in selected):
-                    select(skill)
+            unique = skill.name in names and skill.name not in blocked_names and counts[skill.name] == 1
+            if unique and all(s.name != skill.name for s in selected):
+                select(skill)
     return selected

@@ -1,12 +1,13 @@
 // The Codex adapter's client half: sends Codex app-server requests over the JSON-RPC lite client.
 // Incoming messages go through codexActions (mapping.ts) into the view model.
-import type { Adapter, AdapterOptions, Command, ContextSnapshot, Settings, SkillInfo } from "../types";
-import type { Approval, Json } from "../../view/model";
+
 import { shows } from "../../view/capabilities";
-import { RpcClient } from "./rpc";
-import { codexActions } from "./mapping";
-import { codexExplainer } from "./explain";
+import type { Approval, Json } from "../../view/model";
+import type { Adapter, AdapterOptions, Command, ContextSnapshot, Settings, SkillInfo } from "../types";
 import { codexContext } from "./context";
+import { codexExplainer } from "./explain";
+import { codexActions } from "./mapping";
+import { RpcClient } from "./rpc";
 
 // Slash commands, in Codex's popup order (codex-rs/tui/src/slash_command.rs: "enum order is
 // presentation order"). The descriptions of skills, new and compact are Codex's own. Codex has

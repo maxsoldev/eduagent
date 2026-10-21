@@ -1,7 +1,7 @@
 // Seam A: starts edupi in RPC mode as a child process, as the launcher does, and talks pi's RPC
 // protocol to it over stdin/stdout: one JSON object per line. The model is the faux provider,
 // scripted by a JSON file; it records every request body it receives.
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,8 +24,9 @@ export class RpcClient {
 		proc.stdout.setEncoding("utf8");
 		proc.stdout.on("data", (chunk: string) => {
 			buffer += chunk;
-			let i: number;
-			while ((i = buffer.indexOf("\n")) >= 0) {
+			while (true) {
+				const i = buffer.indexOf("\n");
+				if (i < 0) break;
 				this.receive(JSON.parse(buffer.slice(0, i)));
 				buffer = buffer.slice(i + 1);
 			}

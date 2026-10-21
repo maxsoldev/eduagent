@@ -132,7 +132,7 @@ def seek_sequence(lines: list[str], pattern: list[str], start: int, eof: bool) -
     for normalise in (lambda s: s, str.rstrip, str.strip, lambda s: s.strip().translate(_PUNCTUATION)):
         wanted = [normalise(p) for p in pattern]
         for i in range(first, len(lines) - len(pattern) + 1):
-            if [normalise(l) for l in lines[i : i + len(pattern)]] == wanted:
+            if [normalise(line) for line in lines[i : i + len(pattern)]] == wanted:
                 return i
     return None
 

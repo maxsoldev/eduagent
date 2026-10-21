@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { createPiMapping } from "../src/adapters/pi/mapping";
-import { initialView, reduceView, type Entry, type View } from "../src/view/model";
+import { type Entry, initialView, reduceView, type View } from "../src/view/model";
 
 const lines = (file: string) =>
 	readFileSync(new URL(`fixtures/pi/${file}`, import.meta.url), "utf8")

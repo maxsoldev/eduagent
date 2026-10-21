@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import sys
 import time
 
 import pytest
@@ -98,7 +97,10 @@ async def test_interrupt_records_turn_aborted(make_session):
 
 async def test_stop_hook_sees_active_flag(make_session, tmp_path):
     marker = tmp_path / "stop.json"
-    hook = f"cat > {marker}.$$; if grep -q '\"stop_hook_active\": false' {marker}.$$; then echo 'keep going' >&2; exit 2; fi"
+    hook = (
+        f"cat > {marker}.$$; if grep -q '\"stop_hook_active\": false' {marker}.$$; "
+        "then echo 'keep going' >&2; exit 2; fi"
+    )
     session, fake, _ = await make_session(
         [[{"type": "message", "text": "a"}], [{"type": "message", "text": "b"}]], hooks={"Stop": [hook]}
     )

@@ -2,10 +2,10 @@
 // backend's native trace message into the same timeline event, so the Inspector code is shared.
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
+import { jsonType } from "../../protocol/shape";
 import { codexActions } from "../src/adapters/codex/mapping";
 import { createPiMapping } from "../src/adapters/pi/mapping";
 import type { Json, TimelineEvent, ViewAction } from "../src/view/model";
-import { jsonType } from "../../protocol/shape";
 
 const FIXTURES = new URL("../../protocol/fixtures/trace/", import.meta.url);
 const read = (path: string) => JSON.parse(readFileSync(new URL(path, FIXTURES), "utf8"));

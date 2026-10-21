@@ -1,5 +1,6 @@
-"""Seam A against the protocol spec: educodex's model, tool, cost and step-mode trace events have the shapes of the fixtures
-in protocol/fixtures/trace/educodex/ and the shared fields of protocol/fixtures/trace/shared.json."""
+"""Seam A against the protocol spec: educodex's model, tool, cost and step-mode trace events have the
+shapes of the fixtures in protocol/fixtures/trace/educodex/ and the shared fields of
+protocol/fixtures/trace/shared.json."""
 
 import json
 from pathlib import Path

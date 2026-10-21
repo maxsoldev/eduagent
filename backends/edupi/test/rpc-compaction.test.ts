@@ -2,11 +2,11 @@
 // as a compaction entry, and rebuilds the next request from that entry and the kept messages.
 // It compacts by hand (`compact`), at the threshold (context window minus reserve tokens) and
 // after a context overflow (then it retries). Settings come from <home>/settings.json, as in pi.
-import { mkdirSync, readFileSync, realpathSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -223,7 +223,7 @@ test("compaction follows real pi: a split turn, then the update prompt with the 
 	expect(requests[6]).toEqual([
 		{
 			role: "developer",
-			content: q4[0].content.replace(/\n\n<docs>[^]*<\/docs>/, "").replace(piEntries[0].cwd, dir),
+			content: q4[0].content.replace(/\n\n<docs>[\s\S]*<\/docs>/, "").replace(piEntries[0].cwd, dir),
 		},
 		...q4.slice(1),
 	]);

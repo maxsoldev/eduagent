@@ -1,14 +1,14 @@
 // One viewer: connects to one backend through its protocol's adapter and draws the neutral view.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { backendUrl, type BackendInfo } from "./launcher";
 import type { Adapter, AdapterModule, Option, Settings } from "./adapters/types";
-import { initialView, reduceView } from "./view/model";
-import { linksFor } from "./view/harness";
-import { shows } from "./view/capabilities";
 import { Chat } from "./components/Chat";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { pct, usd } from "./cost";
+import { type BackendInfo, backendUrl } from "./launcher";
+import { shows } from "./view/capabilities";
+import { linksFor } from "./view/harness";
+import { initialView, reduceView } from "./view/model";
 
 export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: string; module: AdapterModule }) {
 	const [view, dispatch] = useReducer(reduceView, initialView);
@@ -35,6 +35,7 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
 		[stepMode],
 	);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: connect once; backend and cwd come from the URL
 	useEffect(() => {
 		const adapter = module.create({ url: backendUrl(backend.name, cwd), capabilities: caps, dispatch });
 		adapterRef.current = adapter;
@@ -47,7 +48,6 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
 				setConnectError(String((err as Error).message ?? err));
 			}
 		})();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const note = (text: string, error = false) =>
@@ -151,6 +151,7 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
 					)}
 					{shows(caps, "compact") && (
 						<button
+							type="button"
 							onClick={() => adapter?.compact()}
 							disabled={!ready || view.running}
 							title="summarise history now"
@@ -160,6 +161,7 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
 						</button>
 					)}
 					<button
+						type="button"
 						onClick={() => startSession(settings)}
 						disabled={!ready || view.running}
 						data-testid="new-thread"

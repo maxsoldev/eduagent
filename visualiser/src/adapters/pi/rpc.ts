@@ -4,8 +4,8 @@
 // concurrently, so replies are matched by id, not by order (packages/coding-agent/docs/rpc.md).
 import type { RpcCommand } from "@eduagent/edupi/rpc-types";
 import type { Direction, Json } from "../../view/model";
-import type { PiMessage, RpcResponse } from "./protocol";
 import { openSocket, type SocketStatus } from "../socket";
+import type { PiMessage, RpcResponse } from "./protocol";
 
 type CommandType = RpcCommand["type"];
 type Fields<T extends CommandType> = Omit<Extract<RpcCommand, { type: T }>, "id" | "type">;
@@ -60,6 +60,7 @@ export class PiRpcClient {
 	/** Sends a command with a fresh id and resolves with the reply's data. */
 	command<T extends CommandType>(
 		type: T,
+		// biome-ignore lint/complexity/noBannedTypes: `{} extends X` asks "are all of X's fields optional?"
 		...[fields]: {} extends Fields<T> ? [Fields<T>?] : [Fields<T>]
 	): Promise<Data<T>> {
 		const id = String(this.nextId++);

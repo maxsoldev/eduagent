@@ -1,11 +1,11 @@
 // The pi adapter's client half: sends pi RPC commands (packages/coding-agent/src/modes/rpc/rpc-types.ts).
 // Incoming messages go through the pi mapping (mapping.ts) into the view model.
 import type { Adapter, AdapterOptions, Command, SkillInfo } from "../types";
+import { type Fragment, piContext } from "./context";
+import { piExplainer } from "./explain";
+import { createPiMapping } from "./mapping";
 import type { PiMessage, RpcSessionState, ThinkingLevel } from "./protocol";
 import { PiRpcClient } from "./rpc";
-import { createPiMapping } from "./mapping";
-import { piExplainer } from "./explain";
-import { type Fragment, piContext } from "./context";
 
 // pi's own descriptions (packages/coding-agent/src/core/slash-commands.ts). In pi a skill is the
 // slash command /skill:<name>; here it is picked with $, as for Codex.

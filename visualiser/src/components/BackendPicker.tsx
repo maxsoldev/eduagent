@@ -29,7 +29,9 @@ export function BackendPicker({ list, error }: { list: BackendList; error?: stri
 							</span>
 						</div>
 						{b.description && <div className="muted small">{b.description}</div>}
-						<button onClick={() => open(b.name)}>Open</button>
+						<button type="button" onClick={() => open(b.name)}>
+							Open
+						</button>
 					</li>
 				))}
 			</ul>

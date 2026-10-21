@@ -1,9 +1,10 @@
 // The Codex adapter's timeline texts: one short explanation per event, the educodex guide
 // chapter and the Codex source file it mirrors (paths under codex-rs/ at the pinned commit).
 // Keys are Codex method names; trace events are in educodex's trace/ namespace.
+
+import { pct, usd } from "../../cost";
 import type { Explainer, Info } from "../../view/explain";
 import type { Json, TimelineEvent } from "../../view/model";
-import { pct, usd } from "../../cost";
 
 const EXPLAIN: Record<string, Info> = {
 	"trace/toolsRegistered": {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { jsonType, shapeErrors } from "../../../protocol/shape.ts";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 const FIXTURES = new URL("../../../protocol/fixtures/trace/", import.meta.url);
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`edupi/${name}.json`, FIXTURES), "utf8"));

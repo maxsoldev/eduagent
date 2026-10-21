@@ -26,6 +26,7 @@ export function Chat({
 	const box = useRef<HTMLDivElement>(null);
 	const size = turns.reduce((n, t) => n + t.entries.length, 0);
 	const last = turns[turns.length - 1]?.entries.at(-1);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the deps are triggers: scroll down when the chat grows
 	useEffect(() => {
 		if (box.current) box.current.scrollTop = box.current.scrollHeight;
 	}, [size, last, approvals.length, paused]);
@@ -53,7 +54,7 @@ export function Chat({
 						<b>⏸ Paused</b> at <code>{paused.breakpoint}</code>{" "}
 						<span className="muted">{JSON.stringify(paused.info)}</span>
 					</div>
-					<button className="primary" onClick={onContinue} data-testid="continue">
+					<button type="button" className="primary" onClick={onContinue} data-testid="continue">
 						Continue ▶
 					</button>
 				</div>

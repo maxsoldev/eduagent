@@ -1,6 +1,6 @@
 // One viewer, one backend process (ADR 0002). Each WebSocket frame becomes one stdin line, and each
 // stdout line becomes one frame. Nothing is parsed, so the Protocol tab shows exactly what the backend sent.
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { WebSocket } from "ws";
 import type { Backend } from "./config.ts";

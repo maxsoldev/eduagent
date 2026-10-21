@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { E2E_DIR } from "./env";
 
 async function send(page: Page, text: string) {

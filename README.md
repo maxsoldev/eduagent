@@ -112,7 +112,7 @@ pnpm test:e2e                                       # at the repo root. Playwrig
 
 ## Format and lint
 
-TypeScript and JavaScript use [Biome](https://biomejs.dev) (`biome.json`, pi's style: tabs, indent width 3, line width 120). educodex uses [Ruff](https://docs.astral.sh/ruff/) (`[tool.ruff]` in `backends/educodex/pyproject.toml`, line length 120). `.editorconfig` matches both. Run them before you commit (agents must):
+TypeScript and JavaScript use [Biome](https://biomejs.dev) (`biome.jsonc`, pi's style: tabs, indent width 3, line width 120). educodex uses [Ruff](https://docs.astral.sh/ruff/) (`[tool.ruff]` in `backends/educodex/pyproject.toml`, line length 120). `.editorconfig` matches both. Run them before you commit (agents must):
 
 ```bash
 pnpm format                                         # at the repo root: biome check --write (format, sort imports, safe fixes)

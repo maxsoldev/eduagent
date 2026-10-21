@@ -69,7 +69,7 @@ async def test_tool_loop_and_prefix_stability(make_session, workspace):
     assert (workspace / "a.txt").read_text() == "hello\n"
     assert third[4]["encrypted_content"]  # reasoning is sent back as-is
     loops = find(events, "trace/loopIteration")
-    assert [l["decision"] for l in loops] == ["continue", "continue", "stop"]
+    assert [loop["decision"] for loop in loops] == ["continue", "continue", "stop"]
 
 
 async def test_second_turn_appends_only_changed_context(make_session, workspace):
@@ -159,7 +159,7 @@ async def test_rollout_replays_history(make_session):
     await session.run("go")
     lines = read_rollout(session.rollout.path)
     assert lines[0]["type"] == "session_meta"
-    assert {"turn_context", "response_item", "event_msg"} <= {l["type"] for l in lines}
+    assert {"turn_context", "response_item", "event_msg"} <= {line["type"] for line in lines}
     assert history_from_rollout(lines) == session.history.items
 
 

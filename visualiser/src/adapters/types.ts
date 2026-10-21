@@ -2,8 +2,8 @@
 // native messages to ViewActions (tested on recorded transcripts), and a client that sends
 // commands in the native form. The UI talks only to this interface.
 import type { ComponentType } from "react";
-import type { Capabilities, Capability } from "../view/capabilities";
 import type { CtxCat } from "../components/ContextBar";
+import type { Capabilities, Capability } from "../view/capabilities";
 import type { Explainer } from "../view/explain";
 import type { Approval, Entry, Json, NativePart, ViewAction } from "../view/model";
 
@@ -55,6 +55,7 @@ export interface Adapter {
 	followUp?(text: string): Promise<void>;
 	compact(customInstructions?: string): Promise<void>; // pi takes instructions for the summary; Codex has none
 	listSkills(cwd: string): Promise<SkillInfo[]>;
+	// biome-ignore lint/suspicious/noConfusingVoidType: void allows bare returns (as in pi's extensions/types.ts)
 	runCommand(name: string): Promise<string | void>; // adapter-only slash commands; returns a note
 	setStepMode(enabled: boolean): Promise<void>;
 	continueStep(): Promise<void>;

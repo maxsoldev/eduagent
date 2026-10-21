@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 // A pi viewer through the launcher. CI has no real pi, so the test entry "pi-replay" replays the
 // transcript recorded from the real pi (visualiser/test/fixtures/pi/chat.out.jsonl) in answer to

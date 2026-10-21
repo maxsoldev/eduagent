@@ -2,7 +2,7 @@
 // They show what pi hides: the exact request body, each streamed chunk and the response usage.
 // The faux provider records the request bodies it got, so the trace can be checked against them.
 import { afterEach, expect, test } from "vitest";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {

@@ -2,15 +2,15 @@
 // (explanations, the next request). Tabs for missing capabilities are not shown.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Adapter, ContextSnapshot } from "../adapters/types";
+import { cacheStatus, nextRequestCost, pct, uncachedCost, usd } from "../cost";
+import { useStickToBottom } from "../useStickToBottom";
 import { type Capabilities, type Feature, shows } from "../view/capabilities";
-import type { Json, TimelineEvent, View } from "../view/model";
 import { CATEGORY_COLORS, type Category, type Explainer } from "../view/explain";
 import type { Links as HarnessLinks } from "../view/harness";
-import { JsonView } from "./JsonView";
-import { CostPanel } from "./CostPanel";
-import { useStickToBottom } from "../useStickToBottom";
+import type { Json, TimelineEvent, View } from "../view/model";
 import { CategoryBreakdown, ContextBar, CTX_CATS, type Highlight, type Segment } from "./ContextBar";
-import { cacheStatus, nextRequestCost, pct, uncachedCost, usd } from "../cost";
+import { CostPanel } from "./CostPanel";
+import { JsonView } from "./JsonView";
 
 const TABS = ["Timeline", "Context", "Requests", "Tools", "Guardrails", "Protocol"] as const;
 type Tab = (typeof TABS)[number];
@@ -28,9 +28,10 @@ type Props = { view: View; adapter: Adapter | null; capabilities: Capabilities; 
 export function Inspector({ view, adapter, capabilities, links }: Props) {
 	const [tab, setTab] = useState<Tab>("Timeline");
 	const body = useRef<HTMLDivElement>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: tab is a trigger: tabs share one scroller
 	useEffect(() => {
 		if (body.current) body.current.scrollTop = 0;
-	}, [tab]); // tabs share one scroller
+	}, [tab]);
 	// view.events spans every session on this connection; per-session tabs only show the current one.
 	const sessionEvents = useMemo(
 		() => view.events.filter((e) => e.sessionId === view.sessionId),
@@ -44,6 +45,7 @@ export function Inspector({ view, adapter, capabilities, links }: Props) {
 			<div className="tabs">
 				{tabs.map((t) => (
 					<button
+						type="button"
 						key={t}
 						className={t === tab ? "tab active" : "tab"}
 						onClick={() => setTab(t)}
@@ -83,12 +85,12 @@ function Links({
 	return (
 		<span className="links">
 			{i.chapter && links.guide && (
-				<a href={links.guide(i.chapter)} target="_blank">
+				<a href={links.guide(i.chapter)} target="_blank" rel="noopener">
 					guide ch.{i.chapter}
 				</a>
 			)}
 			{i.source && links.source && (
-				<a href={links.source(i.source)} target="_blank">
+				<a href={links.source(i.source)} target="_blank" rel="noopener">
 					{links.harness}: {i.source}
 				</a>
 			)}
@@ -119,6 +121,7 @@ function Timeline({
 			<div className="chips pinned-top">
 				{(Object.keys(CATEGORY_COLORS) as Category[]).map((c) => (
 					<button
+						type="button"
 						key={c}
 						className={hidden.has(c) ? "chip off" : "chip"}
 						style={{ borderColor: CATEGORY_COLORS[c] }}
@@ -169,7 +172,7 @@ function Timeline({
 					})}
 				</div>
 				{!follow.atBottom && (
-					<button className="to-latest" onClick={follow.toBottom} data-testid="timeline-to-latest">
+					<button type="button" className="to-latest" onClick={follow.toBottom} data-testid="timeline-to-latest">
 						↓ latest
 					</button>
 				)}
@@ -185,6 +188,7 @@ function ContextView({ view, adapter, links }: { view: View; adapter: Adapter; l
 	const [hl, setHl] = useState<Highlight>(null);
 	// Ask for the next request again after each event that changed it (Codex: trace historyChanged).
 	const changes = view.events.filter((e) => e.trace && adapter.contextTriggers.includes(e.name)).length;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: changes is a trigger: fetch again after each change
 	useEffect(() => {
 		if (!view.sessionId) return;
 		const t = setTimeout(
@@ -351,7 +355,7 @@ function ContextView({ view, adapter, links }: { view: View; adapter: Adapter; l
 					})}
 				</div>
 				{!follow.atBottom && (
-					<button className="to-latest" onClick={follow.toBottom} data-testid="ctx-to-latest">
+					<button type="button" className="to-latest" onClick={follow.toBottom} data-testid="ctx-to-latest">
 						↓ latest
 					</button>
 				)}
@@ -447,7 +451,12 @@ function Requests({ events, ex, links }: { events: TimelineEvent[]; ex: Explaine
 		<div data-testid="requests-view">
 			<div className="row wrap">
 				{requests.map((r, i) => (
-					<button key={r.seq} className={i === index ? "chip" : "chip off"} onClick={() => setSel(i)}>
+					<button
+						type="button"
+						key={r.seq}
+						className={i === index ? "chip" : "chip off"}
+						onClick={() => setSel(i)}
+					>
 						#{i + 1}
 					</button>
 				))}

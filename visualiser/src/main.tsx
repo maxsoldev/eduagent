@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { BackendPicker } from "./components/BackendPicker";
-import { fetchBackends, type BackendList } from "./launcher";
 import { ADAPTERS } from "./adapters";
+import { BackendPicker } from "./components/BackendPicker";
+import { type BackendList, fetchBackends } from "./launcher";
 import "./styles.css";
 
 // Without ?backend=..., show the picker. With it, connect to that backend through the launcher.

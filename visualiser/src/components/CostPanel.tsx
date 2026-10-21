@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { Json } from "../view/model";
 import { pct, usd } from "../cost";
+import type { Json } from "../view/model";
 
 // The prompt cache, made visible: KPI tiles, the last request as two part-to-whole bars
 // (tokens vs dollars, same four parts) and the cost of every request in this thread.

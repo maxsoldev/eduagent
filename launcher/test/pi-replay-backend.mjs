@@ -15,7 +15,7 @@ let lastState = lines.find((m) => m.type === "response" && m.command === "get_st
 let queue = Promise.resolve();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const write = (m) => process.stdout.write(JSON.stringify(m) + "\n");
+const write = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 
 async function handle(command) {
 	const at = lines.findIndex((m, i) => i >= cursor && m.type === "response" && m.command === command.type);
@@ -46,8 +46,11 @@ let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (data) => {
 	buffer += data;
-	for (let k; (k = buffer.indexOf("\n")) >= 0; buffer = buffer.slice(k + 1)) {
+	while (true) {
+		const k = buffer.indexOf("\n");
+		if (k < 0) break;
 		const command = JSON.parse(buffer.slice(0, k));
+		buffer = buffer.slice(k + 1);
 		queue = queue.then(() => handle(command));
 	}
 });

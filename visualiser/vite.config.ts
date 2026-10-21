@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from "vite";
+
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 // In dev, Vite may pick any free port (5173, 5174, ...). The page always talks to its own origin;
 // Vite forwards /backends (the list and the per-viewer WebSockets) and /guide to the launcher

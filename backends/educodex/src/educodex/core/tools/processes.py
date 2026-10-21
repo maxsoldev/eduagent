@@ -8,10 +8,11 @@ Codex can also allocate a PTY (`tty: true`); educodex always uses pipes.
 """
 
 import asyncio
+import contextlib
+import inspect
 import os
 import signal
 import time
-import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -102,10 +103,8 @@ class ProcessManager:
 
     async def _collect(self, process: Process, yield_ms: int, started: float) -> ExecResult:
         """Wait until the process exits or the yield time passes, then return new output."""
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(asyncio.shield(process.proc.wait()), yield_ms / 1000)
-        except TimeoutError:
-            pass
         exited = process.proc.returncode is not None
         if exited and process.reader:
             # Drain what is left, but a background child (`npm run dev &`) may keep the pipe open:
@@ -125,10 +124,8 @@ class ProcessManager:
     async def terminate_all(self) -> None:
         """Kill every process group we started (including background children), then wait for readers."""
         for process in list(self._lingering.values()):
-            try:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
         for process in list(self._processes.values()):
             await process.proc.wait()
         self._processes.clear()

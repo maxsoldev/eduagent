@@ -1,9 +1,9 @@
 // debug/context/get (the exact next Responses request) -> the neutral context snapshot.
 // Labelling each input item by where it came from is the core idea of Codex's prompt assembly.
 import type { CtxCat } from "../../components/ContextBar";
-import type { ContextSnapshot } from "../types";
 import type { Json } from "../../view/model";
 import { approxTokens, clip } from "../context";
+import type { ContextSnapshot } from "../types";
 
 export function codexContext(ctx: Json): ContextSnapshot {
 	const input: Json[] = ctx.request.input;
@@ -16,14 +16,14 @@ export function codexContext(ctx: Json): ContextSnapshot {
 				preview: preview(item),
 				raw: item,
 				summary: `${item.type}${item.role ? `/${item.role}` : ""}${parts && parts.length > 1 ? ` · ${parts.length} parts` : ""}`,
-				parts:
-					parts &&
-					parts.map((p) => ({
-						type: p.type,
-						text: typeof p.text === "string" ? p.text : undefined,
-						tokens: approxTokens(p),
-						raw: p,
-					})),
+				parts: parts
+					? parts.map((p) => ({
+							type: p.type,
+							text: typeof p.text === "string" ? p.text : undefined,
+							tokens: approxTokens(p),
+							raw: p,
+						}))
+					: null,
 			};
 		}),
 		tools: { names: ctx.request.tools.map((t: Json) => t.name ?? t.type), tokens: approxTokens(ctx.request.tools) },

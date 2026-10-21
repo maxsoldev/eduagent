@@ -12,7 +12,7 @@ and must enforce their own guardrails.
 
 import hashlib
 import json
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from typing import TYPE_CHECKING, Any
 
 from educodex.core.mcp.naming import namespace_for, qualified, sanitize
@@ -205,10 +205,8 @@ class McpManager:
         return result.model_dump(exclude_none=True, by_alias=True)
 
     async def close(self) -> None:
-        try:
+        with suppress(Exception):
             await self._stack.aclose()
-        except Exception:
-            pass
 
 
 def _dedupe(handlers: list[McpToolHandler]) -> list[McpToolHandler]:

@@ -1,5 +1,5 @@
 // Small building blocks shared by the generic chat and the backend-only components.
-import { useState, type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { Entry } from "../view/model";
 
 export function Status({ s }: { s: string }) {

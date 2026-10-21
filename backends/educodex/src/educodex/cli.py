@@ -59,8 +59,9 @@ def print_event(event: Event, verbose: bool) -> None:
             console.print_json(json.dumps(body))
     elif m == "trace/modelResponse":
         types = [i.get("type") for i in p["outputItems"]]
+        usage = p["usage"]
         console.print(
-            f"  [yellow]response[/] {types} usage={p['usage'] and p['usage'].get('total_tokens')} tok in {p['seconds']}s"
+            f"  [yellow]response[/] {types} usage={usage and usage.get('total_tokens')} tok in {p['seconds']}s"
         )
     elif m == "trace/cost":
         last, total = p["last"], p["total"]
@@ -111,7 +112,8 @@ async def ask_user(method: str, params: dict) -> dict:
     """Approval prompt in the terminal."""
     what = params.get("command") or params.get("request", {}).get("message") or params.get("reason")
     console.print(
-        f"\n[bold red]approval needed[/] ({method}): {escape(str(what))}\n  reason: {escape(str(params.get('reason', '')))}"
+        f"\n[bold red]approval needed[/] ({method}): {escape(str(what))}"
+        f"\n  reason: {escape(str(params.get('reason', '')))}"
     )
     if method == "mcpServer/elicitation/request":
         return {"action": Prompt.ask("allow?", choices=["accept", "decline", "cancel"], default="decline")}

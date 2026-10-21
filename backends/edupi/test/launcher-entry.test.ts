@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { RpcClient, type Message } from "./rpc-client.ts";
+import { type Message, RpcClient } from "./rpc-client.ts";
 
 const REPO = new URL("../../../", import.meta.url).pathname.replace(/\/$/, "");
 const entry = JSON.parse(readFileSync(join(REPO, "launcher", "backends.json"), "utf8")).backends.find(
@@ -22,6 +22,7 @@ test("the shipped edupi entry trusts the chosen directory, so its project skills
 	const skill = join(dir, "project", ".pi", "skills", "greet");
 	mkdirSync(skill, { recursive: true });
 	writeFileSync(join(skill, "SKILL.md"), "---\nname: greet\ndescription: Greets the user.\n---\n\nSay hi.\n");
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: "${REPO}" is the launcher's placeholder, not a template
 	const [program, ...args] = entry.command.map((part: string) => part.replaceAll("${REPO}", REPO));
 	const env = { ...process.env, OPENROUTER_API_KEY: "", EDUPI_CODING_AGENT_DIR: join(dir, "home", "agent") };
 	// --offline: no OpenRouter model list in tests.

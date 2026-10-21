@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 const FIXTURES = new URL("./fixtures/pi/", import.meta.url);
 /** Real pi's request after a bash and a read call: its tools field and its last messages. */
@@ -227,7 +227,7 @@ test("a failing tool call becomes an error result the model reads; the run goes 
 		},
 	});
 	expect(toolEnd("bad2").isError).toBe(true);
-	expect(toolEnd("bad2").result.content[0].text).toMatch(/^Validation failed for tool "read":\n  - path: /);
+	expect(toolEnd("bad2").result.content[0].text).toMatch(/^Validation failed for tool "read":\n {2}- path: /);
 	expect(toolEnd("bad3")).toMatchObject({
 		isError: true,
 		result: { content: [{ type: "text", text: "Tool grep not found" }] },

@@ -115,7 +115,7 @@ class FakeModel(httpx.AsyncBaseTransport):
         total = sum(tokens(i) for i in prompt)
         cached = 0
         if self._previous_prompt:
-            for mine, theirs in zip(prompt, self._previous_prompt):
+            for mine, theirs in zip(prompt, self._previous_prompt, strict=False):
                 if mine != theirs:
                     break
                 cached += tokens(mine)

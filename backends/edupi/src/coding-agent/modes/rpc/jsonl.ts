@@ -17,8 +17,9 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 
 	const onData = (chunk: string | Buffer) => {
 		buffer += typeof chunk === "string" ? chunk : decoder.write(chunk);
-		let newlineIndex: number;
-		while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+		while (true) {
+			const newlineIndex = buffer.indexOf("\n");
+			if (newlineIndex === -1) return;
 			emitLine(buffer.slice(0, newlineIndex));
 			buffer = buffer.slice(newlineIndex + 1);
 		}

@@ -1,9 +1,10 @@
 // The pi adapter's timeline texts: one short explanation per pi event and the pi source file
 // that emits it (paths at the pinned commit, see view/harness.ts). Trace events come only from
 // edupi (pi has none); their source is the pi code at the same step.
+
+import { pct, usd } from "../../cost";
 import type { Explainer, Info } from "../../view/explain";
 import type { Json, TimelineEvent } from "../../view/model";
-import { pct, usd } from "../../cost";
 
 const LOOP = "packages/agent/src/agent-loop.ts";
 const SESSION = "packages/coding-agent/src/core/agent-session.ts";

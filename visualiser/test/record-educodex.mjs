@@ -37,7 +37,7 @@ let nextId = 0,
 	buffer = "",
 	turnDone;
 const finished = new Promise((resolve) => (turnDone = resolve));
-const send = (m) => p.stdin.write(JSON.stringify(m) + "\n");
+const send = (m) => p.stdin.write(`${JSON.stringify(m)}\n`);
 const request = (method, params = {}) =>
 	new Promise((resolve) => {
 		waiting.set(++nextId, resolve);
@@ -46,8 +46,11 @@ const request = (method, params = {}) =>
 
 p.stdout.on("data", (chunk) => {
 	buffer += chunk;
-	for (let k; (k = buffer.indexOf("\n")) >= 0; buffer = buffer.slice(k + 1)) {
+	while (true) {
+		const k = buffer.indexOf("\n");
+		if (k < 0) break;
 		const line = buffer.slice(0, k);
+		buffer = buffer.slice(k + 1);
 		lines.push(line);
 		const m = JSON.parse(line);
 		if (m.method && m.id !== undefined)
@@ -70,5 +73,5 @@ await request("turn/start", {
 await finished;
 p.stdin.end();
 await new Promise((resolve) => p.on("close", resolve));
-writeFileSync(new URL("fixtures/educodex-demo.out.jsonl", import.meta.url), lines.join("\n") + "\n");
+writeFileSync(new URL("fixtures/educodex-demo.out.jsonl", import.meta.url), `${lines.join("\n")}\n`);
 console.log(`${lines.length} lines`);

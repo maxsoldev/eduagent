@@ -58,7 +58,10 @@ export function createPiMapping(): (message: PiMessage) => ViewAction[] {
 		const out: ViewAction[] = [{ type: "event", event: { name: type, trace: false, sessionId, data } }];
 		switch (m.type) {
 			case "agent_start":
-				if (!turnId) out.push({ type: "turnStarted", id: (turnId = `${sessionId ?? "pi"}-t${++turn}`) });
+				if (!turnId) {
+					turnId = `${sessionId ?? "pi"}-t${++turn}`;
+					out.push({ type: "turnStarted", id: turnId });
+				}
 				break;
 			case "agent_settled":
 				// pi ends the tools it aborts with an error result; here they count as aborted.
@@ -72,7 +75,9 @@ export function createPiMapping(): (message: PiMessage) => ViewAction[] {
 						status: m.aborted ? "interrupted" : "completed",
 						durationMs: first !== undefined ? last - first : undefined,
 					});
-				(turnId = first = undefined), (last = 0);
+				turnId = undefined;
+				first = undefined;
+				last = 0;
 				break;
 			case "message_start":
 				message++;
@@ -145,7 +150,8 @@ export function createPiMapping(): (message: PiMessage) => ViewAction[] {
 	// pi's tools: bash is a shell tool; read, edit and write work on one path. A finished edit
 	// carries its diff in result.details (for the user, not the model): it becomes a pi part.
 	function toolEntry(m: ToolEvent, output: string, status: ToolStatus): ViewAction {
-		const args = (tools[m.toolCallId] ??= m.args ?? {});
+		tools[m.toolCallId] ??= m.args ?? {};
+		const args = tools[m.toolCallId];
 		const result: Json = m.result; // details and structuredContent are each tool's own
 		const diff = m.toolName === "edit" ? result?.details?.diff : undefined;
 		const entry: Entry = {
@@ -178,8 +184,10 @@ export function createPiMapping(): (message: PiMessage) => ViewAction[] {
 	// fills only an empty chat, so a later get_messages does not repeat the turns.
 	function response(m: RpcResponse): ViewAction[] {
 		if (!m.success) return [];
-		if (m.command === "get_state" && m.data.sessionId !== sessionId)
-			return [{ type: "session", id: (sessionId = m.data.sessionId) }];
+		if (m.command === "get_state" && m.data.sessionId !== sessionId) {
+			sessionId = m.data.sessionId;
+			return [{ type: "session", id: sessionId }];
+		}
 		if (m.command === "get_messages" && turn === 0) return history(m.data.messages);
 		return [];
 	}
@@ -197,7 +205,8 @@ export function createPiMapping(): (message: PiMessage) => ViewAction[] {
 		for (const msg of messages) {
 			if (msg.role === "user") {
 				close();
-				out.push({ type: "turnStarted", id: (open = `${sessionId ?? "pi"}-t${++turn}`) });
+				open = `${sessionId ?? "pi"}-t${++turn}`;
+				out.push({ type: "turnStarted", id: open });
 			}
 			message++;
 			out.push(...messageEntries(msg, false));

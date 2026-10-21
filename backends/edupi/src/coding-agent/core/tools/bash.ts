@@ -3,8 +3,9 @@
 // far as partial results, and returns the tail of the output (2000 lines or 50KB). Longer output
 // is saved to a temp file, and the model gets its path. A non-zero exit code is an error result.
 // edupi leaves out pi's PI_* session variables, spawn hooks, command prefix and Windows shells.
-import { randomBytes } from "node:crypto";
+
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, writeFile } from "node:fs/promises";
 import { constants as osConstants, tmpdir } from "node:os";

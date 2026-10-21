@@ -1,11 +1,12 @@
 // Seam A: what edupi sends to the model. The faux provider stands in for OpenRouter's Chat
 // Completions endpoint and records each request.
-import { afterEach, expect, test } from "vitest";
+
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startEdupi, type Message, type RpcClient } from "./rpc-client.ts";
+import { afterEach, expect, test } from "vitest";
+import { type Message, type RpcClient, startEdupi } from "./rpc-client.ts";
 
 let edupi: RpcClient;
 afterEach(async () => {
@@ -95,7 +96,10 @@ test("without an API key a prompt is refused before the run starts", async () =>
 	);
 	let out = "";
 	const firstLine = new Promise((resolve) =>
-		proc.stdout.on("data", (d) => (out += d) && out.includes("\n") && resolve(out)),
+		proc.stdout.on("data", (d) => {
+			out += d;
+			if (out.includes("\n")) resolve(out);
+		}),
 	);
 	proc.stdin.write(`${JSON.stringify({ id: "1", type: "prompt", message: "Hi" })}\n`);
 	await firstLine;
@@ -198,12 +202,12 @@ test("a tool call without a result gets pi's synthetic error result before the n
 	const file = join(dir, "session.jsonl");
 	writeFileSync(
 		file,
-		lines
+		`${lines
 			.slice(
 				0,
 				lines.findIndex((l) => l.includes('"toolResult"')),
 			)
-			.join("\n") + "\n",
+			.join("\n")}\n`,
 	);
 	edupi = startEdupi({ responses: ["Sorry, starting over."] }, ["--session", file], { dir });
 

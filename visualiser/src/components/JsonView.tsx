@@ -46,7 +46,12 @@ export function JsonView({
 					{label}:{" "}
 				</span>
 			)}
-			<button className="j-toggle" onClick={() => toggle(true)} title={expanded ? "collapse" : "expand all below"}>
+			<button
+				type="button"
+				className="j-toggle"
+				onClick={() => toggle(true)}
+				title={expanded ? "collapse" : "expand all below"}
+			>
 				{expanded ? "▾" : "▸"}
 			</button>
 			<span className="j-punct">{l}</span>
@@ -84,7 +89,7 @@ function Scalar({ value }: { value: Json }) {
 			<span className="j-str">
 				"{clip ? value.slice(0, 400) : value}"
 				{value.length > 400 && (
-					<button className="j-more" onClick={() => setFull(!full)}>
+					<button type="button" className="j-more" onClick={() => setFull(!full)}>
 						{full ? "less" : `+${value.length - 400} chars`}
 					</button>
 				)}

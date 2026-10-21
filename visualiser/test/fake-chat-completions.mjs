@@ -76,7 +76,7 @@ export function startFakeChatCompletions(script, { port = 0, onRequest = () => {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	const [port, scriptPath, logPath] = process.argv.slice(2);
 	const script = JSON.parse(readFileSync(scriptPath, "utf8"));
-	const log = logPath ? (r) => appendFileSync(logPath, JSON.stringify(r) + "\n") : () => {};
+	const log = logPath ? (r) => appendFileSync(logPath, `${JSON.stringify(r)}\n`) : () => {};
 	const { port: p } = await startFakeChatCompletions(script, { port: Number(port), onRequest: log });
 	console.error(`fake Chat Completions server on http://127.0.0.1:${p}/v1`);
 }
