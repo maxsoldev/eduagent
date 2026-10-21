@@ -19,12 +19,15 @@ import type {
   StopReason,
   SystemMessage,
   TextContent,
+  ThinkingContent,
+  ThinkingLevel,
   Tool,
   ToolCall,
   ToolResultMessage,
   TranscriptContext,
   Usage,
 } from "../types.ts";
+import { clampThinkingLevel } from "../models.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
 import { getCurrentTools } from "../utils/transcript.ts";
@@ -52,6 +55,14 @@ function hasToolHistory(messages: Message[]): boolean {
   return messages.some((msg) => msg.role === "toolResult" || (msg.role === "assistant" && msg.content.some((b) => b.type === "toolCall")));
 }
 
+/** stream()'s own options: streamSimple turns the thinking level into a reasoning effort. */
+export interface OpenAICompletionsOptions extends SimpleStreamOptions {
+  reasoningEffort?: Exclude<ThinkingLevel, "off">;
+}
+
+/** The Chat Completions delta fields that can carry reasoning text; the first non-empty one wins. */
+const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"] as const;
+
 /** A tool call block while it streams: the raw arguments text and the stream index ride along until the end. */
 type StreamingToolCall = ToolCall & { partialArgs?: string; streamIndex?: number };
 
@@ -60,7 +71,7 @@ function emptyUsage(): Usage {
 }
 
 /** Streams one Chat Completions response. Failures end the stream with an `error` event; it never throws. */
-export function stream(model: Model, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream {
+export function stream(model: Model, context: TranscriptContext, options?: OpenAICompletionsOptions): AssistantMessageEventStream {
   const stream = new AssistantMessageEventStream();
 
   (async () => {
@@ -92,6 +103,7 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       stream.push({ type: "start", partial: output });
 
       let textBlock: TextContent | null = null;
+      let thinkingBlock: ThinkingContent | null = null;
       let hasFinishReason = false;
       const blocks = output.content;
       const toolCallBlocksByIndex = new Map<number, StreamingToolCall>();
@@ -103,6 +115,15 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
           stream.push({ type: "text_start", contentIndex: getContentIndex(textBlock), partial: output });
         }
         return textBlock;
+      };
+      // The field the reasoning came in is kept as the signature, so a replay can use the same field.
+      const ensureThinkingBlock = (thinkingSignature: string) => {
+        if (!thinkingBlock) {
+          thinkingBlock = { type: "thinking", thinking: "", thinkingSignature };
+          blocks.push(thinkingBlock);
+          stream.push({ type: "thinking_start", contentIndex: getContentIndex(thinkingBlock), partial: output });
+        }
+        return thinkingBlock;
       };
       // Tool calls are keyed by the stream's index: the first delta has the id and the name, later ones only argument text.
       const ensureToolCallBlock = (delta: { index?: number; id?: string; function?: { name?: string } }) => {
@@ -118,6 +139,8 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
       const finishBlock = (block: (typeof blocks)[number]) => {
         if (block.type === "text") {
           stream.push({ type: "text_end", contentIndex: blocks.indexOf(block), content: block.text, partial: output });
+        } else if (block.type === "thinking") {
+          stream.push({ type: "thinking_end", contentIndex: blocks.indexOf(block), content: block.thinking, partial: output });
         } else if (block.type === "toolCall") {
           const toolCall = block as StreamingToolCall;
           Object.assign(toolCall, parseToolCallArguments(toolCall.partialArgs));
@@ -145,6 +168,16 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
           output.stopReason = result.stopReason;
           if (result.errorMessage) output.errorMessage = result.errorMessage;
           hasFinishReason = true;
+        }
+
+        // Reasoning before content: the thinking block must come before the text block.
+        const deltaFields = (choice.delta ?? {}) as Record<string, unknown>;
+        const reasoningField = REASONING_FIELDS.find((field) => typeof deltaFields[field] === "string" && (deltaFields[field] as string).length > 0);
+        if (reasoningField) {
+          const delta = deltaFields[reasoningField] as string;
+          const block = ensureThinkingBlock(reasoningField);
+          block.thinking += delta;
+          stream.push({ type: "thinking_delta", contentIndex: getContentIndex(block), delta, partial: output });
         }
 
         if (choice.delta?.content) {
@@ -189,9 +222,14 @@ export function stream(model: Model, context: TranscriptContext, options?: Simpl
   return stream;
 }
 
-/** The agent's entry point: pi's streamSimple fills request options from the model, then calls stream(). */
+/**
+ * The agent's entry point: pi's streamSimple fills request options from the model, clamps the
+ * thinking level to what the model supports and passes it on as the reasoning effort.
+ */
 export function streamSimple(model: Model, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream {
-  return stream(model, context, { ...options, maxTokens: options?.maxTokens ?? model.maxTokens });
+  const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
+  const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
+  return stream(model, context, { ...options, maxTokens: options?.maxTokens ?? model.maxTokens, reasoningEffort });
 }
 
 function createClient(model: Model, apiKey: string, optionsHeaders?: Record<string, string>,
@@ -203,7 +241,7 @@ function createClient(model: Model, apiKey: string, optionsHeaders?: Record<stri
 }
 
 /** The request body. Field order follows pi's, so a recorded body reads the same as pi's. */
-export function buildParams(model: Model, context: TranscriptContext, options: SimpleStreamOptions | undefined,
+export function buildParams(model: Model, context: TranscriptContext, options: OpenAICompletionsOptions | undefined,
   compat: Compat = getCompat(model)): ChatCompletionCreateParamsStreaming {
   const params: ChatCompletionCreateParamsStreaming = {
     model: model.id,
@@ -218,6 +256,11 @@ export function buildParams(model: Model, context: TranscriptContext, options: S
   const tools = getCurrentTools(context.messages);
   if (tools.length > 0) params.tools = convertTools(tools);
   else if (hasToolHistory(context.messages)) params.tools = [];
+  // OpenRouter's reasoning object works for every provider behind it (pi's thinkingFormat
+  // "openrouter"). No level means reasoning off: effort "none". Non-reasoning models get nothing.
+  if (model.reasoning) {
+    (params as typeof params & { reasoning?: { effort: string } }).reasoning = { effort: options?.reasoningEffort ?? "none" };
+  }
   return params;
 }
 
@@ -254,6 +297,12 @@ export function convertMessages(model: Model, context: TranscriptContext, compat
       const text = msg.content.filter((b): b is TextContent => b.type === "text" && b.text.trim().length > 0)
         .map((b) => b.text).join("");
       if (text.length > 0) assistantMsg.content = text;
+      // Reasoning goes back in the field it came in (the block's signature), so the model sees its thinking.
+      const thinkingBlocks = msg.content.filter((b): b is ThinkingContent => b.type === "thinking" && b.thinking.trim().length > 0);
+      const signature = thinkingBlocks[0]?.thinkingSignature;
+      if (signature && (REASONING_FIELDS as readonly string[]).includes(signature)) {
+        (assistantMsg as unknown as Record<string, unknown>)[signature] = thinkingBlocks.map((b) => b.thinking).join("\n");
+      }
       const toolCalls = msg.content.filter((b): b is ToolCall => b.type === "toolCall");
       if (toolCalls.length > 0) {
         assistantMsg.tool_calls = toolCalls.map((tc) => ({

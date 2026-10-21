@@ -187,13 +187,11 @@ The biggest difference is **what survives**. Codex bets that the user's own word
 
 ## Where edupi is simpler
 
-- **Manual compaction does not abort.** pi aborts a running turn first. edupi has no abort yet, so it refuses `compact` while a run is active.
 - **No extensions.** pi lets an extension cancel a compaction or supply its own summary (`session_before_compact`, `fromHook`). edupi always uses pi's built-in summary.
 - **No summary retries.** pi retries a summary call after a transient network error (`retryAssistantCall`). edupi fails the compaction.
 - **Global settings only.** pi also reads `<cwd>/.pi/settings.json` once the project is trusted, and has per-model overrides (`compaction.modelOverrides`) and `set_auto_compaction`. edupi reads `<home>/settings.json`.
 - **Simpler overflow bookkeeping.** pi checks that the failed reply is still part of the context and has more cases for omissions of omissions. edupi omits the failed reply and its tool results, and tells replies from before a compaction by entry order instead of by millisecond timestamp (with the fast faux provider both can fall in the same millisecond).
 - **No system prompt yet.** The compaction entry's `systemMessage` holds only the tool declarations (`toolsAdded`) until edupi builds pi's system prompt (chapter 03).
-- **No reasoning in summary requests.** pi sends the session's thinking level with the summary request of a reasoning model. edupi does not send a `reasoning` field yet (chapter 01).
 
 ## Try it
 

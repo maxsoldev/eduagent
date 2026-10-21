@@ -1,0 +1,7 @@
+{"id":"1","type":"get_state"}
+{"id":"2","type":"set_thinking_level","level":"high"}
+{"id":"3","type":"prompt","message":"Run a slow command."}
+{"id":"4","type":"steer","message":"Use src/ instead."}
+{"id":"5","type":"follow_up","message":"Then summarise."}
+{"id":"6","type":"get_state"}
+{"id":"7","type":"get_messages"}

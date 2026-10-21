@@ -29,6 +29,7 @@ A `View` holds the state of one viewer:
 | `approvals` | `Approval[]` | open approval prompts (Codex only) |
 | `paused` | `{breakpoint, info} \| null` | step mode: where the loop waits |
 | `pricing`, `costs`, `costTotal` | trace payloads | from the `pricing` and `cost` trace events |
+| `queue` | `{steering: string[], followUp: string[]} \| null` | messages waiting for the agent (pi's `queue_update`); `null` until one is seen. The viewer lists them above the composer |
 
 A `Turn` is `{id: string | null, status: "running" | "completed" | "interrupted" | "failed" | null, durationMs?, entries: Entry[]}`. A turn with `id: null` holds entries outside any backend turn (slash-command notes, errors between turns). The chat draws a separator `turn <status> · <seconds>s` after each ended turn.
 
@@ -40,7 +41,7 @@ Every entry has a unique `id`. An adapter sends the same id again to update the 
 |---|---|---|---|
 | `user` | `text`, `skills: {name, path}[]` | `userMessage` item | user `message_start`/`message_end` (`skills` stays empty: pi expands `/skill:name` into the text) |
 | `assistant` | `text`, `streaming`, `part?` | `agentMessage` item, `item/agentMessage/delta` | one entry per text block of an assistant message: `text_start`, `text_delta`, then `message_end` |
-| `reasoning` | `summary: string[]`, `streaming` | `reasoning` item, `item/reasoning/summaryTextDelta` | thinking content (not mapped yet: no recorded transcript has it) |
+| `reasoning` | `summary: string[]`, `streaming` | `reasoning` item, `item/reasoning/summaryTextDelta` | one entry per thinking block: `thinking_start`, `thinking_delta` (into `summary[0]`), then `message_end` |
 | `tool` | `name`, `toolKind: "shell" \| "mcp" \| "other"`, `title`, `arguments`, `output`, `status`, `exitCode?`, `error?`, `streaming`, `part?` | `commandExecution`, `fileChange`, `mcpToolCall` items | `tool_execution_start` / `_update` / `_end` |
 | `compaction` | `streaming`, `reason?` | `contextCompaction` item | `compaction_start` / `compaction_end` (`reason`: manual, threshold, overflow). A `compaction_end` without `result` (failed or cancelled) turns the entry into a `notice` with pi's `errorMessage` |
 | `notice` | `level: "info" \| "error"`, `source: "client" \| "backend"`, `text` | `error` notification; client notes | assistant `message_end` with `stopReason: "error"` (`errorMessage`), failed compaction. Error replies reject the command; the viewer shows them as client notes |
@@ -114,15 +115,17 @@ The client (`Adapter`) has: `connect()` (handshake, model list), `startSession(s
 
 pi's RPC protocol (`pi --mode rpc`, `packages/coding-agent/src/modes/rpc/` at the pinned commit) has no handshake and no ids on events, so `createPiMapping()` (`visualiser/src/adapters/pi/mapping.ts`) keeps a little state:
 
-- **Session:** a `get_state` reply with a new `sessionId` gives a `session` action. The client sends `get_state` on connect, and `new_session` then `get_state` for "new thread". Every timeline event gets the current session id.
+- **Session:** a `get_state` reply with a new `sessionId` gives a `session` action. The client sends `get_state` and `get_messages` on connect, and `new_session` then `get_state` for "new thread". Every timeline event gets the current session id.
+- **History:** a `get_messages` reply fills an empty chat with the session so far (a backend started with `--continue` or `--session`): each user message starts a completed turn, and a tool call with its later `toolResult` becomes one tool entry. The first "new thread" after such a connect keeps that session.
+- **Queues:** `queue_update` gives a `queue` action with both queues. With the `queues` capability the composer stays open while a turn runs: Enter or "steer" sends `steer`, Alt+Enter or "follow-up" sends `follow_up`, "abort" sends `abort`.
 - **Turn:** the first `agent_start` opens a turn (`<session>-t<n>`); `agent_settled` ends it, `interrupted` if `aborted`, else `completed`. A retry inside one run (a second `agent_start` before `agent_settled`) stays in the same turn. `durationMs` runs from the first message's `timestamp` to the end of the last reply (`timestamp + durationMs`).
 - **Entry ids:** messages are counted (`<session>-m<n>`); a text block is `<message>-c<contentIndex>`; a tool is its `toolCallId`; a compaction `<session>-k<n>`.
 - **Replies** (`type: "response"`) are not timeline events; the client matches them by `id`.
-- **Commands sent:** `get_state`, `new_session`, `prompt`, `abort`, `compact`, `set_thinking_level`, `get_commands` (skills: `source: "skill"`, name `skill:<name>`). A prompt with a `$skill` becomes `/skill:<name> <text>`, which pi expands. Steering and follow-up (`steer`, `follow_up`) are not sent yet.
+- **Commands sent:** `get_state`, `get_messages`, `new_session`, `prompt`, `steer`, `follow_up`, `abort`, `compact`, `set_thinking_level`, `get_commands` (skills: `source: "skill"`, name `skill:<name>`). A prompt with a `$skill` becomes `/skill:<name> <text>`, which pi expands.
 
 edupi speaks the same protocol, so the same adapter serves the `edupi` entries (Playwright: `visualiser/e2e/edupi.spec.ts`).
 
-Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`; `meta.json` has the pi commit), recorded by `visualiser/test/record-pi.mjs`.
+Seam C fixtures: `visualiser/test/fixtures/pi/` (`chat`, `abort`, `compact`, `queues`; `meta.json` has the pi commit), recorded by `visualiser/test/record-pi.mjs`.
 
 ## 4. Capabilities
 
@@ -139,6 +142,7 @@ Capabilities come only from the launcher config entry (`capabilities` in `launch
 | `trace` | Requests and Tools tabs, cost badge |
 | `contextInspector` | Context tab |
 | `mcp` | MCP servers in the Tools tab |
+| `queues` | steer, follow-up and abort while a turn runs, and the queued messages (pi) |
 
 Timeline and Protocol always show, because they also list native messages. The test entry `educodex-plain` in `launcher/backends.test.json` has no capabilities (`visualiser/e2e/view.spec.ts`).
 

@@ -1,6 +1,7 @@
 // Mirrors pi packages/agent/src/agent.ts (pinned 16f5f0af4): the stateful Agent around the loop.
 // It owns the transcript, runs one prompt at a time, keeps its state up to date from the loop's
-// events, then passes each event to its listeners and awaits them in order.
+// events, then passes each event to its listeners and awaits them in order. It also holds the
+// steering and follow-up queues that the loop drains while a run is active.
 import type { ImageContent, Message, Model, TextContent } from "../ai/types.ts";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import type {
@@ -11,6 +12,7 @@ import type {
   AgentProbe,
   AgentState,
   AgentTool,
+  QueueMode,
   StreamFn,
   ThinkingLevel,
   ToolExecutionMode,
@@ -30,7 +32,39 @@ export interface AgentOptions {
   sessionId?: string;
   /** Default "parallel", as in pi. */
   toolExecution?: ToolExecutionMode;
+  steeringMode?: QueueMode;
+  followUpMode?: QueueMode;
   probe?: AgentProbe; // edupi: the teaching extras' hooks
+}
+
+/** Messages waiting for the loop. drain() takes one ("one-at-a-time") or all of them. */
+class PendingMessageQueue {
+  private messages: AgentMessage[] = [];
+  constructor(public mode: QueueMode) {}
+
+  enqueue(message: AgentMessage): void {
+    this.messages.push(message);
+  }
+
+  hasItems(): boolean {
+    return this.messages.length > 0;
+  }
+
+  peek(): AgentMessage[] {
+    if (this.mode === "all") return this.messages.slice();
+    const first = this.messages[0];
+    return first ? [first] : [];
+  }
+
+  drain(): AgentMessage[] {
+    const drained = this.peek();
+    this.messages = this.messages.slice(drained.length);
+    return drained;
+  }
+
+  clear(): void {
+    this.messages = [];
+  }
 }
 
 type ActiveRun = { promise: Promise<void>; resolve: () => void; abortController: AbortController };
@@ -41,6 +75,8 @@ export class Agent {
   private _state: MutableAgentState;
   private readonly listeners = new Set<(event: AgentEvent, signal: AbortSignal) => Promise<void> | void>();
   private activeRun?: ActiveRun;
+  private readonly steeringQueue: PendingMessageQueue;
+  private readonly followUpQueue: PendingMessageQueue;
 
   public convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
   public streamFunction: StreamFn;
@@ -68,6 +104,8 @@ export class Agent {
     this.getApiKey = options.getApiKey;
     this.sessionId = options.sessionId;
     this.toolExecution = options.toolExecution ?? "parallel";
+    this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
+    this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
     this.probe = options.probe;
   }
 
@@ -79,6 +117,43 @@ export class Agent {
 
   get state(): AgentState {
     return this._state;
+  }
+
+  get steeringMode(): QueueMode {
+    return this.steeringQueue.mode;
+  }
+
+  get followUpMode(): QueueMode {
+    return this.followUpQueue.mode;
+  }
+
+  /** Queues a message to go in after the current turn's tools, before the next model call. */
+  steer(message: AgentMessage): void {
+    this.steeringQueue.enqueue(message);
+  }
+
+  /** Queues a message to run only when the agent would otherwise stop. */
+  followUp(message: AgentMessage): void {
+    this.followUpQueue.enqueue(message);
+  }
+
+  clearAllQueues(): void {
+    this.steeringQueue.clear();
+    this.followUpQueue.clear();
+  }
+
+  hasQueuedMessages(): boolean {
+    return this.steeringQueue.hasItems() || this.followUpQueue.hasItems();
+  }
+
+  /** The current run's abort signal, if a run is active. */
+  get signal(): AbortSignal | undefined {
+    return this.activeRun?.abortController.signal;
+  }
+
+  /** Aborts the current run: the stream and the running tools get the signal. */
+  abort(): void {
+    this.activeRun?.abortController.abort();
   }
 
   /** Resolves when the current run and its listeners have finished. */
@@ -96,7 +171,7 @@ export class Agent {
 
   /**
    * Runs the loop again from the current messages, without a new prompt (after an overflow, the
-   * session compacts and continues). pi also drains the steering and follow-up queues here.
+   * session compacts and continues). After an assistant reply it starts from the queued messages instead.
    */
   async continue(): Promise<void> {
     if (this.activeRun) throw new Error("Agent is already processing. Wait for completion before continuing.");
@@ -104,7 +179,20 @@ export class Agent {
     if (!lastMessage || this._state.messages.every((message) => message.role === "system")) {
       throw new Error("No messages to continue from");
     }
-    if (lastMessage.role === "assistant") throw new Error("Cannot continue from message role: assistant");
+    if (lastMessage.role === "assistant") {
+      // The drained steering message is this run's prompt, so the loop must not poll steering again at once.
+      const queuedSteering = this.steeringQueue.drain();
+      if (queuedSteering.length > 0) {
+        await this.runPromptMessages(queuedSteering, { skipInitialSteeringPoll: true });
+        return;
+      }
+      const queuedFollowUps = this.followUpQueue.drain();
+      if (queuedFollowUps.length > 0) {
+        await this.runPromptMessages(queuedFollowUps);
+        return;
+      }
+      throw new Error("Cannot continue from message role: assistant");
+    }
     await this.runWithLifecycle(async (signal) => {
       await runAgentLoopContinue(this.createContextSnapshot(), this.createLoopConfig(),
         (event) => this.processEvents(event), signal, this.streamFunction);
@@ -118,9 +206,9 @@ export class Agent {
     return [{ role: "user", content, timestamp: Date.now() }];
   }
 
-  private async runPromptMessages(messages: AgentMessage[]): Promise<void> {
+  private async runPromptMessages(messages: AgentMessage[], options: { skipInitialSteeringPoll?: boolean } = {}): Promise<void> {
     await this.runWithLifecycle(async (signal) => {
-      await runAgentLoop(messages, this.createContextSnapshot(), this.createLoopConfig(),
+      await runAgentLoop(messages, this.createContextSnapshot(), this.createLoopConfig(options),
         (event) => this.processEvents(event), signal, this.streamFunction);
     });
   }
@@ -129,7 +217,8 @@ export class Agent {
     return { messages: this._state.messages.slice(), tools: this._state.tools.slice() };
   }
 
-  private createLoopConfig(): AgentLoopConfig {
+  private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
+    let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
     return {
       model: this._state.model,
       reasoning: this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel,
@@ -137,6 +226,14 @@ export class Agent {
       convertToLlm: this.convertToLlm,
       getApiKey: this.getApiKey,
       toolExecution: this.toolExecution,
+      getSteeringMessages: async () => {
+        if (skipInitialSteeringPoll) {
+          skipInitialSteeringPoll = false;
+          return [];
+        }
+        return this.steeringQueue.drain();
+      },
+      getFollowUpMessages: async () => this.followUpQueue.drain(),
       probe: this.probe,
       prepareNextTurn: this.prepareNextTurn,
     };

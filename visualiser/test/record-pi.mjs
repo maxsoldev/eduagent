@@ -81,6 +81,27 @@ const SCENARIOS = [
       await pi.prompt("Go on.");
     },
   },
+  {
+    name: "queues",
+    // Steer and follow up while a tool runs; the second reply thinks first. Then get_messages.
+    script: [
+      { toolCalls: [{ id: "call_slow", name: "bash", arguments: { command: "sleep 1; echo done" } }] },
+      { reasoning: ["The user", " steered."], text: ["Ack steer."] },
+      { text: ["Ack follow."] },
+    ],
+    async run(pi) {
+      await pi.send({ type: "get_state" });
+      await pi.send({ type: "set_thinking_level", level: "high" });
+      const settled = pi.until((m) => m.type === "agent_settled");
+      await pi.send({ type: "prompt", message: "Run a slow command." });
+      await pi.until((m) => m.type === "tool_execution_start");
+      await pi.send({ type: "steer", message: "Use src/ instead." });
+      await pi.send({ type: "follow_up", message: "Then summarise." });
+      await settled;
+      await pi.send({ type: "get_state" });
+      await pi.send({ type: "get_messages" });
+    },
+  },
 ];
 
 const RESOLVER = pathToFileURL(join(PI, "packages/coding-agent/src/experimental/source-resolver.ts")).href;
