@@ -8,23 +8,16 @@ import { join, resolve } from "node:path";
 export const APP_NAME = "edupi";
 /** The suite folder in the user's home, then edupi's folder in it (pi: ".pi"). */
 export const CONFIG_DIR_NAME = join(".eduagent", ".edupi");
-/** Project resources (skills, SYSTEM.md) live in <cwd>/.pi, pi's project folder name. */
+/** Project resources (skills) live in <cwd>/.pi, pi's project folder name. */
 export const PROJECT_CONFIG_DIR_NAME = ".pi";
 
 // pi: `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`, so PI_CODING_AGENT_DIR there.
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 
-/** Expands a leading ~ to the user's home. */
-export function expandTildePath(path: string): string {
-	if (path === "~") return homedir();
-	if (path.startsWith("~/")) return join(homedir(), path.slice(2));
-	return resolve(path);
-}
-
 /** The agent config directory, e.g. ~/.eduagent/.edupi/agent/. */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
-	if (envDir) return expandTildePath(envDir);
+	if (envDir) return resolve(envDir); // pi also expands a leading ~
 	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 

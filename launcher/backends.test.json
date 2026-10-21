@@ -51,8 +51,8 @@
       "name": "edupi-skills",
       "harness": "pi",
       "protocol": "pi-rpc",
-      "description": "Test backend: edupi in a trusted project (--approve); the faux model reads a skill's SKILL.md (backends/edupi/examples/faux/skills.json)",
-      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--approve", "--faux", "${REPO}/backends/edupi/examples/faux/skills.json"],
+      "description": "Test backend: edupi in a project with a skill; the faux model reads a skill's SKILL.md (backends/edupi/examples/faux/skills.json)",
+      "command": ["node", "${REPO}/backends/edupi/bin/edupi.mjs", "--mode", "rpc", "--faux", "${REPO}/backends/edupi/examples/faux/skills.json"],
       "env": { "EDUPI_CODING_AGENT_DIR": "${E2E_DIR}/home-edupi-skills/agent" },
       "capabilities": ["trace", "skills", "compaction", "queues", "stepMode", "contextInspector"]
     },

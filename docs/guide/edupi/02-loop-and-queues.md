@@ -157,7 +157,7 @@ await emit({ type: "agent_end", messages: newMessages });
 
 The Agent owns the queues; the loop only calls `getSteeringMessages()` and `getFollowUpMessages()`. The session keeps the texts next to them, for `queue_update`. After the loop, the session goes on (`agent.continue()`) while messages are still queued, for example one sent while the last `agent_end` listeners ran. It does not go on after an abort.
 
-**In the viewer.** Backends with the `queues` capability keep the message box open while a turn runs. **steer** (Enter) sends `steer`, **follow-up** (Alt+Enter, as in pi's TUI) sends `follow_up`, **abort** sends `abort`. The queued messages show above the box, from `queue_update`. The effort select sends `set_thinking_level`. Thinking blocks show as reasoning in the chat. On connect the pi adapter also sends `get_messages`, so a session started with `--continue` or `--session` shows its conversation so far.
+**In the viewer.** Backends with the `queues` capability keep the message box open while a turn runs. **steer** (Enter) sends `steer`, **follow-up** (Alt+Enter, as in pi's TUI) sends `follow_up`, **abort** sends `abort`. The queued messages show above the box, from `queue_update`. The effort select sends `set_thinking_level`. Thinking blocks show as reasoning in the chat. On connect the pi adapter also sends `get_messages`, so a session started with `--session` shows its conversation so far.
 
 The tests in [`test/rpc-queues.test.ts`](../../../backends/edupi/test/rpc-queues.test.ts) check the event order of real pi's queue transcript, a follow-up sent during a stream, abort during a stream and during a tool, `new_session` and `compact` during a run, the `reasoning` field for each thinking level, and the thinking replay. [`test/rpc-provider.test.ts`](../../../backends/edupi/test/rpc-provider.test.ts) checks the request after an abort in the middle of a streamed tool call, and the synthetic results. The visualiser's Seam C test replays a transcript of the real pi with steering, a follow-up and thinking (`visualiser/test/fixtures/pi/queues.out.jsonl`). Playwright steers, follows up and aborts edupi from the viewer (`visualiser/e2e/edupi.spec.ts`).
 
@@ -217,7 +217,7 @@ Offline, over stdio, with the faux script that runs a slow command:
 
 ```bash
 EDUPI=$PWD; mkdir -p /tmp/edupi-queues && cd /tmp/edupi-queues
-node $EDUPI/bin/edupi.mjs --mode rpc --no-session \
+node $EDUPI/bin/edupi.mjs --mode rpc \
   --faux $EDUPI/examples/faux/queues.json --faux-log /tmp/edupi-queues.requests.jsonl
 {"id":"1","type":"prompt","message":"Run a slow command."}
 {"id":"2","type":"steer","message":"Use src/ instead."}

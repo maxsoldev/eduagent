@@ -263,15 +263,6 @@ test("a pi session with compactions is rebuilt from the latest compaction and th
 	]);
 });
 
-test("--no-session keeps the session in memory and writes no file", async () => {
-	edupi = startEdupi({ responses: ["Hi."] }, ["--no-session"]);
-	await prompt("Hello?");
-	const state = (await edupi.command("get_state")).data;
-	expect(state.sessionFile).toBeUndefined();
-	expect(state.messageCount).toBe(3); // system (tools), user, assistant
-	expect(existsSync(join(edupi.dir, "home", "agent", "sessions"))).toBe(false);
-});
-
 test("--session refuses a file whose first entry is not a session header, and leaves it as it was", async () => {
 	const { dir, file } = copyFixture("session-prompt-and-tools.jsonl");
 	const [header, ...rest] = readFileSync(file, "utf8").trimEnd().split("\n");

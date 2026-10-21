@@ -52,7 +52,7 @@ export function createPiAdapter({ url, dispatch }: AdapterOptions): Adapter {
 		contextTriggers: ["modelResponse", "toolOutput", "compacted", "paused", "promptAssembled"],
 
 		// pi has no handshake: the process already holds a session. get_state names it and its model;
-		// get_messages shows a session already in progress (edupi or pi started with --continue).
+		// get_messages shows a session already in progress (edupi with --session, or pi with --continue).
 		async connect() {
 			await rpc.connect();
 			state = await rpc.command("get_state");

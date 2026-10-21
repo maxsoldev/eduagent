@@ -14,8 +14,6 @@ export interface PromptAssembledInfo {
 	patch: Record<string, string | null> | undefined;
 	/** The AGENTS.md files in the project_context section, in prompt order. */
 	contextFiles: string[];
-	/** The SYSTEM.md / APPEND_SYSTEM.md files used, if any. */
-	customPromptFiles: { systemPrompt?: string; appendSystemPrompt?: string };
 }
 
 /** The resource loader's skill scan. */
@@ -24,7 +22,6 @@ export interface SkillsLoadedInfo {
 	roots: { path: string; scope: "user" | "project" }[];
 	skills: Skill[];
 	diagnostics: ResourceDiagnostic[];
-	projectTrusted: boolean;
 }
 
 /**

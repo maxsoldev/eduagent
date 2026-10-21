@@ -3,6 +3,10 @@
   "name": "skillsLoaded",
   "roots": [
     {
+      "path": "/tmp/edupi/ws/.pi/skills",
+      "scope": "project"
+    },
+    {
       "path": "/tmp/edupi/home/agent/skills",
       "scope": "user"
     }
@@ -16,6 +20,5 @@
       "disableModelInvocation": false
     }
   ],
-  "errors": [],
-  "projectTrusted": true
+  "errors": []
 }

@@ -252,20 +252,18 @@ function loadEntriesFromFile(filePath: string): FileEntry[] {
  */
 export class SessionManager {
 	private sessionId = "";
-	private sessionFile: string | undefined;
+	private sessionFile = "";
 	private sessionDir: string;
 	private cwd: string;
-	private persist: boolean;
 	private flushed = false;
 	private fileEntries: FileEntry[] = [];
 	private byId = new Map<string, SessionEntry>();
 	private leafId: string | null = null;
 
-	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined, persist: boolean) {
+	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined) {
 		this.cwd = resolve(cwd);
 		this.sessionDir = sessionDir;
-		this.persist = persist;
-		if (persist) mkdirSync(sessionDir, { recursive: true });
+		mkdirSync(sessionDir, { recursive: true });
 		if (sessionFile) this._setSessionFile(resolve(sessionFile));
 		else this.newSession();
 	}
@@ -282,7 +280,7 @@ export class SessionManager {
 	}
 
 	/** Starts a fresh session in memory: a new header and id. Returns the file it will write. */
-	newSession(options?: { parentSession?: string }): string | undefined {
+	newSession(): string {
 		this.sessionId = uuidv7();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -291,16 +289,13 @@ export class SessionManager {
 			id: this.sessionId,
 			timestamp,
 			cwd: this.cwd,
-			parentSession: options?.parentSession,
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
 		this.leafId = null;
 		this.flushed = false;
-		if (this.persist) {
-			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
-			this.sessionFile = join(this.sessionDir, `${fileTimestamp}_${this.sessionId}.jsonl`);
-		}
+		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+		this.sessionFile = join(this.sessionDir, `${fileTimestamp}_${this.sessionId}.jsonl`);
 		return this.sessionFile;
 	}
 
@@ -328,10 +323,6 @@ export class SessionManager {
 		}
 	}
 
-	isPersisted(): boolean {
-		return this.persist;
-	}
-
 	getCwd(): string {
 		return this.cwd;
 	}
@@ -344,7 +335,7 @@ export class SessionManager {
 		return this.sessionId;
 	}
 
-	getSessionFile(): string | undefined {
+	getSessionFile(): string {
 		return this.sessionFile;
 	}
 
@@ -356,7 +347,6 @@ export class SessionManager {
 
 	/** The first conversation message writes every entry so far; after that, one line per entry. */
 	private _persist(entry: SessionEntry): void {
-		if (!this.persist || !this.sessionFile) return;
 		if (!this.flushed) {
 			if (!this._hasConversation()) return;
 			const lines = this.fileEntries.map((e) => `${JSON.stringify(e)}\n`).join("");
@@ -459,17 +449,12 @@ export class SessionManager {
 
 	/** A new session in <agentDir>/sessions/<cwd folder>/, or in sessionDir. */
 	static create(cwd: string, sessionDir?: string): SessionManager {
-		return new SessionManager(cwd, sessionDir ?? getDefaultSessionDirPath(cwd), undefined, true);
+		return new SessionManager(cwd, sessionDir ?? getDefaultSessionDirPath(cwd), undefined);
 	}
 
 	/** Opens a session file. Its cwd comes from the header; new sessions go next to the file. */
 	static open(path: string, sessionDir?: string): SessionManager {
 		const header = existsSync(path) ? (loadEntriesFromFile(path)[0] as SessionHeader) : undefined;
-		return new SessionManager(header?.cwd ?? process.cwd(), sessionDir ?? resolve(path, ".."), path, true);
-	}
-
-	/** A session that is never written to disk (pi's --no-session). */
-	static inMemory(cwd: string = process.cwd()): SessionManager {
-		return new SessionManager(cwd, "", undefined, false);
+		return new SessionManager(header?.cwd ?? process.cwd(), sessionDir ?? resolve(path, ".."), path);
 	}
 }

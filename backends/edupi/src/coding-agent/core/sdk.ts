@@ -31,8 +31,6 @@ export interface CreateAgentSessionOptions {
 	cwd?: string;
 	/** edupi: the teaching extras' hooks. */
 	probe?: Probe;
-	/** May files from <cwd>/.pi be loaded? Resolved by main.ts (pi: SettingsManager projectTrusted). Default: no. */
-	projectTrusted?: boolean;
 }
 
 export function createAgentSession(options: CreateAgentSessionOptions): AgentSession {
@@ -66,12 +64,8 @@ export function createAgentSession(options: CreateAgentSessionOptions): AgentSes
 		},
 	});
 
-	// AGENTS.md files, skills and SYSTEM.md, read once per session.
-	const resourceLoader = new DefaultResourceLoader({
-		cwd,
-		agentDir: getAgentDir(),
-		projectTrusted: options.projectTrusted ?? false,
-	});
+	// AGENTS.md files and skills, read once per session.
+	const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
 	resourceLoader.reload();
 
 	const agent = new Agent({
