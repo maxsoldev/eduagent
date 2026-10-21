@@ -79,8 +79,8 @@ export class RpcClient {
 		});
 	}
 
-	/** The request bodies the faux provider received, in order. */
-	requests(): { url: string; body: Message }[] {
+	/** The request bodies the faux provider received, in order (headers: only x-session-id). */
+	requests(): { url: string; body: Message; headers?: Record<string, string> }[] {
 		const log = join(this.dir, "faux-requests.jsonl");
 		if (!existsSync(log)) return [];
 		return readFileSync(log, "utf8")
