@@ -30,6 +30,7 @@ function toJsonAssistantMessageEvent(event: AssistantMessageEvent): JsonAssistan
 
 export function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent {
 	if (event.type !== "message_update") return event;
+	if (event.message.role !== "assistant") throw new Error("message_update message is not an assistant message");
 	return {
 		type: "message_update",
 		usage: event.message.usage,

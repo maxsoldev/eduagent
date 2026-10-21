@@ -319,9 +319,7 @@ test("each thinking level becomes OpenRouter's reasoning effort in the request, 
 	]);
 });
 
-// test.fails until AgentSession's prepareNextTurn hook returns agent.state.model and thinkingLevel,
-// as pi's _installAgentNextTurnRefresh does (session-rpc group). Then make it a plain test.
-test.fails("set_thinking_level during a run applies to the run's next model call (pi's prepareNextTurn)", async () => {
+test("set_thinking_level during a run applies to the run's next model call (pi's prepareNextTurn)", async () => {
 	edupi = startEdupi({ models: [LUNA], responses: [slowBash, "Done."] });
 	edupi.sendLine(JSON.stringify({ type: "prompt", message: "run slow" }));
 	await edupi.until("tool_execution_start");

@@ -202,9 +202,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options: RpcM
 		}
 	};
 
-	// The client closes stdin to end the session. SIGTERM (the launcher) exits with 143, as in pi.
+	// The client closes stdin to end the session. SIGTERM (the launcher) exits with 143 and SIGHUP with 129, as in pi.
 	process.stdin.on("end", () => writeRawStdout("", () => process.exit(0))); // flush stdout first
 	process.on("SIGTERM", () => process.exit(143));
+	if (process.platform !== "win32") process.on("SIGHUP", () => process.exit(129));
 	attachJsonlLineReader(process.stdin, (line) => {
 		void handleInputLine(line);
 	});

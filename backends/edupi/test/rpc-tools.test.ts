@@ -360,7 +360,7 @@ test("bash names the size of the open last line when it keeps only its end, as p
 	expect(note("closed")).toMatch(/^\[Showing last 50\.0KB of line 1 \(line is 0B\)\. Full output: /);
 });
 
-test("bash does not pass on PI_* session variables it inherited (edupi run from inside pi)", async () => {
+test("bash does not pass on PI_* session variables it inherited (edupi run from inside pi); it sets its own", async () => {
 	process.env.PI_SESSION_ID = "parent-session";
 	process.env.PI_MODEL = "parent-model";
 	try {
@@ -373,7 +373,8 @@ test("bash does not pass on PI_* session variables it inherited (edupi run from 
 	}
 	await prompt("Show the session.");
 
-	expect(toolEnd("env").result.content).toEqual([{ type: "text", text: "[][]\n" }]);
+	const { sessionId } = (await edupi.command("get_state")).data;
+	expect(toolEnd("env").result.content).toEqual([{ type: "text", text: `[${sessionId}][openai/gpt-6-luna]\n` }]);
 });
 
 test("a file:// URL is a path, as in pi's resolveToCwd", async () => {

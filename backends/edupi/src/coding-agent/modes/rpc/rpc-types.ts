@@ -3,7 +3,7 @@
 // edupi has the commands below; pi's other commands get pi's "Unknown command" error.
 import type { AgentMessage } from "../../../agent/types.ts";
 import type { ImageContent, Model, ThinkingLevel } from "../../../ai/types.ts";
-import type { PromptDisposition } from "../../core/agent-session.ts";
+import type { PromptDisposition, QueuedInputDisposition } from "../../core/agent-session.ts";
 import type { CompactionResult } from "../../core/compaction/compaction.ts";
 import type { SourceInfo } from "../../core/skills.ts";
 
@@ -57,12 +57,13 @@ export interface RpcDebugContext {
 
 export type RpcResponse =
 	| { id?: string; type: "response"; command: "prompt"; success: true; data: { disposition: PromptDisposition } }
+	| { id?: string; type: "response"; command: "steer"; success: true; data: { disposition: QueuedInputDisposition } }
 	| {
 			id?: string;
 			type: "response";
-			command: "steer" | "follow_up";
+			command: "follow_up";
 			success: true;
-			data: { disposition: PromptDisposition };
+			data: { disposition: QueuedInputDisposition };
 	  }
 	| { id?: string; type: "response"; command: "abort" | "set_thinking_level"; success: true }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }

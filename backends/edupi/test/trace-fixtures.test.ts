@@ -31,6 +31,7 @@ test("edupi's model, loop, tool, prompt, skill, cost and step-mode trace events 
 			name: "Luna",
 			context_length: 128000,
 			pricing: { prompt: "0.000001", completion: "0.000008" },
+			supported_parameters: ["tools"],
 		},
 	];
 	edupi = startEdupi({ models, responses: [{ content: [bash], stopReason: "toolUse" }, "Hello there."] }, [], { dir });
