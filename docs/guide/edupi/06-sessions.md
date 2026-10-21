@@ -88,10 +88,10 @@ pi starts with a new session unless told otherwise:
 |---|---|
 | (none) | a new session in the cwd's folder |
 | `--session <file>` | that file; its `cwd` comes from the header |
-| `--continue`, `-c` | the newest file in the cwd's folder, or a new session |
-| `--no-session` | in memory only; `get_state` has no `sessionFile` |
+| `--continue`, `-c` | the newest file in the cwd's folder, or a new session (pi only) |
+| `--no-session` | in memory only; `get_state` has no `sessionFile` (pi only) |
 
-`--session` checks the file first. A missing file becomes a new session at that path. An empty file gets a header at once. A file whose first entry is not a `session` header is refused, and stays as it was. If the last line has no newline (a write that stopped half way), pi adds one, so the next entry starts on its own line. `--continue` likewise skips files in the folder that are not sessions.
+`--session` checks the file first. A missing file becomes a new session at that path. A file whose first entry is not a `session` header is refused, and stays as it was.
 
 When a file already has messages, the agent starts from its rebuilt context, with the session's thinking level (clamped to what the model supports) and, if pi knows it, the session's model. New entries are appended to the same file, as children of its last entry.
 
@@ -99,7 +99,7 @@ When a file already has messages, the agent starts from its rebuilt context, wit
 
 | File | Mirrors (pi) | What it does |
 |---|---|---|
-| [`src/coding-agent/core/session-manager.ts`](../../../backends/edupi/src/coding-agent/core/session-manager.ts) | `core/session-manager.ts` | Entry types, `buildContextEntries`, `buildSessionContext`, the session folder, `SessionManager` (`create`, `open`, `continueRecent`, `inMemory`, the late write) |
+| [`src/coding-agent/core/session-manager.ts`](../../../backends/edupi/src/coding-agent/core/session-manager.ts) | `core/session-manager.ts` | Entry types, `buildContextEntries`, `buildSessionContext`, the session folder, `SessionManager` (`create`, `open`, `inMemory`, the late write) |
 | [`src/coding-agent/core/messages.ts`](../../../backends/edupi/src/coding-agent/core/messages.ts) | `core/messages.ts` | The `compactionSummary` role and `convertToLlm` |
 | [`src/coding-agent/config.ts`](../../../backends/edupi/src/coding-agent/config.ts) | `config.ts` | `getAgentDir` (`~/.eduagent/.edupi/agent`, `EDUPI_CODING_AGENT_DIR`) |
 | [`src/coding-agent/core/sdk.ts`](../../../backends/edupi/src/coding-agent/core/sdk.ts) | `core/sdk.ts` | `createAgentSession`: restore the context and settings, or record the settings of a new session |
@@ -130,14 +130,14 @@ export function buildContextEntries(entries: SessionEntry[], leafId?: string | n
 }
 ```
 
-The tests in [`test/rpc-session.test.ts`](../../../backends/edupi/test/rpc-session.test.ts) check the written file against pi's format, `new_session`, `get_messages`, `--continue` and `--no-session`, and how `--session` treats empty, broken and hand-edited files. Two tests open files written by the real pi ([`test/fixtures/pi/`](../../../backends/edupi/test/fixtures/pi/), recorded by `visualiser/test/record-pi.mjs`). One has two compactions; its test checks that edupi's next request is the request the real pi sent, plus the new turn.
+The tests in [`test/rpc-session.test.ts`](../../../backends/edupi/test/rpc-session.test.ts) check the written file against pi's format, `new_session`, `get_messages`, and that `--session` refuses a file without a header. Two tests open files written by the real pi ([`test/fixtures/pi/`](../../../backends/edupi/test/fixtures/pi/), recorded by `visualiser/test/record-pi.mjs`). One has two compactions; its test checks that edupi's next request is the request the real pi sent, plus the new turn.
 
 ## In pi
 
 - The file format: [`SessionHeader`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L43), [`SessionEntryBase`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L57), [`CompactionEntry`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L91), [`generateId`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L277), and pi's own [`docs/session-format.md`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/docs/session-format.md).
 - The rebuild: [`buildSessionPath`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L390), [`getSessionContextSettings`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L418), [`sessionEntryToContextMessages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L439), [`buildContextEntries`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L476), [`buildSessionProjection`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L543), and the summary message in [`messages.ts`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/messages.ts#L11) ([`convertToLlm`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/messages.ts#L148)).
 - The class: [`SessionManager`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L987), [`newSession`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L1057), the late write in [`_hasConversation` and `_persist`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L1166), [`appendMessage`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L1204), and the constructors [`create`, `open`, `continueRecent`, `inMemory`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L1755).
-- The folder: [`getDefaultSessionDirPath`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L589), [`findMostRecentSession`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L749), [`ENV_AGENT_DIR` and `getAgentDir`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/config.ts#L585).
+- The folder: [`getDefaultSessionDirPath`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L589), [`findMostRecentSession`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/session-manager.ts#L749) (for `--continue`), [`ENV_AGENT_DIR` and `getAgentDir`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/config.ts#L585).
 - Saving and restoring: [the persistence in `_handleAgentEvent`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/agent-session.ts#L1147), [`createAgentSession`'s restore](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/sdk.ts#L210) and [its new-session entries](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/sdk.ts#L448), [`createSessionManager`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/main.ts#L358) for the flags.
 - The commands: [`AgentSessionRuntime.newSession`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/core/agent-session-runtime.ts#L226), [`new_session`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L435) and [`get_messages`](https://github.com/earendil-works/pi/blob/16f5f0af4d85ca583d045ceb5ed6d646fcaf7761/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L672) in RPC mode.
 
@@ -164,7 +164,9 @@ The Codex side: [`RolloutRecorder`](https://github.com/openai/codex/blob/1c7c43c
 - **One linear branch.** No `/tree`, fork, clone, labels or branch summaries. The reader still follows `parentId` from the last entry, so a branched pi file opens on its newest branch.
 - **Fewer entry types.** No `custom`, `custom_message`, `label`, `session_info` or `usage` entries. A pi file that has them opens, but those entries add nothing to the context. edupi writes `context_edit` entries only to omit a failed overflow attempt (chapter 07).
 - **Version 3 only.** pi migrates older files (v1 without ids, v2) and rewrites them. edupi refuses them.
-- **`--session` takes a path only.** pi also takes a partial session id and searches the folders, and has `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`). So `--continue` never filters by the header's `cwd` (pi does that only in a custom `--session-dir`), and a `~` in the path is not expanded (the shell does it).
+- **`--session` is the only flag.** pi also has `--continue`, `--no-session`, `--resume` (a picker), `--fork`, `--session-id` and `--session-dir` (with `PI_CODING_AGENT_SESSION_DIR`), and `--session` also takes a partial session id. A `~` in the path is not expanded (the shell does it).
+- **No file repair.** pi skips malformed lines, writes a header into an empty file, adds a missing final newline before it appends, and reads `null` message content as empty. edupi stops with an error on a line that is not JSON or a file without a header.
+- **Context edits are not checked.** pi refuses an edit of an entry that is missing, off the active branch or not a message, and stores a string replacement as a text block. edupi only writes omissions (`null`) of entries it just saved.
 - **Models from OpenRouter only.** An opened session's model is restored only if its provider is `openrouter`; otherwise edupi uses its default model.
 - **Simpler ids and reads.** `uuidv7` leaves out pi's counter for ids made in the same millisecond. Files are read whole, without pi's streaming reader and header scan limits.
 
@@ -187,10 +189,10 @@ f=$(find /tmp/edupi-home/agent/sessions -name '*.jsonl' | sort | tail -1)
 jq -c '{type, id, parentId, role: .message.role}' "$f"
 ```
 
-Follow the `parentId` links by hand. Then continue the session and see the old conversation in `get_messages`:
+Follow the `parentId` links by hand. Then open the session again and see the old conversation in `get_messages`:
 
 ```bash
-node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json --continue
+node bin/edupi.mjs --mode rpc --faux examples/faux/demo.json --session "$f"
 {"id":"1","type":"get_messages"}
 ```
 
