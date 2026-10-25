@@ -19,8 +19,8 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 
 | Backend | Harness | Local checkout | Pinned commit |
 |---|---|---|---|
-| educodex | Codex | `/Users/max/edu/agents/codex` (Rust code in `codex-rs/`) | `1c7c43cd85` (`1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d`, 2026-10-07) |
-| edupi | pi | `/Users/max/edu/agents/pi` | `16f5f0af4` (`16f5f0af4d85ca583d045ceb5ed6d646fcaf7761`) |
+| educodex | Codex | `/Users/max/edu/agents/harnesses/codex` (Rust code in `codex-rs/`) | `1c7c43cd85` (`1c7c43cd856a1ef451cb7ff9dc1b701ac7942c9d`, 2026-10-07) |
+| edupi | pi | `/Users/max/edu/agents/harnesses/pi` | `16f5f0af4` (`16f5f0af4d85ca583d045ceb5ed6d646fcaf7761`) |
 
 Guide links use the pinned commit.
 
@@ -36,7 +36,7 @@ Guide links use the pinned commit.
 
 - OpenAI models only for now (via OpenRouter Responses API, default `openai/gpt-6-luna`). Do not add provider abstractions.
 - `core/` never imports `observe/`, `app_server/` or the CLI/TUI (`backends/educodex/tests/test_layers.py`). Teaching extras go in `observe/` via the `Probe` hooks.
-- Vendored Codex files live in `backends/educodex/src/educodex/vendor/codex/`. Do not edit them by hand; re-run `uv run scripts/sync_vendor.py [path/to/codex]` from `backends/educodex/` (default: the `codex` checkout next to the repo).
+- Vendored Codex files live in `backends/educodex/src/educodex/vendor/codex/`. Do not edit them by hand; re-run `uv run scripts/sync_vendor.py [path/to/codex]` from `backends/educodex/` (default: `harnesses/codex` next to the repo).
 - Home: `~/.eduagent/.educodex` (laid out as `~/.codex`); `EDUCODEX_HOME` overrides it.
 - `educodex app-server` speaks stdio only (Codex's default transport). It has no web server; the launcher serves the visualiser and the guide. Test it over stdio with the `app_server` fixture in `backends/educodex/tests/conftest.py`.
 

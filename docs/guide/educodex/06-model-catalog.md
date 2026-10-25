@@ -210,7 +210,7 @@ Offline, no API key needed: add `--fake-model examples/fake/demo.json` to `exec`
 See what changed upstream after a sync:
 
 ```bash
-uv run scripts/sync_vendor.py ../codex && git diff --stat src/educodex/vendor/codex/
+uv run scripts/sync_vendor.py && git diff --stat src/educodex/vendor/codex/
 ```
 
 ## Further reading
