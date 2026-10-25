@@ -1,4 +1,4 @@
-// Records real pi fixtures: runs the pinned pi checkout (PI_DIR, default <repo>/../pi) in RPC mode
+// Records real pi fixtures: runs the pinned pi checkout (PI_DIR, default <repo>/../harnesses/pi) in RPC mode
 // against the fake Chat Completions server, per scenario. Usage: node visualiser/test/record-pi.mjs [scenario...]
 // Writes test/fixtures/pi/<scenario>.{in,out,requests}.jsonl and meta.json for the pi adapter tests;
 // scenarios with an `edupi` step write pi's session file and request bodies to
@@ -12,7 +12,7 @@ import { startFakeChatCompletions } from "./fake-chat-completions.mjs";
 const PINNED = "16f5f0af4d85ca583d045ceb5ed6d646fcaf7761";
 const MODEL = "openai/gpt-6-luna";
 const repo = new URL("../..", import.meta.url).pathname;
-const PI = resolve(process.env.PI_DIR ?? join(repo, "..", "pi"));
+const PI = resolve(process.env.PI_DIR ?? join(repo, "..", "harnesses", "pi"));
 const OUT = new URL("fixtures/pi/", import.meta.url).pathname;
 const EDUPI_OUT = join(repo, "backends/edupi/test/fixtures/pi");
 const WORK = "/tmp/eduagent-pi-record"; // a fixed path, so the cwd in the transcripts stays the same

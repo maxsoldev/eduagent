@@ -1,6 +1,6 @@
 """Copy the Codex files educodex reuses into src/educodex/vendor/codex/.
 
-Usage: uv run scripts/sync_vendor.py [path/to/codex]   (default: the codex checkout next to the repo)
+Usage: uv run scripts/sync_vendor.py [path/to/codex]   (default: harnesses/codex next to the repo)
 Records the source commit in SOURCE.md so the copy is pinned and reviewable.
 """
 
@@ -36,7 +36,7 @@ FILES = [
 
 
 def main() -> None:
-    codex = Path(sys.argv[1] if len(sys.argv) > 1 else REPO.parent / "codex").resolve()
+    codex = Path(sys.argv[1] if len(sys.argv) > 1 else REPO.parent / "harnesses" / "codex").resolve()
     sha = subprocess.check_output(["git", "-C", codex, "rev-parse", "HEAD"], text=True).strip()
     date = subprocess.check_output(["git", "-C", codex, "log", "-1", "--format=%cs"], text=True).strip()
     if DEST.exists():

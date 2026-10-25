@@ -95,7 +95,7 @@ All of the above. The point of educodex is that you can read it in an afternoon.
 3. Compare the size of the two trees:
    ```bash
    find src/educodex -name '*.py' | xargs wc -l | tail -1
-   find ../codex/codex-rs -name '*.rs' | xargs wc -l | tail -1
+   find ../../../harnesses/codex/codex-rs -name '*.rs' | xargs wc -l | tail -1
    ```
 
 ## Further reading
