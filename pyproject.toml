@@ -1,0 +1,23 @@
+# The uv workspace for the Python backends, as pnpm-workspace.yaml is for TypeScript.
+# Shared tools (Ruff) live here; each member keeps its own dependencies.
+[tool.uv.workspace]
+members = ["backends/educodex"]
+
+[dependency-groups]
+dev = ["ruff==0.17.1"]
+
+[tool.ruff]
+line-length = 120
+# Guide snippets in Markdown are hand-aligned for reading; do not reformat them.
+extend-exclude = ["backends/educodex/src/educodex/vendor", "*.md"]
+# First-party code for import sorting, as when the config lived in backends/educodex.
+src = ["backends/educodex", "backends/educodex/src"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify: a common baseline.
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tool descriptions copied verbatim from Codex; keep each one on one line, as in Codex.
+"backends/educodex/src/educodex/core/tools/specs.py" = ["E501"]
+"backends/educodex/spikes/probe_openrouter.py" = ["E501"]

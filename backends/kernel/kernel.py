@@ -5,22 +5,29 @@ management) is an extension of this file.
 Run from the repo root: uv run --env-file .env backends/kernel/kernel.py
 """
 
-import json, os, subprocess, urllib.request
+import json
+import os
+import subprocess
+import urllib.request
 
-TOOLS = [{"type": "function", "function": {
-    "name": "bash",
-    "description": "Run a bash command and return its output.",
-    "parameters": {"type": "object",
-                   "properties": {"command": {"type": "string"}},
-                   "required": ["command"]}}}]
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Run a bash command and return its output.",
+            "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+        },
+    }
+]
 
 
 def llm(messages):
     request = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         data=json.dumps({"model": "openai/gpt-6-luna", "messages": messages, "tools": TOOLS}).encode(),
-        headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
-                 "Content-Type": "application/json"})
+        headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}", "Content-Type": "application/json"},
+    )
     return json.load(urllib.request.urlopen(request))["choices"][0]["message"]
 
 
@@ -32,9 +39,9 @@ def bash(command):
 
 
 messages = []
-while True:                                   # chat loop
+while True:  # chat loop
     messages.append({"role": "user", "content": input("\nYou: ")})
-    while True:                               # agent loop
+    while True:  # agent loop
         reply = llm(messages)
         messages.append(reply)
         if not reply.get("tool_calls"):
