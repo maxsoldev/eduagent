@@ -15,7 +15,7 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 | `docs/adr/`, `GLOSSARY.md` | Architecture decisions and domain terms for the suite |
 | `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`, `launcher`, `backends/edupi`) |
 | `pyproject.toml`, `uv.lock` | The root uv workspace (member: `backends/educodex`) and the Ruff config for all Python code |
-| `backends/kernel/` | The kernel agent: the smallest agent (one file, standard library only), the base for later concepts. Not a workspace member |
+| `backends/seed-agent/` | The seed agent: the smallest agent (one file, standard library only), the base for later concepts. Not a workspace member |
 
 ## Harness sources
 

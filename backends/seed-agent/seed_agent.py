@@ -1,8 +1,8 @@
-"""The kernel agent: a chat loop, an agent loop, and one bash tool.
+"""The seed agent: a chat loop, an agent loop, and one bash tool.
 
 Every later concept (system prompt, stop conditions, more tools, context
-management) is an extension of this file.
-Run from the repo root: uv run --env-file .env backends/kernel/kernel.py
+management) grows from this seed.
+Run from the repo root: uv run --no-project --env-file .env backends/seed-agent/seed_agent.py
 """
 
 import json
@@ -22,7 +22,7 @@ TOOLS = [
 ]
 
 
-def llm(messages):
+def query_llm(messages):
     request = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         data=json.dumps({"model": "openai/gpt-6-luna", "messages": messages, "tools": TOOLS}).encode(),
@@ -42,7 +42,7 @@ messages = []
 while True:  # chat loop
     messages.append({"role": "user", "content": input("\nYou: ")})
     while True:  # agent loop
-        reply = llm(messages)
+        reply = query_llm(messages)
         messages.append(reply)
         if not reply.get("tool_calls"):
             print("\nAgent:", reply["content"])
