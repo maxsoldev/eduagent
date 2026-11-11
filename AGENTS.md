@@ -6,7 +6,7 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 
 | Path | What |
 |---|---|
-| `backends/educodex/` | educodex, the Codex backend (Python): `src/educodex/`, `tests/`, `scripts/`, `examples/`, `spikes/`, `pyproject.toml`, `uv.lock` |
+| `backends/educodex/` | educodex, the Codex backend (Python): `src/educodex/`, `tests/`, `scripts/`, `examples/`, `spikes/`, `pyproject.toml` |
 | `backends/edupi/` | edupi, the pi backend (TypeScript, run with tsx): `src/ai/`, `src/agent/`, `src/coding-agent/` mirror pi's packages; `test/` (vitest over stdio, with the faux provider); `bin/edupi.mjs` |
 | `visualiser/` | The visualiser, the shared web UI (React, Vite, Playwright tests in `e2e/`). It imports type-only from `@eduagent/edupi` and `@eduagent/launcher` (`launcher/src/api.ts`) |
 | `launcher/` | Serves the visualiser and starts one stdio backend per viewer (TypeScript, tsx). Backend list in `backends.json`; `backends.local.json` is git-ignored; `backends.test.json` is for Playwright |
@@ -14,6 +14,8 @@ eduagent is a suite of readable re-implementations (backends) of real coding-age
 | `docs/design.md` | educodex design |
 | `docs/adr/`, `GLOSSARY.md` | Architecture decisions and domain terms for the suite |
 | `package.json`, `pnpm-workspace.yaml` | The root pnpm workspace (members: `visualiser`, `launcher`, `backends/edupi`) |
+| `pyproject.toml`, `uv.lock` | The root uv workspace (member: `backends/educodex`) and the Ruff config for all Python code |
+| `backends/seed-agent/` | The seed agent: the smallest agent (one file, standard library only), the base for later concepts. Not a workspace member |
 
 ## Harness sources
 
@@ -64,13 +66,13 @@ Run these before every commit, and commit only when they are clean.
 
 ```bash
 pnpm format && pnpm lint                            # at the repo root: Biome (TypeScript and JavaScript; config in biome.jsonc)
-cd backends/educodex && uv run ruff format && uv run ruff check   # educodex: Ruff (config in pyproject.toml)
+uv run ruff format && uv run ruff check             # at the repo root: Ruff (all Python; config in pyproject.toml)
 ```
 
 - `pnpm format` is `biome check --write`: it formats, sorts imports and applies safe fixes. `pnpm lint` is `biome check`. `pnpm test` runs `biome check` first, so it fails on lint errors.
 - `uv run ruff check --fix` applies Ruff's safe fixes.
 - The style follows pi (tabs, indent width 3, line width 120), so edupi files look like the pi files they mirror. Do not reformat by hand against it.
-- Disable a rule only where it fights a deliberate pattern, and say why next to it (in `biome.jsonc`, `pyproject.toml` or a `biome-ignore` / `noqa` comment).
+- Disable a rule only where it fights a deliberate pattern, and say why next to it (in `biome.jsonc`, the root `pyproject.toml` or a `biome-ignore` / `noqa` comment).
 
 ## Agent skills
 

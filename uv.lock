@@ -5,6 +5,14 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
+[manifest]
+members = [
+    "educodex",
+]
+
+[manifest.dependency-groups]
+dev = [{ name = "ruff", specifier = "==0.17.1" }]
+
 [[package]]
 name = "annotated-types"
 version = "0.8.0"
@@ -214,7 +222,7 @@ wheels = [
 [[package]]
 name = "educodex"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "backends/educodex" }
 dependencies = [
     { name = "httpx" },
     { name = "mcp" },
@@ -231,7 +239,6 @@ tui = [
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "ruff" },
     { name = "textual" },
 ]
 
@@ -248,7 +255,6 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "ruff", specifier = "==0.17.1" },
     { name = "textual", specifier = ">=0.80" },
 ]
 
