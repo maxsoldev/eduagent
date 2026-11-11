@@ -148,6 +148,16 @@ test("edupi's tool calls show their output and the edit's diff, in the chat and 
 	await page.getByTestId("tab-Timeline").click();
 	await expect(page.locator('.t-row[data-event="toolDispatch"]').first()).toContainText("Tool call");
 	await expect(page.locator('.t-row[data-event="toolOutput"]').first()).toContainText("Tool output");
+
+	// The timeline groups the events: one run (agent_start..agent_end), its turns (turn_start..loopIteration).
+	const run = page.getByTestId("timeline-run");
+	await expect(run).toHaveCount(1);
+	await expect(run.locator(".t-group-head").first()).toContainText(/Run 1.*turns/);
+	const turns = run.getByTestId("timeline-turn");
+	await expect(turns.first().locator('.t-row[data-event="toolDispatch"]').first()).toBeVisible();
+	await expect(turns.last()).toContainText("no tool calls"); // the last turn: the model only answered
+	await turns.first().locator(".t-group-head").click(); // a turn collapses to its header
+	await expect(turns.first().locator(".t-row")).toHaveCount(0);
 });
 
 /** Writes a file, making its folders. */

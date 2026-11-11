@@ -31,3 +31,15 @@ _Avoid_: translation layer, bridge
 **Trace event**:
 A teaching-only message that a backend sends in addition to its harness's native protocol.
 _Avoid_: debug event, telemetry
+
+**Agent turn**:
+One pass through the agent loop: one model call plus the tool calls it asks for.
+_Avoid_: step, loop iteration (pi calls it a turn; Codex has no name for it)
+
+**Agent run**:
+One user message and all the agent turns after it, until the model replies with no tool calls.
+_Avoid_: turn (Codex calls this a turn), task
+
+**Agent session**:
+All the agent runs that share one message history.
+_Avoid_: thread (Codex's name), conversation
