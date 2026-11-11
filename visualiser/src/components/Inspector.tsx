@@ -8,6 +8,7 @@ import { type Capabilities, type Feature, shows } from "../view/capabilities";
 import { CATEGORY_COLORS, type Category, type Explainer } from "../view/explain";
 import type { Links as HarnessLinks } from "../view/harness";
 import type { Json, TimelineEvent, View } from "../view/model";
+import { groupTimeline, type RunGroup, type TurnGroup } from "../view/timeline";
 import { CategoryBreakdown, ContextBar, CTX_CATS, type Highlight, type Segment } from "./ContextBar";
 import { CostPanel } from "./CostPanel";
 import { JsonView } from "./JsonView";
@@ -98,6 +99,13 @@ function Links({
 	);
 }
 
+const RUN_HELP = "Agent run: one user message and all the turns after it, until the model replies with no tool calls.";
+const TURN_HELP = "Agent turn: one pass through the loop, that is one model call plus the tool calls it asks for.";
+const seconds = (events: TimelineEvent[]) =>
+	events.length ? `${((events[events.length - 1].ts - events[0].ts) / 1000).toFixed(2)}s` : "";
+const runEvents = (run: RunGroup) => run.items.flatMap((i) => (i.kind === "turn" ? i.events : [i.event]));
+const toolCalls = (events: TimelineEvent[]) => events.filter((e) => e.trace && e.name === "toolDispatch").length;
+
 function Timeline({
 	events,
 	sessionId,
@@ -112,10 +120,78 @@ function Timeline({
 	const [showNoisy, setShowNoisy] = useState(false);
 	const [hidden, setHidden] = useState<Set<Category>>(new Set());
 	const [open, setOpen] = useState<number | null>(null);
+	const [collapsed, setCollapsed] = useState<Set<number>>(new Set()); // keys of collapsed runs and turns
 	const follow = useStickToBottom(events[events.length - 1]?.seq ?? 0);
-	const shown = events.filter((e) => (showNoisy || !ex.noisy(e)) && !hidden.has(ex.info(e).category));
+	// Group all events first: a boundary event still counts when its category is hidden.
+	const items = useMemo(() => groupTimeline(events, ex.boundary), [events, ex]);
+	const shows = (e: TimelineEvent) => (showNoisy || !ex.noisy(e)) && !hidden.has(ex.info(e).category);
 	const t0 = events[0]?.ts ?? 0;
 	const other = (e: TimelineEvent) => Boolean(e.sessionId && e.sessionId !== sessionId);
+	const toggle = (key: number) => {
+		const n = new Set(collapsed);
+		n.has(key) ? n.delete(key) : n.add(key);
+		setCollapsed(n);
+	};
+	const row = (e: TimelineEvent) => {
+		if (!shows(e)) return null;
+		const i = ex.info(e);
+		return (
+			<div
+				key={e.seq}
+				className={`t-row${other(e) ? " other-thread" : ""}${follow.isFresh(e.seq) ? " fresh" : ""}`}
+				data-event={e.name}
+				title={other(e) ? `session ${e.sessionId!.slice(0, 8)} (not the current one)` : undefined}
+			>
+				<div className="t-head" onClick={() => setOpen(open === e.seq ? null : e.seq)}>
+					<span className="t-time">{((e.ts - t0) / 1000).toFixed(2)}s</span>
+					<span className="dot" style={{ background: CATEGORY_COLORS[i.category] }} />
+					<span className="t-title">{i.title}</span>
+					<span className="t-sum">{ex.summary(e)}</span>
+				</div>
+				{open === e.seq && (
+					<div className="t-detail">
+						{i.text && (
+							<p className="explain">
+								{i.text} <Links ex={ex} links={links} name={e.name} trace={e.trace} />
+							</p>
+						)}
+						<code className="muted small">{e.trace ? `trace ${e.name}` : e.name}</code>
+						<JsonView value={e.data} open={1} />
+					</div>
+				)}
+			</div>
+		);
+	};
+	const turnBlock = (t: TurnGroup) => {
+		const tools = toolCalls(t.events);
+		return (
+			<div key={t.key} className="t-group t-turn" data-testid="timeline-turn">
+				<div className="t-group-head" onClick={() => toggle(t.key)} title={TURN_HELP}>
+					<span className="chevron">{collapsed.has(t.key) ? "▸" : "▾"}</span>
+					<span className="t-title">Turn {t.index}</span>
+					<span className="t-sum">
+						{tools ? `${tools} tool call${tools > 1 ? "s" : ""}` : "no tool calls"} · {seconds(t.events)}
+					</span>
+				</div>
+				{!collapsed.has(t.key) && t.events.map(row)}
+			</div>
+		);
+	};
+	const runBlock = (r: RunGroup) => {
+		const turns = r.items.filter((i) => i.kind === "turn").length;
+		return (
+			<div key={r.key} className="t-group t-run" data-testid="timeline-run">
+				<div className="t-group-head" onClick={() => toggle(r.key)} title={RUN_HELP}>
+					<span className="chevron">{collapsed.has(r.key) ? "▸" : "▾"}</span>
+					<span className="t-title">Run {r.index}</span>
+					<span className="t-sum">
+						{turns} turn{turns === 1 ? "" : "s"} · {r.open ? "running…" : seconds(runEvents(r))}
+					</span>
+				</div>
+				{!collapsed.has(r.key) && r.items.map((i) => (i.kind === "turn" ? turnBlock(i) : row(i.event)))}
+			</div>
+		);
+	};
 	return (
 		<div className="pinned-view">
 			<div className="chips pinned-top">
@@ -141,35 +217,7 @@ function Timeline({
 			</div>
 			<div className="scroll-list-wrap">
 				<div className="timeline scroll-list" data-testid="timeline" ref={follow.ref} onScroll={follow.onScroll}>
-					{shown.map((e) => {
-						const i = ex.info(e);
-						return (
-							<div
-								key={e.seq}
-								className={`t-row${other(e) ? " other-thread" : ""}${follow.isFresh(e.seq) ? " fresh" : ""}`}
-								data-event={e.name}
-								title={other(e) ? `session ${e.sessionId!.slice(0, 8)} (not the current one)` : undefined}
-							>
-								<div className="t-head" onClick={() => setOpen(open === e.seq ? null : e.seq)}>
-									<span className="t-time">{((e.ts - t0) / 1000).toFixed(2)}s</span>
-									<span className="dot" style={{ background: CATEGORY_COLORS[i.category] }} />
-									<span className="t-title">{i.title}</span>
-									<span className="t-sum">{ex.summary(e)}</span>
-								</div>
-								{open === e.seq && (
-									<div className="t-detail">
-										{i.text && (
-											<p className="explain">
-												{i.text} <Links ex={ex} links={links} name={e.name} trace={e.trace} />
-											</p>
-										)}
-										<code className="muted small">{e.trace ? `trace ${e.name}` : e.name}</code>
-										<JsonView value={e.data} open={1} />
-									</div>
-								)}
-							</div>
-						);
-					})}
+					{items.map((i) => (i.kind === "run" ? runBlock(i) : row(i.event)))}
 				</div>
 				{!follow.atBottom && (
 					<button type="button" className="to-latest" onClick={follow.toBottom} data-testid="timeline-to-latest">

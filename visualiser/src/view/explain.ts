@@ -1,6 +1,7 @@
 // What the timeline shows for one event: a title, a category, a short explanation and links.
 // Each adapter has its own table (adapters/<protocol>/explain.ts).
 import type { TimelineEvent } from "./model";
+import type { Boundary } from "./timeline";
 
 export type Category = "prompt" | "model" | "loop" | "tools" | "guardrails" | "mcp" | "memory" | "protocol" | "debug";
 // chapter: the backend's guide chapter. source: a path in the harness's source tree.
@@ -10,6 +11,7 @@ export type Explainer = {
 	info: (e: Pick<TimelineEvent, "name" | "trace">) => Info;
 	summary: (e: TimelineEvent) => string;
 	noisy: (e: TimelineEvent) => boolean; // streaming deltas, hidden by default
+	boundary: (e: TimelineEvent) => Boundary | null; // where agent runs and turns start and end (view/timeline.ts)
 };
 
 export const CATEGORY_COLORS: Record<Category, string> = {

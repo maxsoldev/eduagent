@@ -83,6 +83,14 @@ pre.diff .add { color: var(--ok); } pre.diff .del { color: var(--bad); } pre.dif
 .chip { font-size: 12px; padding: 2px 8px; border-radius: 12px; border-width: 1px; } .chip.off { opacity: .4; }
 .t-row, .ctx-item { border-bottom: 1px solid #1a2430; }
 .t-row.other-thread { opacity: 0.45; }
+/* Agent runs and turns in the timeline (view/timeline.ts): a run holds turns, each indented with a rule. */
+.t-group { margin: 2px 0; }
+.t-run { border-left: 2px solid var(--accent); padding-left: 6px; }
+.t-turn { border-left: 2px solid #475569; padding-left: 6px; margin-left: 2px; }
+.t-group-head { display: flex; gap: 8px; align-items: baseline; padding: 3px 2px; cursor: pointer; font-size: 11.5px;
+  color: var(--muted); }
+.t-group-head:hover { background: var(--panel); }
+.t-group-head .t-title { font-weight: 600; color: inherit; }
 .t-head { display: flex; gap: 8px; align-items: baseline; padding: 4px 2px; cursor: pointer; }
 .t-head:hover { background: var(--panel); }
 .t-time { color: var(--muted); font-size: 11px; width: 50px; flex: none; text-align: right; }

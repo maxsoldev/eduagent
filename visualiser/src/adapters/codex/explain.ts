@@ -5,6 +5,7 @@
 import { pct, usd } from "../../cost";
 import type { Explainer, Info } from "../../view/explain";
 import type { Json, TimelineEvent } from "../../view/model";
+import type { Boundary } from "../../view/timeline";
 
 const EXPLAIN: Record<string, Info> = {
 	"trace/toolsRegistered": {
@@ -324,4 +325,22 @@ function summary(e: TimelineEvent): string {
 	}
 }
 
-export const codexExplainer: Explainer = { info, summary, noisy: (e) => NOISY.has(method(e)) };
+// Codex's "turn" (turn/started..turn/completed) is one user message and all its model calls: an agent
+// run. Codex has no event for one pass through the loop, so an agent turn starts at the model request
+// and ends at the loop decision. (In step mode the pause before the request shows just above the turn.)
+function boundary(e: TimelineEvent): Boundary | null {
+	switch (method(e)) {
+		case "turn/started":
+			return "runStart";
+		case "turn/completed":
+			return "runEnd";
+		case "trace/modelRequest":
+			return "turnStart";
+		case "trace/loopIteration":
+			return "turnEnd";
+		default:
+			return null;
+	}
+}
+
+export const codexExplainer: Explainer = { info, summary, noisy: (e) => NOISY.has(method(e)), boundary };

@@ -5,6 +5,7 @@
 import { pct, usd } from "../../cost";
 import type { Explainer, Info } from "../../view/explain";
 import type { Json, TimelineEvent } from "../../view/model";
+import type { Boundary } from "../../view/timeline";
 
 const LOOP = "packages/agent/src/agent-loop.ts";
 const SESSION = "packages/coding-agent/src/core/agent-session.ts";
@@ -323,4 +324,15 @@ export const piExplainer: Explainer = {
 	info,
 	summary,
 	noisy: (e) => (e.trace ? e.name === "streamEvent" : NOISY.has(e.name)),
+	boundary,
 };
+
+// pi's run is agent_start..agent_end and its turn is turn_start..turn_end. The turn closes at edupi's
+// loopIteration (sent right after turn_end), so the loop decision stays inside the turn it decides.
+// The real pi sends no trace events: there the next turn_start or agent_end closes the turn.
+function boundary(e: TimelineEvent): Boundary | null {
+	if (e.trace) return e.name === "loopIteration" ? "turnEnd" : null;
+	if (e.name === "agent_start") return "runStart";
+	if (e.name === "agent_end") return "runEnd";
+	return e.name === "turn_start" ? "turnStart" : null;
+}
