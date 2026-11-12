@@ -2,6 +2,8 @@
 // The fixture is educodex's stdout for the demo turn (see test/record-educodex.mjs).
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
+import { parseKeep } from "../src/adapters/codex/client";
+import { codexContext } from "../src/adapters/codex/context";
 import { codexActions } from "../src/adapters/codex/mapping";
 import { initialView, reduceView, type View } from "../src/view/model";
 
@@ -82,5 +84,27 @@ describe("Codex adapter on the educodex demo turn", () => {
 		expect(view.costs).toHaveLength(7);
 		expect(view.pricing).not.toBeNull();
 		expect(view.approvals).toEqual([]);
+	});
+});
+
+describe("educodex /clear-tool-outputs", () => {
+	test("keep parses as nothing (3), N or keep N", () => {
+		expect([parseKeep(), parseKeep(" 5 "), parseKeep("keep 0"), parseKeep("all")]).toEqual([3, 5, 0, null]);
+	});
+
+	test("a placeholder output gets its own context category", () => {
+		const output = (text: string) => ({ type: "function_call_output", call_id: "c1", output: text });
+		const ctx = codexContext({
+			request: {
+				input: [output("[tool output cleared to save context: 188 tokens]"), output("1\n2\n3")],
+				tools: [],
+			},
+			contextWindow: 272_000,
+			autoCompactLimit: 244_800,
+		});
+		expect(ctx.items.map((i) => [i.label, i.cat])).toEqual([
+			["cleared tool output", "cleared"],
+			["tool output", "output"],
+		]);
 	});
 });

@@ -274,6 +274,19 @@ class Tracer(Probe):
             newHistory=new_history,
         )
 
+    async def tool_outputs_cleared(self, ctx, reason, keep, call_ids, tokens_cleared, tokens_before) -> None:
+        await self._turn(
+            ctx,
+            "trace/toolOutputsCleared",
+            reason=reason,
+            keep=keep,
+            cleared=len(call_ids),
+            callIds=call_ids,
+            tokensCleared=tokens_cleared,
+            tokensBefore=tokens_before,
+            tokensAfter=ctx.session.history.token_count(),
+        )
+
     # --- skills ---------------------------------------------------------------------------
     async def skills_loaded(self, ctx, outcome) -> None:
         await self._turn(

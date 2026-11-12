@@ -89,6 +89,35 @@ What we just described is **local** compaction: the summary is plain text, made 
 
 It is opaque, like encrypted reasoning (chapter 08). The [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/) post says it "preserves the model's latent understanding of the original conversation". The harness keeps some recent messages and puts this item at the end of the new history.
 
+### Discard before you summarise: tool result clearing (educodex extra)
+
+Compaction is not the only way to make room. Most of a coding agent's context is **tool outputs**: file reads, test logs, `ls` listings. After the model has used an old output, it rarely needs the full text again. So the harness can **mask** it: replace the output text with a short placeholder, and keep everything else.
+
+```
+before                                         after /clear-tool-outputs keep 1
+[function_call]        exec_command "cat a.py"   [function_call]        exec_command "cat a.py"
+[function_call_output] <1,800 tokens of a.py>    [function_call_output] [tool output cleared to save context: 1800 tokens]
+[function_call]        exec_command "pytest"     [function_call]        exec_command "pytest"
+[function_call_output] <600 tokens of log>       [function_call_output] <600 tokens of log>        ← newest: kept
+```
+
+| | Masking (clear tool outputs) | Compaction |
+|---|---|---|
+| Model call | none | one summary request |
+| What goes | the text of old tool outputs | tool calls, outputs, assistant messages, reasoning |
+| What stays | every message, every call and its `call_id`, the newest N outputs | real user messages, fresh context, the summary |
+| Risk | the model must run the tool again if it needs an old output | the summary can miss a detail |
+
+**What is kept.** The call item stays, and so does its output item with the same `call_id`. Only the output text changes. The Responses API rejects a call without an output, so the pair must stay complete. User messages, assistant messages, reasoning items and the plan do not change. The placeholder tells the model that something was there and how big it was, so it can run the tool again if needed.
+
+**The cache effect.** Every other step in the harness only *appends* to the history, so each request extends the previous one and the prompt cache hits (chapter 05). Masking changes items in the middle of the history. So the next request no longer starts with the previous request: its prefix breaks after the first cleared output, and that request misses the cache from that point. It also writes a new cache entry. The requests after it extend the new history, so they hit again. One clear costs one cache miss.
+
+**Why `clear_at_least` exists.** A cache miss costs money: uncached input tokens cost about 10 times more than cached ones. If a clear removes only a few hundred tokens, the miss costs more than the clear saves. So auto mode clears only when it removes at least `clear_at_least` tokens. Otherwise it does nothing.
+
+Codex has no such feature. educodex adds it so that you can compare the two ways side by side. It copies the idea, the parameter names and the command of two other tools:
+- the Claude API's context editing strategy [`clear_tool_uses_20250919`](https://docs.claude.com/en/docs/build-with-claude/context-editing) (`trigger`, `keep`, `clear_at_least`, `exclude_tools`);
+- the `/clear-tool-outputs [keep N]` command of the quantext Claude Code plugin.
+
 ## In educodex
 
 All of it is in [`compact.py`](../../../backends/educodex/src/educodex/core/compact.py) (under 100 lines), with the token count in [`history.py`](../../../backends/educodex/src/educodex/core/history.py) and the limit in [`models.py`](../../../backends/educodex/src/educodex/core/models.py).
@@ -149,6 +178,25 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 
 **Manual compaction.** The visualiser's **compact** button and the `/compact` command (visualiser and TUI) call `thread/compact/start` ([`app_server/processor.py`](../../../backends/educodex/src/educodex/app_server/processor.py)). Like Codex, the server replies `{}` right away. `Session.start_compaction` then runs `run_compact(ctx, reason="manual")` as the session's task, the same slot a turn uses, so a compaction and a turn can never overlap. It is refused while a turn is running. Progress arrives as `item/started` / `item/completed` for the `contextCompaction` item.
 
+**Tool result clearing (educodex extra).** It is in [`clear_tool_outputs.py`](../../../backends/educodex/src/educodex/core/clear_tool_outputs.py). `clear_tool_outputs(items, keep, exclude_tools)` is a pure function on the history. It puts the placeholder in every tool output except the newest `keep`. It skips outputs that are already a placeholder, outputs of an excluded tool, and outputs shorter than the placeholder. Skipped outputs do not count toward `keep`, so a second run with the same `keep` changes nothing:
+
+```python
+for n in candidates[: max(len(candidates) - keep, 0)]:
+    old = items[n]
+    history[n] = {**old, "output": placeholder(old)}  # same type, same call_id
+```
+
+`run_clear_tool_outputs` then saves the change. `History.mask` swaps in the new items. Unlike `History.replace` (compaction), it keeps the API's last token count and subtracts the estimate of what was removed, because the API's count also covers the base instructions and the tools. The rollout gets the same line that compaction writes: `compacted` with `replacement_history`. So a replay of the session log gets the same history (chapter 16). It sends `trace/toolOutputsCleared` with the number of outputs, the tokens cleared, and the context size before and after.
+
+- **Manual:** `/clear-tool-outputs [keep N]` (default N = 3) in the visualiser calls `thread/toolOutputs/clear` (`{threadId, keep}`). There is no model call, so the server does the work before it replies. The reply is `{cleared, tokensCleared, message}`, and the chat shows `message`. It is refused while a turn runs.
+- **Auto (off by default):** start educodex with `--clear-tool-outputs '{"trigger_tokens": 50000, "keep": 3, "clear_at_least": 2000, "exclude_tools": ["update_plan"]}'` (`Config.clear_tool_outputs`). `auto_clear` runs right before each auto-compact check, pre-turn and mid-turn. So the harness discards first, and it summarises only if the context is still over the compaction limit:
+
+```python
+await clear_tool_outputs.auto_clear(ctx, reason="pre-turn")  # educodex extra: discard before summarising
+if session.history.token_count() >= session.model_info.effective_auto_compact_limit():
+    await compact.run_compact(ctx, reason="pre-turn")
+```
+
 **Remote compaction, for reference.** The module docstring describes what Codex does instead: a normal `/responses` request whose input ends in a `compaction_trigger` item, answered with one encrypted `compaction` item. The older `/responses/compact` endpoint is gone.
 
 ## In Codex
@@ -168,6 +216,7 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
 - **No retries.** If the summary request fails or is itself too long, the turn fails. Codex retries with backoff and trims the oldest items.
 - **Deprecated notification kept.** We still send `thread/compacted`, which Codex marks as deprecated in favour of the `contextCompaction` item.
 - **No pre/post-compact hooks** and no compaction analytics.
+- **Tool result clearing is an extra.** Codex has no masking step. educodex's version has no `clear_tool_inputs` (the Claude API can also clear the call's input), and the manual command does not use `exclude_tools`.
 - **Rough estimates.** We estimate an item from its JSON size. Codex counts only model-visible bytes and treats images and reasoning separately.
 
 ## Try it
@@ -182,7 +231,10 @@ new_history.append(user_message(f"{summary_prefix()}\n{summary or '(no summary a
    ```
    Paste `initialize`, `initialized`, `thread/start` and a `turn/start` with the text `hello` (see chapter 18), then `{"id":9,"method":"thread/compact/start","params":{"threadId":"<id>"}}`. The reply is `{"id":9,"result":{}}`, sent before the compaction finishes. Then look for `trace/compacted`: the new history is the fresh context (a developer message with permissions, an `<environment_context>` user message), `"hello"`, then the summary.
 
+5. Tool result clearing. Start the launcher, pick **educodex**, and ask for a few commands (for example "run `seq 1 300` three times, one call each"). Open the **Context** tab, then type `/clear-tool-outputs keep 1`. The chat shows how many outputs were cleared, and the bar shrinks: the old outputs are now small "cleared tool outputs" items. Send one more message. In the **Requests** tab, the new request does not extend the previous one. In the **Cost** tab, that request has fewer cached tokens; the request after it hits the cache again.
+
 ## Further reading
+- [Context editing](https://docs.claude.com/en/docs/build-with-claude/context-editing): the Claude API's tool result clearing (`clear_tool_uses_20250919`), with `trigger`, `keep`, `clear_at_least` and `exclude_tools`.
 - [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/): the "context window" section explains `/compact`, auto-compaction and the encrypted `compaction` item.
 - [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents): compaction, note-taking and sub-agents as ways to manage context.
 - [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus): why you should keep errors in context and use the file system as memory.

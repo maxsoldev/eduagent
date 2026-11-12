@@ -316,4 +316,6 @@ def run_tui(args) -> None:
         server_args += ["--fake-model", args.fake_model]
     if args.memories:
         server_args.append("--memories")
+    if args.clear_tool_outputs:
+        server_args += ["--clear-tool-outputs", args.clear_tool_outputs]
     EducodexTui(server_args).run()

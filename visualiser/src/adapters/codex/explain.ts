@@ -138,6 +138,12 @@ const EXPLAIN: Record<string, Info> = {
 		source: "core/src/compact.rs",
 		text: "History was replaced by recent user messages + fresh context + the summary.",
 	},
+	"trace/toolOutputsCleared": {
+		title: "Tool outputs cleared",
+		category: "memory",
+		chapter: "15",
+		text: "educodex extra (not in Codex): old tool outputs were replaced by a short placeholder; the calls stay. No model call. The history changed in the middle, so the next request no longer extends the last one: its prefix breaks and it misses the prompt cache once.",
+	},
 	"trace/skillsLoaded": {
 		title: "Skills scanned",
 		category: "prompt",
@@ -298,6 +304,8 @@ function summary(e: TimelineEvent): string {
 			return p.tools.map((t: Json) => t.name).join(", ");
 		case "trace/compacted":
 			return `${p.itemsBefore} → ${p.itemsAfter} items`;
+		case "trace/toolOutputsCleared":
+			return `${p.reason} · ${p.cleared} outputs (~${p.tokensCleared} tok) · ~${p.tokensBefore} → ~${p.tokensAfter} tok · kept ${p.keep}`;
 		case "trace/paused":
 			return p.breakpoint;
 		case "trace/skillsLoaded":

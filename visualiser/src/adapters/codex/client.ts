@@ -12,6 +12,7 @@ import { RpcClient } from "./rpc";
 // Slash commands, in Codex's popup order (codex-rs/tui/src/slash_command.rs: "enum order is
 // presentation order"). The descriptions of skills, new and compact are Codex's own. Codex has
 // /memory-update and /memory-drop only as hidden debug stubs; here they run the memory pipeline.
+// /clear-tool-outputs is an educodex extra (Codex has no such command).
 const COMMANDS: Command[] = [
 	{ name: "skills", description: "use skills to improve how Codex performs specific tasks", needs: "skills" },
 	{ name: "new", description: "start a new chat during a conversation" },
@@ -22,7 +23,18 @@ const COMMANDS: Command[] = [
 		needs: "memories",
 	},
 	{ name: "memory-drop", description: "delete all memories", needs: "memories" },
+	{
+		name: "clear-tool-outputs",
+		description: "[keep N] replace old tool outputs with a placeholder, keep the newest N (default 3)",
+		needs: "compaction",
+	},
 ];
+
+// "/clear-tool-outputs", "… 2" or "… keep 2" (the quantext plugin's argument); null for anything else.
+export function parseKeep(args = ""): number | null {
+	const m = /^\s*(?:keep\s+)?(\d+)?\s*$/i.exec(args);
+	return m ? Number(m[1] ?? 3) : null;
+}
 
 // thread/start takes a kebab-case sandbox mode; turn/start takes a camelCase SandboxPolicy (as in Codex v2).
 const SANDBOX_POLICY_TAGS: Record<string, string> = {
@@ -54,7 +66,7 @@ export function createCodexAdapter({ url, capabilities, dispatch }: AdapterOptio
 		],
 		protocolNote:
 			'Raw JSON-RPC lite messages on the WebSocket. No "jsonrpc": "2.0" field, as in Codex. Server→client requests (with an id) are approvals.',
-		contextTriggers: ["historyChanged"],
+		contextTriggers: ["historyChanged", "toolOutputsCleared"],
 
 		async connect() {
 			await rpc.connect();
@@ -100,7 +112,12 @@ export function createCodexAdapter({ url, capabilities, dispatch }: AdapterOptio
 			const res = await rpc.request("skills/list", { cwds: cwd ? [cwd] : undefined });
 			return res.data[0]?.skills ?? [];
 		},
-		async runCommand(name) {
+		async runCommand(name, args) {
+			if (name === "clear-tool-outputs") {
+				const keep = parseKeep(args);
+				if (keep === null) return "Usage: /clear-tool-outputs [keep N]";
+				return (await rpc.request("thread/toolOutputs/clear", { threadId, keep })).message;
+			}
 			if (name === "memory-update") await rpc.request("memory/update/start", { threadId });
 			else if (name === "memory-drop") {
 				await rpc.request("memory/reset");

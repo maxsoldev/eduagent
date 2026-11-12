@@ -130,3 +130,8 @@ class Probe:
         new_history: list["ResponseItem"],
     ) -> None:
         """History was replaced by the compacted history."""
+
+    async def tool_outputs_cleared(
+        self, ctx: "TurnContext", reason: str, keep: int, call_ids: list[str], tokens_cleared: int, tokens_before: int
+    ) -> None:
+        """Old tool outputs got a placeholder (educodex extra, core/clear_tool_outputs.py)."""

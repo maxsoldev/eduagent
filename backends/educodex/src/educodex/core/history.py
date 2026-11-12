@@ -22,6 +22,16 @@ class History:
         self.items = list(items)
         self.set_usage(None)
 
+    def mask(self, items: list[ResponseItem], tokens_removed: int) -> None:
+        """Used by tool result clearing: same items, some smaller. Unlike replace, keep the API's
+        count (it covers base instructions and tools too), minus the estimate of what was removed."""
+        self.items = list(items)
+        if self.last_usage:
+            self.last_usage = {
+                **self.last_usage,
+                "total_tokens": self.last_usage.get("total_tokens", 0) - tokens_removed,
+            }
+
     def set_usage(self, usage: dict | None) -> None:
         self.last_usage = usage
         self._usage_at = len(self.items)

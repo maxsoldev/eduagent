@@ -32,6 +32,9 @@ export function codexContext(ctx: Json): ContextSnapshot {
 	};
 }
 
+// The placeholder of educodex's /clear-tool-outputs (core/clear_tool_outputs.py).
+const CLEARED = "[tool output cleared to save context";
+
 function classify(item: Json, index: number): { label: string; cat: CtxCat } {
 	const text = item.content?.[0]?.text ?? "";
 	if (item.type === "message") {
@@ -48,6 +51,8 @@ function classify(item: Json, index: number): { label: string; cat: CtxCat } {
 		return { label: "assistant", cat: "assistant" };
 	}
 	if (item.type === "reasoning") return { label: "reasoning (encrypted)", cat: "reasoning" };
+	if (item.type.endsWith("_output") && String(item.output).startsWith(CLEARED))
+		return { label: "cleared tool output", cat: "cleared" };
 	if (item.type.endsWith("_output")) return { label: "tool output", cat: "output" };
 	if (item.type.endsWith("call")) return { label: "tool call", cat: "call" };
 	return { label: item.type, cat: "other" };

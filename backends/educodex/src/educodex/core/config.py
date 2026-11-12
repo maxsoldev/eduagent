@@ -14,6 +14,20 @@ SANDBOX_MODES = ("read-only", "workspace-write", "danger-full-access")
 
 
 @dataclass
+class ClearToolOutputs:
+    """Auto mode of /clear-tool-outputs (educodex extra, not in Codex). The names follow the Claude
+    API's context editing strategy clear_tool_uses_20250919. See core/clear_tool_outputs.py."""
+
+    trigger_tokens: int  # clear when the context is at least this big
+    keep: int = 3  # the newest tool outputs to keep as they are
+    clear_at_least: int = 0  # clear only if this removes at least this many tokens
+    exclude_tools: tuple[str, ...] = ()  # tool names whose outputs are never cleared
+
+    def __post_init__(self) -> None:
+        self.exclude_tools = tuple(self.exclude_tools)
+
+
+@dataclass
 class Config:
     cwd: Path = field(default_factory=Path.cwd)
     model: str = DEFAULT_MODEL
@@ -45,6 +59,8 @@ class Config:
     ephemeral: bool = False
     # workspace-write without /tmp and $TMPDIR (Codex's exclude_slash_tmp + exclude_tmpdir_env_var).
     exclude_tmp_writable_roots: bool = False
+    # educodex extra: clear old tool outputs before auto-compaction (off by default).
+    clear_tool_outputs: ClearToolOutputs | None = None
 
     def __post_init__(self) -> None:
         self.cwd = Path(self.cwd).resolve()
