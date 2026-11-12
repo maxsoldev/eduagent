@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.prompt import Prompt
 
-from educodex.core.config import Config, load_api_key
+from educodex.core.config import ClearToolOutputs, Config, load_api_key
 from educodex.core.events import Event, EventBus
 from educodex.core.session import Session
 from educodex.observe.tracer import Tracer
@@ -104,7 +104,14 @@ def print_event(event: Event, verbose: bool) -> None:
         console.print(
             f"  [cyan]skill[/] ${escape(p['name'])} injected ({p['tokens']} tok)  [dim]{escape(p['path'])}[/]"
         )
-    elif m in ("trace/compacted", "trace/hook", "trace/sandboxDenied", "trace/mcpToolExposed", "trace/mcpServerFailed"):
+    elif m in (
+        "trace/compacted",
+        "trace/toolOutputsCleared",
+        "trace/hook",
+        "trace/sandboxDenied",
+        "trace/mcpToolExposed",
+        "trace/mcpServerFailed",
+    ):
         console.print(f"  [bold]{m}[/] {escape(json.dumps(p)[:400])}")
 
 
@@ -141,6 +148,7 @@ def build_config(args) -> Config:
         network_access=args.network,
         mcp_servers=servers,
         memories=args.memories,
+        clear_tool_outputs=ClearToolOutputs(**json.loads(args.clear_tool_outputs)) if args.clear_tool_outputs else None,
     )
 
 
@@ -180,6 +188,12 @@ def main(argv: list[str] | None = None) -> None:
             "--memories",
             action="store_true",
             help="use memories from earlier threads and allow /memory-update (Codex: [features] memories)",
+        )
+        p.add_argument(
+            "--clear-tool-outputs",
+            metavar="JSON",
+            help='educodex extra: clear old tool outputs before auto-compaction, e.g. \'{"trigger_tokens": 50000, '
+            '"keep": 3, "clear_at_least": 2000, "exclude_tools": ["update_plan"]}\'',
         )
         p.add_argument("--fake-model", default=None, help="replay scripted model responses from a JSON file (offline)")
 

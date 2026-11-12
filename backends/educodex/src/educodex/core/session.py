@@ -163,6 +163,17 @@ class Session:
         ctx = TurnContext(self, turn_id=f"compact-{uuid.uuid4()}")
         self._turn_task = asyncio.create_task(run_compact(ctx, reason="manual"))
 
+    async def clear_tool_outputs(self, keep: int) -> dict:
+        """`/clear-tool-outputs [keep N]` (educodex extra). No model call, so it runs right away."""
+        from educodex.core.clear_tool_outputs import report, run_clear_tool_outputs
+        from educodex.core.turn import TurnContext
+
+        if self.turn_running:
+            raise RuntimeError("a turn is already running")
+        ctx = TurnContext(self, turn_id=f"clear-{uuid.uuid4()}")
+        cleared = await run_clear_tool_outputs(ctx, keep)
+        return {"cleared": len(cleared.call_ids), "tokensCleared": cleared.tokens, "message": report(cleared, keep)}
+
     def start_memory_update(self) -> None:
         """Run the memory write pipeline as the session's task (`/memory-update`)."""
         from educodex.core.memories.start import run_memory_update

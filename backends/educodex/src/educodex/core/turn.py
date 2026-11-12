@@ -10,6 +10,7 @@ core/src/stream_events_utils.rs (`handle_output_item_done`).
            ├─ run_sampling_request: send history, stream the reply, record output items
            ├─ run the tool calls the model asked for, record their outputs
            ├─ context nearly full? -> compact and continue
+           │    (educodex extra: auto clear of old tool outputs runs first, clear_tool_outputs.py)
            └─ no tool calls? -> the model gave its answer: stop
 
 Simplification: Codex starts each tool while the response is still streaming; we wait for
@@ -23,7 +24,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from educodex.core import compact, hooks
+from educodex.core import clear_tool_outputs, compact, hooks
 from educodex.core.client import Prompt
 from educodex.core.context import world_state
 from educodex.core.items import ResponseItem, clean_output_item, is_tool_call, message_text, tool_output, user_message
@@ -148,6 +149,7 @@ async def run_turn(
     try:
         text = await hooks.run_user_prompt_submit(ctx, text)
         # Pre-turn compaction: already over the limit before this turn's input (turn.rs run_pre_sampling_compact).
+        await clear_tool_outputs.auto_clear(ctx, reason="pre-turn")  # educodex extra: discard before summarising
         if session.history.token_count() >= session.model_info.effective_auto_compact_limit():
             await compact.run_compact(ctx, reason="pre-turn")
         session.skills = load_skills(session.config)
@@ -165,6 +167,8 @@ async def run_turn(
         while True:
             ctx.iteration += 1
             needs_follow_up = await run_sampling_request(ctx)
+            if needs_follow_up:
+                await clear_tool_outputs.auto_clear(ctx, reason="auto")  # educodex extra
             tokens = session.history.token_count()
             limit = session.model_info.effective_auto_compact_limit()
             await ctx.probe.loop_iteration(ctx, needs_follow_up, tokens, limit, session.model_info.context_window)

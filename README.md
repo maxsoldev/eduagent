@@ -82,9 +82,9 @@ uv run --group dev educodex tui --cwd /path/to/project
 uv run educodex exec --mcp notes="python examples/mcp/notes_server.py" "List my notes"
 ```
 
-Options: `--approval on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--effort low|medium|high`, `--network`, `--model openai/<slug>`, `--memories`.
+Options: `--approval on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--effort low|medium|high`, `--network`, `--model openai/<slug>`, `--memories`, `--clear-tool-outputs JSON` (educodex extra: auto tool result clearing, [chapter 15](docs/guide/educodex/15-compaction.md)).
 
-In the web UI and the TUI, type `/` for commands (`/skills`, `/new`, `/compact`, `/memory-update`, `/memory-drop`) and `$` to use a skill. Skills are `SKILL.md` folders in `.agents/skills/` of your project or `~/.agents/skills/`.
+In the web UI and the TUI, type `/` for commands (`/skills`, `/new`, `/compact`, `/memory-update`, `/memory-drop`; the web UI also has `/clear-tool-outputs [keep N]`) and `$` to use a skill. Skills are `SKILL.md` folders in `.agents/skills/` of your project or `~/.agents/skills/`.
 
 **Home folder.** educodex keeps sessions, rules, skills and memories in `~/.eduagent/.educodex` (laid out as `~/.codex`). Set `EDUCODEX_HOME` to use another folder. The home used to be `~/.educodex`. If you have one, move it by hand: `mkdir -p ~/.eduagent && mv ~/.educodex ~/.eduagent/.educodex`.
 

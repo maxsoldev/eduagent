@@ -56,7 +56,7 @@ export interface Adapter {
 	compact(customInstructions?: string): Promise<void>; // pi takes instructions for the summary; Codex has none
 	listSkills(cwd: string): Promise<SkillInfo[]>;
 	// biome-ignore lint/suspicious/noConfusingVoidType: void allows bare returns (as in pi's extensions/types.ts)
-	runCommand(name: string): Promise<string | void>; // adapter-only slash commands; returns a note
+	runCommand(name: string, args?: string): Promise<string | void>; // adapter-only slash commands; returns a note
 	setStepMode(enabled: boolean): Promise<void>;
 	continueStep(): Promise<void>;
 	context(): Promise<ContextSnapshot | null>;

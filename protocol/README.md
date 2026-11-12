@@ -107,9 +107,9 @@ An adapter module (`AdapterModule` in `visualiser/src/adapters/types.ts`) has:
 - `defaults`: initial values of the adapter's own settings (Codex: `approvalPolicy`, `sandbox`).
 - Components: `NativeEntry`, `ApprovalCard`, and optional header `Controls`.
 
-The client (`Adapter`) has: `connect()` (handshake, model list), `startSession(settings)`, `send(settings, text, skills)`, `interrupt()`, `compact()`, `listSkills(cwd)`, `runCommand(name)` for adapter-only slash commands, `setStepMode(enabled)`, `continueStep()`, `context()`, `respond(approval, result)`, `wireLabel(message)`, and the fields `explain` (timeline texts), `commands`, `efforts`, `protocolNote` and `contextTriggers`.
+The client (`Adapter`) has: `connect()` (handshake, model list), `startSession(settings)`, `send(settings, text, skills)`, `interrupt()`, `compact()`, `listSkills(cwd)`, `runCommand(name, args)` for adapter-only slash commands, `setStepMode(enabled)`, `continueStep()`, `context()`, `respond(approval, result)`, `wireLabel(message)`, and the fields `explain` (timeline texts), `commands`, `efforts`, `protocolNote` and `contextTriggers`.
 
-`context()` returns the next model request as a `ContextSnapshot`: `{items: ContextItem[], tools: {names, tokens}, contextWindow, autoCompactLimit}`. Each `ContextItem` is `{label, cat, tokens, preview, summary, parts, raw}`; `cat` is one of the context bar categories (`base`, `injected`, `user`, `assistant`, `reasoning`, `call`, `output`, `summary`, `other`). The Context tab asks again after each trace event named in `contextTriggers` (Codex: `historyChanged`).
+`context()` returns the next model request as a `ContextSnapshot`: `{items: ContextItem[], tools: {names, tokens}, contextWindow, autoCompactLimit}`. Each `ContextItem` is `{label, cat, tokens, preview, summary, parts, raw}`; `cat` is one of the context bar categories (`base`, `injected`, `user`, `assistant`, `reasoning`, `call`, `output`, `cleared`, `summary`, `other`). The Context tab asks again after each trace event named in `contextTriggers` (Codex: `historyChanged`, `toolOutputsCleared`).
 
 ### The pi adapter (`pi-rpc`)
 
@@ -198,7 +198,7 @@ Events that mean the same thing have the same name and the same **shared fields*
 
 ### Backend-only events
 
-- educodex: `toolsRegistered` (`tools`), `historyChanged`, `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `hook`, `mcpToolsListed`, `mcpToolExposed`, `mcpServerFailed`, `skillInjected`, and the memory events.
+- educodex: `toolsRegistered` (`tools`), `historyChanged`, `toolOutputsCleared` (`reason`, `keep`, `cleared`, `callIds`, `tokensCleared`, `tokensBefore`, `tokensAfter`; the educodex extra `/clear-tool-outputs`), `policyDecision`, `sandboxCommand`, `sandboxDenied`, `approvalRequested`, `approvalResolved`, `hook`, `mcpToolsListed`, `mcpToolExposed`, `mcpServerFailed`, `skillInjected`, and the memory events.
 - edupi: `toolsRegistered` (`tools`: the Chat Completions tool specs of the request, as sent). Same name and field as educodex's, so the Tools tab reads both; edupi sends it just before a `modelRequest` whose tools are new for the session.
 
 The visualiser reacts to `pricing`, `cost`, `paused` and `resumed` (view reducer) and reads `modelRequest`, `modelResponse` (Requests tab), `toolsRegistered`, `toolDispatch` and `toolOutput` (Tools tab).

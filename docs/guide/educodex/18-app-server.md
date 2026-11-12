@@ -144,6 +144,7 @@ At end of input (the client closed stdin) it disconnects and shuts the threads d
 - `debug/context/get` returns the exact request body the next model call would send, with token counts. The Context tab uses it.
 - `thread/read` with `includeTrace: true` returns the full event log, so a UI that reconnects can rebuild its timeline.
 - `memory/update/start {threadId}` runs the memory write path now and replies `{}` at once; a `memoryUpdate` item and `trace/memory*` events follow (chapter 17). Codex starts that pipeline on its own and has no method for it.
+- `thread/toolOutputs/clear {threadId, keep}` replaces old tool outputs with a placeholder (`/clear-tool-outputs`, chapter 15). It makes no model call, so it replies after the work: `{cleared, tokensCleared, message}`. A `trace/toolOutputsCleared` event comes before the reply.
 
 **Origin check.** A web page on any site can open a WebSocket to `127.0.0.1`. If it could talk to the server, it could start turns and approve its own commands. Codex's WebSocket listener rejects *any* request with an `Origin` header. educodex has no listener, so the check moved to the launcher: it accepts only loopback origins, because it must allow the visualiser's own page (chapter 19).
 

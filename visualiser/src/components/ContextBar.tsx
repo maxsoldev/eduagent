@@ -12,6 +12,7 @@ export const CTX_CATS = {
 	reasoning: { label: "reasoning", color: "#008300" },
 	call: { label: "tool calls", color: "#e66767" },
 	output: { label: "tool outputs", color: "#9085e9" },
+	cleared: { label: "cleared tool outputs", color: "#2aa5b8" }, // educodex /clear-tool-outputs placeholders
 	summary: { label: "compaction summary", color: "#8b9bb0" },
 	other: { label: "other", color: "#64748b" },
 } as const;

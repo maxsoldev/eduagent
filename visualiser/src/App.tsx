@@ -90,7 +90,7 @@ export function App({ backend, cwd, module }: { backend: BackendInfo; cwd: strin
 						: "No skills found. Add a folder with a SKILL.md to .agents/skills/ in your project.",
 				);
 			} else {
-				const result = await adapter!.runCommand(name);
+				const result = await adapter!.runCommand(name, args);
 				if (result) note(result);
 			}
 		} catch (err) {

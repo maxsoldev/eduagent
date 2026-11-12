@@ -6,7 +6,8 @@ Codex methods (same names and main fields as app-server protocol v2):
   thread/compact/start, model/list, skills/list, memory/reset
 educodex extensions (not in Codex):
   debug/stepMode/set, debug/continue, debug/context/get,
-  memory/update/start (Codex runs the memory pipeline on its own; its TUI command is a stub)
+  memory/update/start (Codex runs the memory pipeline on its own; its TUI command is a stub),
+  thread/toolOutputs/clear (/clear-tool-outputs [keep N]; core/clear_tool_outputs.py)
 """
 
 import platform
@@ -20,6 +21,7 @@ import httpx
 
 from educodex import __version__
 from educodex.app_server.connection import INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND, Connection, RpcError
+from educodex.core.clear_tool_outputs import DEFAULT_KEEP
 from educodex.core.config import Config, load_api_key
 from educodex.core.events import Event, EventBus
 from educodex.core.memories.start import clear_memories
@@ -144,6 +146,7 @@ class MessageProcessor:
             rules=self.defaults.rules,
             hooks=self.defaults.hooks,
             memories=self.defaults.memories,
+            clear_tool_outputs=self.defaults.clear_tool_outputs,
         )
         bus = EventBus()
         bus.subscribe(self._broadcast)
@@ -229,6 +232,16 @@ class MessageProcessor:
             raise RpcError(-32600, str(err)) from err
         return {}
 
+    async def thread_tool_outputs_clear(self, conn: Connection, params: dict) -> dict:
+        # No model call, so unlike thread/compact/start the reply comes after the work, with the result.
+        keep = params.get("keep", DEFAULT_KEEP)
+        if not isinstance(keep, int) or keep < 0:
+            raise RpcError(INVALID_PARAMS, "keep must be a whole number >= 0")
+        try:
+            return await self._state(params).session.clear_tool_outputs(keep)
+        except RuntimeError as err:
+            raise RpcError(-32600, str(err)) from err
+
     async def memory_update_start(self, conn: Connection, params: dict) -> dict:
         # Like thread/compact/start: reply now; a memoryUpdate item and trace/memory* events follow.
         try:
@@ -306,6 +319,7 @@ class MessageProcessor:
         "turn/start": turn_start,
         "turn/interrupt": turn_interrupt,
         "thread/compact/start": thread_compact_start,
+        "thread/toolOutputs/clear": thread_tool_outputs_clear,
         "model/list": model_list,
         "skills/list": skills_list,
         "memory/reset": memory_reset,
